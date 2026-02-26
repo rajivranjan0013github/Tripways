@@ -3,27 +3,162 @@
  * @format
  */
 
-import React, { useRef, useMemo, useCallback } from 'react';
+import React, { useRef, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Image, Dimensions, Platform, ScrollView } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing } from 'react-native-reanimated';
 import MapView, { PROVIDER_GOOGLE, Marker } from 'react-native-maps';
-import BottomSheet, { BottomSheetView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import AddSpotsSheet from '../components/AddSpotsSheet';
+import CreateTripSheet from '../components/CreateTripSheet';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const HomeScreen = () => {
-    const bottomSheetRef = useRef(null);
     const insets = useSafeAreaInsets();
+    const tabBarHeight = 56 + insets.bottom;
+    const bottomSheetRef = useRef(null);
+    const addSpotsSheetRef = useRef(null); // Ref for Add Spots BottomSheet
+    const createTripSheetRef = useRef(null); // Ref for Create Trip BottomSheet
     const [activeTab, setActiveTab] = React.useState('home');
+    const [showCreateOptions, setShowCreateOptions] = React.useState(false);
+
+    // Animation values
+    const overlayOpacity = useSharedValue(0);
+    const overlayTranslateY = useSharedValue(20);
+
+    // Create menu animation values
+    const createMenuOpacity = useSharedValue(0);
+    const createMenuScale = useSharedValue(0.9);
+    const plusRotation = useSharedValue(0);
+    const tabBarTranslateY = useSharedValue(0);
+
+    const animatedOverlayStyle = useAnimatedStyle(() => {
+        return {
+            opacity: overlayOpacity.value,
+            transform: [{ translateY: overlayTranslateY.value }],
+        };
+    });
+
+    const animatedCreateMenuStyle = useAnimatedStyle(() => {
+        return {
+            opacity: createMenuOpacity.value,
+            transform: [{ scale: createMenuScale.value }, { translateY: (1 - createMenuOpacity.value) * 20 }],
+        };
+    });
+
+    const animatedPlusStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ rotate: `${plusRotation.value}deg` }],
+        };
+    });
+
+    const animatedTabBarStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ translateY: tabBarTranslateY.value }],
+        };
+    });
+
+    useEffect(() => {
+        if (activeTab === 'trips') {
+            overlayOpacity.value = withTiming(1, { duration: 300 });
+            overlayTranslateY.value = withTiming(0, { duration: 300 });
+        } else {
+            overlayOpacity.value = withTiming(0, { duration: 350 });
+            overlayTranslateY.value = withTiming(20, { duration: 350 });
+
+            // Only restore if we aren't about to open or already in the Add Spots sheet
+            const isAddSpotsOpen = addSpotsSheetRef.current?.snapToIndex !== undefined && addSpotsSheetRef.current?.snapToIndex > -1;
+            const isCreateTripOpen = createTripSheetRef.current?.snapToIndex !== undefined && createTripSheetRef.current?.snapToIndex > -1;
+
+            if (!isAddSpotsOpen && !isCreateTripOpen) {
+                tabBarTranslateY.value = withTiming(0, {
+                    duration: 400,
+                    easing: Easing.bezier(0.33, 1, 0.68, 1)
+                });
+                setTimeout(() => {
+                    bottomSheetRef.current?.snapToIndex(1);
+                }, 150);
+            }
+        }
+    }, [activeTab]);
+
+    useEffect(() => {
+        if (showCreateOptions) {
+            createMenuOpacity.value = withTiming(1, { duration: 250 });
+            createMenuScale.value = withTiming(1, { duration: 250 });
+            plusRotation.value = withTiming(45, { duration: 250 });
+        } else {
+            createMenuOpacity.value = withTiming(0, { duration: 200 });
+            createMenuScale.value = withTiming(0.9, { duration: 200 });
+            plusRotation.value = withTiming(0, { duration: 200 });
+        }
+    }, [showCreateOptions]);
 
 
 
     const snapPoints = useMemo(() => ['12%', '50%', '90%'], []);
 
+    const sheetAnimationConfig = useMemo(() => ({
+        duration: 400,
+        easing: Easing.bezier(0.33, 1, 0.68, 1),
+    }), []);
+
+    const renderBackdrop = useCallback(
+        (props) => (
+            <BottomSheetBackdrop
+                {...props}
+                disappearsOnIndex={-1}
+                appearsOnIndex={0}
+                opacity={0.4}
+            />
+        ),
+        []
+    );
+
     const handleSheetChanges = useCallback((index) => {
         console.log('handleSheetChanges', index);
     }, []);
+
+    const handleAddSpotsSheetChange = useCallback((index) => {
+        if (index > -1) {
+            tabBarTranslateY.value = withTiming(tabBarHeight, {
+                duration: 400,
+                easing: Easing.bezier(0.33, 1, 0.68, 1)
+            });
+        } else {
+            // Restore Home view: Tab bar first, then welcome sheet
+            tabBarTranslateY.value = withTiming(0, {
+                duration: 400,
+                easing: Easing.bezier(0.33, 1, 0.68, 1)
+            });
+            if (activeTab === 'home') {
+                setTimeout(() => {
+                    bottomSheetRef.current?.snapToIndex(1);
+                }, 150);
+            }
+        }
+    }, [tabBarHeight, activeTab]);
+
+    const handleCreateTripSheetChange = useCallback((index) => {
+        if (index > -1) {
+            tabBarTranslateY.value = withTiming(tabBarHeight, {
+                duration: 400,
+                easing: Easing.bezier(0.33, 1, 0.68, 1)
+            });
+        } else {
+            tabBarTranslateY.value = withTiming(0, {
+                duration: 400,
+                easing: Easing.bezier(0.33, 1, 0.68, 1)
+            });
+            if (activeTab === 'home') {
+                setTimeout(() => {
+                    bottomSheetRef.current?.snapToIndex(1);
+                }, 150);
+            }
+        }
+    }, [tabBarHeight, activeTab]);
 
     return (
         <View style={styles.container}>
@@ -77,8 +212,11 @@ const HomeScreen = () => {
                 index={1}
                 snapPoints={snapPoints}
                 onChange={handleSheetChanges}
+                enableDynamicSizing={false}
                 backgroundStyle={styles.sheetBackground}
                 handleIndicatorStyle={styles.handleIndicator}
+                enablePanDownToClose={true}
+                animationConfigs={sheetAnimationConfig}
             >
                 <BottomSheetView style={styles.sheetContent}>
                     <View style={styles.welcomeRow}>
@@ -124,80 +262,210 @@ const HomeScreen = () => {
             </BottomSheet>
 
             {/* Trips Overlay */}
-            {activeTab === 'trips' && (
-                <View style={[styles.tripsOverlay, { paddingTop: insets.top }]}>
-                    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.tripsScrollContent}>
-                        <View style={styles.tripsHeader}>
-                            <Text style={styles.tripsLogo}>Roamy</Text>
-                            <TouchableOpacity style={styles.tripsAvatar}>
-                                <Text style={styles.tripsAvatarText}>A</Text>
+            <Animated.View
+                style={[
+                    styles.tripsOverlay,
+                    { paddingTop: insets.top },
+                    animatedOverlayStyle
+                ]}
+                pointerEvents={activeTab === 'trips' ? 'auto' : 'none'}
+            >
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.tripsScrollContent}>
+                    <View style={styles.tripsHeader}>
+                        <Text style={styles.tripsLogo}>Roamy</Text>
+                        <TouchableOpacity style={styles.tripsAvatar}>
+                            <Text style={styles.tripsAvatarText}>A</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <Text style={styles.sectionTitle}>Travel Guides</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.guidesScroll}>
+                        {[
+                            { title: '1-Day Paris Trip', spots: '9 Spots', color: '#C4B5A5' },
+                            { title: '1-Day Rome Trip', spots: '7 Spots', color: '#94A3A8' },
+                            { title: '3-Day London Trip', spots: '19 Spots', color: '#6366F1' },
+                        ].map((guide, idx) => (
+                            <TouchableOpacity key={idx} style={[styles.guideCard, { backgroundColor: guide.color }]}>
+                                <View style={styles.guideCardOverlay}>
+                                    <Text style={styles.guideTitle}>{guide.title}</Text>
+                                    <Text style={styles.guideSpots}>{guide.spots}</Text>
+                                </View>
                             </TouchableOpacity>
-                        </View>
-
-                        <Text style={styles.sectionTitle}>Travel Guides</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.guidesScroll}>
-                            {[
-                                { title: '1-Day Paris Trip', spots: '9 Spots', color: '#C4B5A5' },
-                                { title: '1-Day Rome Trip', spots: '7 Spots', color: '#94A3A8' },
-                                { title: '3-Day London Trip', spots: '19 Spots', color: '#6366F1' },
-                            ].map((guide, idx) => (
-                                <TouchableOpacity key={idx} style={[styles.guideCard, { backgroundColor: guide.color }]}>
-                                    <View style={styles.guideCardOverlay}>
-                                        <Text style={styles.guideTitle}>{guide.title}</Text>
-                                        <Text style={styles.guideSpots}>{guide.spots}</Text>
-                                    </View>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-
-                        <Text style={styles.sectionTitle}>My Trips</Text>
-                        <View style={styles.myTripsList}>
-                            {[
-                                { title: '5-Day Delhi Trip', info: '5 Days 4 Nights', spots: '30 Spots', color: '#EEF2FF', iconColor: '#3B82F6' },
-                                { title: '4-Day Varanasi Trip', info: '4 Days 3 Nights', spots: '24 Spots', color: '#F7FEE7', iconColor: '#84CC16' },
-                                { title: '2-Day Bengaluru Trip', info: '2 Days 1 Night', spots: '15 Spots', color: '#FDF2F8', iconColor: '#D946EF' },
-                            ].map((trip, idx) => (
-                                <TouchableOpacity key={idx} style={[styles.tripCard, { backgroundColor: trip.color }]}>
-                                    <View style={styles.tripImagePlaceholder} />
-                                    <View style={styles.tripInfo}>
-                                        <Text style={[styles.tripTitle, { color: trip.iconColor }]}>{trip.title}</Text>
-                                        <Text style={styles.tripDetails}>{trip.info}</Text>
-                                        <Text style={styles.tripDetails}>{trip.spots}</Text>
-                                    </View>
-                                </TouchableOpacity>
-                            ))}
-                        </View>
+                        ))}
                     </ScrollView>
-                </View>
+
+                    <Text style={styles.sectionTitle}>My Trips</Text>
+                    <View style={styles.myTripsList}>
+                        {[
+                            { title: '5-Day Delhi Trip', info: '5 Days 4 Nights', spots: '30 Spots', color: '#EEF2FF', iconColor: '#3B82F6' },
+                            { title: '4-Day Varanasi Trip', info: '4 Days 3 Nights', spots: '24 Spots', color: '#F7FEE7', iconColor: '#84CC16' },
+                            { title: '2-Day Bengaluru Trip', info: '2 Days 1 Night', spots: '15 Spots', color: '#FDF2F8', iconColor: '#D946EF' },
+                        ].map((trip, idx) => (
+                            <TouchableOpacity key={idx} style={[styles.tripCard, { backgroundColor: trip.color }]}>
+                                <View style={styles.tripImagePlaceholder} />
+                                <View style={styles.tripInfo}>
+                                    <Text style={[styles.tripTitle, { color: trip.iconColor }]}>{trip.title}</Text>
+                                    <Text style={styles.tripDetails}>{trip.info}</Text>
+                                    <Text style={styles.tripDetails}>{trip.spots}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </ScrollView>
+            </Animated.View>
+
+            {/* Create Options Menu */}
+            {showCreateOptions && (
+                <TouchableOpacity
+                    style={[styles.createMenuBackdrop, { paddingBottom: 65 + insets.bottom }]}
+                    activeOpacity={1}
+                    onPress={() => setShowCreateOptions(false)}
+                >
+                    <Animated.View style={[styles.createMenuContainer, animatedCreateMenuStyle]}>
+                        <TouchableOpacity
+                            style={styles.createOptionItem}
+                            onPress={() => {
+                                setShowCreateOptions(false);
+
+                                // Step 1: Handle Trips Overlay if visible
+                                let overlayDelay = 0;
+                                if (activeTab === 'trips') {
+                                    setActiveTab('home');
+                                    overlayDelay = 200; // Give some head start to overlay closing
+                                }
+
+                                // Sequence: Close Welcome Sheet -> Hide Tab Bar -> Open Create Trip
+                                setTimeout(() => {
+                                    bottomSheetRef.current?.close();
+
+                                    setTimeout(() => {
+                                        tabBarTranslateY.value = withTiming(tabBarHeight, {
+                                            duration: 400,
+                                            easing: Easing.bezier(0.33, 1, 0.68, 1)
+                                        });
+                                    }, 150);
+
+                                    setTimeout(() => {
+                                        createTripSheetRef.current?.expand();
+                                    }, 400);
+                                }, overlayDelay);
+                            }}
+                        >
+                            <View style={styles.optionIconContainer}>
+                                <Svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#EC4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Rect x="2" y="7" width="20" height="14" rx="2" />
+                                    <Path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
+                                    <Path d="M12 11v6M9 14h6" />
+                                </Svg>
+                            </View>
+                            <View style={styles.optionTextContainer}>
+                                <Text style={styles.optionTitle}>Create New Trip</Text>
+                                <Text style={styles.optionSubtitle}>Plan your next adventure</Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        <View style={styles.menuDivider} />
+
+                        <TouchableOpacity
+                            style={styles.createOptionItem}
+                            onPress={() => {
+                                setShowCreateOptions(false);
+
+                                // Step 1: Handle Trips Overlay if visible
+                                let overlayDelay = 0;
+                                if (activeTab === 'trips') {
+                                    setActiveTab('home');
+                                    overlayDelay = 200; // Give some head start to overlay closing
+                                }
+
+                                // Sequence: Close Welcome Sheet -> Hide Tab Bar -> Open Add Spots
+                                setTimeout(() => {
+                                    bottomSheetRef.current?.close();
+
+                                    setTimeout(() => {
+                                        tabBarTranslateY.value = withTiming(tabBarHeight, {
+                                            duration: 400,
+                                            easing: Easing.bezier(0.33, 1, 0.68, 1)
+                                        });
+                                    }, 150);
+
+                                    setTimeout(() => {
+                                        addSpotsSheetRef.current?.expand();
+                                    }, 400);
+                                }, overlayDelay);
+                            }}
+                        >
+                            <View style={styles.optionIconContainer}>
+                                <Svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+                                    <Path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                                    <Circle cx="10" cy="13" r="2" />
+                                    <Path d="m14 17-3-3-3 3" />
+                                </Svg>
+                            </View>
+                            <View style={styles.optionTextContainer}>
+                                <Text style={styles.optionTitle}>Add Spots</Text>
+                                <Text style={styles.optionSubtitle}>Save places you love</Text>
+                            </View>
+                        </TouchableOpacity>
+                    </Animated.View>
+                </TouchableOpacity>
             )}
 
+            {/* Add Spots Bottom Sheet */}
+            <AddSpotsSheet
+                ref={addSpotsSheetRef}
+                onChange={handleAddSpotsSheetChange}
+                tabBarHeight={tabBarHeight}
+                animationConfigs={sheetAnimationConfig}
+            />
+
+            {/* Create Trip Bottom Sheet */}
+            <CreateTripSheet
+                ref={createTripSheetRef}
+                onChange={handleCreateTripSheetChange}
+                animationConfigs={sheetAnimationConfig}
+            />
+
             {/* Custom Bottom Tab Bar */}
-            <View style={[styles.tabBarContainer, { bottom: Platform.OS === 'android' ? insets.bottom + 10 : insets.bottom }]}>
+            <Animated.View style={[styles.tabBarContainer, { height: tabBarHeight, paddingBottom: insets.bottom }, animatedTabBarStyle]}>
                 <TouchableOpacity
                     style={styles.tabItem}
-                    onPress={() => setActiveTab('trips')}
+                    onPress={() => {
+                        setActiveTab('home');
+                        setShowCreateOptions(false);
+                    }}
+                >
+                    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={activeTab === 'home' ? "#3B82F6" : "#71717A"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <Circle cx="12" cy="12" r="10" />
+                        <Path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z" fill={activeTab === 'home' ? "#3B82F6" : "none"} />
+                    </Svg>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={styles.plusButton}
+                    onPress={() => setShowCreateOptions(!showCreateOptions)}
+                >
+                    <Animated.View style={animatedPlusStyle}>
+                        <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <Path d="M12 5v14M5 12h14" />
+                        </Svg>
+                    </Animated.View>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                    style={styles.tabItem}
+                    onPress={() => {
+                        setActiveTab('trips');
+                        setShowCreateOptions(false);
+                    }}
                 >
                     <Svg width="24" height="24" viewBox="0 0 24 24" fill={activeTab === 'trips' ? "#3B82F6" : "none"} stroke={activeTab === 'trips' ? "#3B82F6" : "#71717A"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <Rect x="2" y="7" width="20" height="14" rx="2" />
                         <Path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
                     </Svg>
                 </TouchableOpacity>
-
-                <TouchableOpacity style={styles.plusButton}>
-                    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M12 5v14M5 12h14" />
-                    </Svg>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.tabItem}
-                    onPress={() => setActiveTab('home')}
-                >
-                    <Svg width="24" height="24" viewBox="0 0 24 24" fill={activeTab === 'home' ? "#3B82F6" : "none"} stroke={activeTab === 'home' ? "#3B82F6" : "#71717A"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
-                    </Svg>
-                </TouchableOpacity>
-            </View>
+            </Animated.View>
         </View>
     );
 };
@@ -393,20 +661,17 @@ const styles = StyleSheet.create({
     },
     tabBarContainer: {
         position: 'absolute',
-        left: 70,
-        right: 70,
+        left: 0,
+        right: 0,
+        bottom: 0,
         backgroundColor: '#FFFFFF',
-        height: 54,
-        borderRadius: 27,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-around',
-        paddingHorizontal: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.1,
-        shadowRadius: 16,
-        elevation: 10,
+        paddingHorizontal: 20,
+        borderTopWidth: 1,
+        borderTopColor: '#F4F4F5',
+        zIndex: 1000,
     },
     tabItem: {
         width: 36,
@@ -528,6 +793,68 @@ const styles = StyleSheet.create({
         color: '#64748B',
         fontWeight: '500',
         marginTop: 2,
+    },
+    // Create Menu Styles
+    createMenuBackdrop: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.1)',
+        zIndex: 15, // Sit between overlay and tab bar
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+    },
+    createMenuContainer: {
+        width: SCREEN_WIDTH - 20,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 24,
+        padding: 8,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.15,
+        shadowRadius: 20,
+        elevation: 10,
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
+    },
+    createOptionItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+    },
+    optionIconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 14,
+        backgroundColor: '#F8FAFC',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    optionTextContainer: {
+        marginLeft: 12,
+        flex: 1,
+    },
+    optionTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1E293B',
+    },
+    optionSubtitle: {
+        fontSize: 12,
+        color: '#94A3B8',
+        marginTop: 1,
+        fontWeight: '500',
+    },
+    menuDivider: {
+        height: 1,
+        backgroundColor: '#F1F5F9',
+        marginHorizontal: 15,
+    },
+    sheetHandleIndicator: {
+        width: 40,
+        height: 5,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 3,
+        alignSelf: 'center',
+        marginBottom: 20,
     },
 });
 
