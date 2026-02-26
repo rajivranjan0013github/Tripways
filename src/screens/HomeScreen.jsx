@@ -3,7 +3,7 @@
  * @format
  */
 
-import React, { useRef, useMemo, useCallback, useEffect } from 'react';
+import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Image, Dimensions, Platform, ScrollView } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing } from 'react-native-reanimated';
 import MapView, { PROVIDER_GOOGLE, Marker } from 'react-native-maps';
@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import AddSpotsSheet from '../components/AddSpotsSheet';
 import CreateTripSheet from '../components/CreateTripSheet';
+import TripOverviewSheet from '../components/TripOverviewSheet';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -21,6 +22,8 @@ const HomeScreen = () => {
     const bottomSheetRef = useRef(null);
     const addSpotsSheetRef = useRef(null); // Ref for Add Spots BottomSheet
     const createTripSheetRef = useRef(null); // Ref for Create Trip BottomSheet
+    const tripOverviewSheetRef = useRef(null);
+    const [tripData, setTripData] = useState(null);
     const [activeTab, setActiveTab] = React.useState('home');
     const [showCreateOptions, setShowCreateOptions] = React.useState(false);
 
@@ -129,6 +132,25 @@ const HomeScreen = () => {
             });
         } else {
             // Restore Home view: Tab bar first, then welcome sheet
+            tabBarTranslateY.value = withTiming(0, {
+                duration: 400,
+                easing: Easing.bezier(0.33, 1, 0.68, 1)
+            });
+            if (activeTab === 'home') {
+                setTimeout(() => {
+                    bottomSheetRef.current?.snapToIndex(1);
+                }, 150);
+            }
+        }
+    }, [tabBarHeight, activeTab]);
+
+    const handleTripOverviewSheetChange = useCallback((index) => {
+        if (index > -1) {
+            tabBarTranslateY.value = withTiming(tabBarHeight, {
+                duration: 400,
+                easing: Easing.bezier(0.33, 1, 0.68, 1)
+            });
+        } else {
             tabBarTranslateY.value = withTiming(0, {
                 duration: 400,
                 easing: Easing.bezier(0.33, 1, 0.68, 1)
@@ -425,6 +447,20 @@ const HomeScreen = () => {
                 ref={createTripSheetRef}
                 onChange={handleCreateTripSheetChange}
                 animationConfigs={sheetAnimationConfig}
+                onTripCreated={(data) => {
+                    setTripData(data);
+                    setTimeout(() => {
+                        tripOverviewSheetRef.current?.expand();
+                    }, 500);
+                }}
+            />
+
+            {/* Trip Overview Bottom Sheet */}
+            <TripOverviewSheet
+                ref={tripOverviewSheetRef}
+                onChange={handleTripOverviewSheetChange}
+                animationConfigs={sheetAnimationConfig}
+                tripData={tripData}
             />
 
             {/* Custom Bottom Tab Bar */}

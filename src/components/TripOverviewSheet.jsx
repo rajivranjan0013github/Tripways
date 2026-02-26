@@ -1,0 +1,742 @@
+import React, { forwardRef, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image } from 'react-native';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import Svg, { Path, Circle } from 'react-native-svg';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Category colors & emoji mapping
+const CATEGORY_CONFIG = {
+    'Attractions': { emoji: '🎡', color: '#F59E0B', bg: '#FFFBEB' },
+    'Museum': { emoji: '🏛️', color: '#8B5CF6', bg: '#F5F3FF' },
+    'Temple': { emoji: '🛕', color: '#EC4899', bg: '#FDF2F8' },
+    'Restaurant': { emoji: '🍽️', color: '#EF4444', bg: '#FEF2F2' },
+    'Cafe': { emoji: '☕', color: '#D97706', bg: '#FFFBEB' },
+    'Ghat': { emoji: '🌊', color: '#06B6D4', bg: '#ECFEFF' },
+    'Nature': { emoji: '🌿', color: '#22C55E', bg: '#F0FDF4' },
+    'Shopping': { emoji: '🛍️', color: '#F472B6', bg: '#FDF2F8' },
+    'Observatory': { emoji: '🔭', color: '#6366F1', bg: '#EEF2FF' },
+    'Station': { emoji: '🚂', color: '#64748B', bg: '#F8FAFC' },
+};
+
+// Travel mode icons
+const TRAVEL_MODES = {
+    walking: { icon: '🚶', label: 'Walking' },
+    driving: { icon: '🚗', label: 'Driving' },
+};
+
+const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, ref) => {
+    const [mode, setMode] = useState('overview'); // 'overview' or 'itinerary'
+    const [selectedDay, setSelectedDay] = useState(1);
+    const [expandedDays, setExpandedDays] = useState({});
+    const snapPoints = useMemo(() => ['60%'], []);
+
+    const numDays = tripData?.numDays || 4;
+    const locationName = tripData?.locationName || 'Varanasi';
+
+    const itineraryDays = [
+        {
+            day: 1,
+            spots: [
+                {
+                    name: 'Sarnath Buddhist Temple Vara...',
+                    fullName: 'Sarnath Buddhist Temple Varanasi',
+                    category: 'Attractions',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
+                },
+                {
+                    name: 'Sarnath Museum',
+                    fullName: 'Sarnath Museum',
+                    category: 'Museum',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
+                },
+                {
+                    name: 'Chaukhandi Stupa Sarnath Va...',
+                    fullName: 'Chaukhandi Stupa Sarnath Varanasi',
+                    category: 'Attractions',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
+                },
+                {
+                    name: 'Kashi Dham Museum',
+                    fullName: 'Kashi Dham Museum',
+                    category: 'Museum',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
+                },
+                {
+                    name: 'Ganga Ghat',
+                    fullName: 'Ganga Ghat',
+                    category: 'Ghat',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
+                },
+                {
+                    name: 'Man Singh Observatory',
+                    fullName: 'Man Singh Observatory',
+                    category: 'Observatory',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
+                },
+            ],
+            travelInfo: [
+                { mode: 'walking', time: '8 min', distance: '634 m' },
+                { mode: 'walking', time: '13 min', distance: '990 m' },
+                { mode: 'driving', time: '20 min', distance: '7.5 km' },
+                { mode: 'walking', time: '12 min', distance: '695 m' },
+                { mode: 'walking', time: '15 min', distance: '1.1 km' },
+            ],
+        },
+        {
+            day: 2,
+            spots: [
+                {
+                    name: 'The Keshari Restaurant',
+                    fullName: 'The Keshari Restaurant',
+                    category: 'Restaurant',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
+                },
+                {
+                    name: 'Kerala Cafe Since 1962',
+                    fullName: 'Kerala Cafe Since 1962',
+                    category: 'Cafe',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
+                },
+                {
+                    name: 'Tulsi Ghat',
+                    fullName: 'Tulsi Ghat',
+                    category: 'Ghat',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
+                },
+                {
+                    name: 'Tridev Mandir Varanasi',
+                    fullName: 'Tridev Mandir Varanasi',
+                    category: 'Temple',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
+                },
+            ],
+            travelInfo: [
+                { mode: 'walking', time: '10 min', distance: '750 m' },
+                { mode: 'driving', time: '15 min', distance: '4.2 km' },
+                { mode: 'walking', time: '8 min', distance: '580 m' },
+            ],
+        },
+        {
+            day: 3,
+            spots: [
+                {
+                    name: 'Madhuban',
+                    fullName: 'Madhuban',
+                    category: 'Restaurant',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
+                },
+                {
+                    name: 'Bharat Kala Bhavan Museum...',
+                    fullName: 'Bharat Kala Bhavan Museum, BHU Varanasi',
+                    category: 'Museum',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
+                },
+                {
+                    name: 'Birla Mandir',
+                    fullName: 'Birla Mandir',
+                    category: 'Temple',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
+                },
+                {
+                    name: 'Banaras Railway Station',
+                    fullName: 'Banaras Railway Station',
+                    category: 'Station',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
+                },
+                {
+                    name: 'Shri Batuk Bhairav Temple...',
+                    fullName: 'Shri Batuk Bhairav Temple and Shri Aadi Bhairav Temple',
+                    category: 'Temple',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
+                },
+                {
+                    name: 'Popular bati Chokha Restaurant',
+                    fullName: 'Popular bati Chokha Restaurant',
+                    category: 'Restaurant',
+                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
+                },
+            ],
+            travelInfo: [
+                { mode: 'driving', time: '12 min', distance: '3.8 km' },
+                { mode: 'walking', time: '7 min', distance: '500 m' },
+                { mode: 'driving', time: '18 min', distance: '6.2 km' },
+                { mode: 'walking', time: '10 min', distance: '720 m' },
+                { mode: 'walking', time: '14 min', distance: '1.0 km' },
+            ],
+        },
+    ];
+
+    // Add extra days if numDays > 3
+    if (numDays > 3) {
+        for (let i = 4; i <= numDays; i++) {
+            itineraryDays.push({
+                day: i,
+                spots: [
+                    {
+                        name: 'Dashashwamedh Ghat',
+                        fullName: 'Dashashwamedh Ghat',
+                        category: 'Ghat',
+                        image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
+                    },
+                    {
+                        name: 'Manikarnika Ghat',
+                        fullName: 'Manikarnika Ghat',
+                        category: 'Ghat',
+                        image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
+                    },
+                    {
+                        name: 'Vishwanath Temple',
+                        fullName: 'Vishwanath Temple',
+                        category: 'Temple',
+                        image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
+                    },
+                ],
+                travelInfo: [
+                    { mode: 'walking', time: '10 min', distance: '800 m' },
+                    { mode: 'walking', time: '6 min', distance: '450 m' },
+                ],
+            });
+        }
+    }
+
+    const toggleDayExpanded = (day) => {
+        setExpandedDays(prev => ({ ...prev, [day]: !prev[day] }));
+    };
+
+    const renderBackdrop = (props) => (
+        <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
+    );
+
+    // Determine which day to show
+    const getActiveDayData = () => {
+        return itineraryDays.find(d => d.day === selectedDay) || itineraryDays[0];
+    };
+
+    const renderSpotCard = (spot, index, travelInfo, isLast) => {
+        const config = CATEGORY_CONFIG[spot.category] || CATEGORY_CONFIG['Attractions'];
+        const isTransit = travelInfo && (travelInfo.mode === 'transit' || travelInfo.mode === 'driving');
+        return (
+            <View style={styles.spotCard}>
+                {/* Left Column: Image + dots below */}
+                <View style={styles.leftColumn}>
+                    <View style={styles.imageWrapper}>
+                        <View style={styles.spotNumberBadge}>
+                            <Text style={styles.spotNumberText}>{index + 1}</Text>
+                        </View>
+                        <Image
+                            source={{ uri: spot.image }}
+                            style={styles.spotImage}
+                        />
+                    </View>
+                    {/* Dots below image (inside card) */}
+                    {travelInfo && (
+                        <View style={styles.dotsColumn}>
+                            <View style={styles.dot} />
+                            <View style={styles.dot} />
+                            <View style={styles.dot} />
+                        </View>
+                    )}
+                </View>
+
+                {/* Right Column: Info + Travel */}
+                <View style={styles.spotInfo}>
+                    <Text style={styles.spotName} numberOfLines={1}>{spot.name}</Text>
+                    <View style={styles.spotMeta}>
+                        <View style={[styles.categoryBadge, { backgroundColor: config.bg }]}>
+                            <Text style={[styles.categoryText, { color: config.color }]}>{spot.category}</Text>
+                        </View>
+                        <Text style={styles.spotRating}>⭐ {spot.rating || '4.5'}</Text>
+                    </View>
+
+                    {/* Travel info + Directions */}
+                    {travelInfo && (
+                        <View style={styles.cardTravelRow}>
+                            <View>
+                                {isTransit && (
+                                    <Text style={styles.travelModeLabel}>🚌 Transit</Text>
+                                )}
+                                <Text style={styles.travelText}>
+                                    {travelInfo.time} • {travelInfo.distance}
+                                </Text>
+                            </View>
+                            <TouchableOpacity style={styles.directionsButton}>
+                                <Text style={styles.directionsText}>Directions</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                </View>
+            </View>
+        );
+    };
+
+    const renderDottedConnector = (index) => (
+        <View key={`connector-${index}`} style={styles.dottedConnectorContainer}>
+            <View style={styles.dot} />
+            <View style={styles.dot} />
+        </View>
+    );
+
+    const renderDayItinerary = (dayData) => {
+        return (
+            <View key={`day-${dayData.day}`}>
+                {/* Optimize button */}
+                <View style={styles.optimizeRow}>
+                    <TouchableOpacity style={styles.optimizeButton}>
+                        <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <Path d="M2 20h.01M7 20v-4M12 20V10M17 20V4" />
+                        </Svg>
+                        <Text style={styles.optimizeText}>Optimize</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* Spots List */}
+                {dayData.spots.map((spot, idx) => (
+                    <View key={`item-${idx}`}>
+                        {renderSpotCard(spot, idx, dayData.travelInfo[idx], idx === dayData.spots.length - 1)}
+                        {idx < dayData.spots.length - 1 && renderDottedConnector(idx)}
+                    </View>
+                ))}
+            </View>
+        );
+    };
+
+    // Pick a representative image for each day
+    const getDayImage = (dayData) => {
+        return dayData.spots[0]?.image || 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no';
+    };
+
+    // Format spots as bullet points
+    const formatSpots = (spots) => {
+        const names = spots.map(s => s.fullName || s.name);
+        const lines = [];
+        let current = '';
+        for (let i = 0; i < names.length; i++) {
+            if (current === '') {
+                current = names[i];
+            } else {
+                current += ' → ' + names[i];
+            }
+            if (current.length > 30 || i === names.length - 1) {
+                lines.push(current);
+                current = '';
+            }
+        }
+        return lines.map(l => '• ' + l).join('\n');
+    };
+
+    const renderOverviewItems = () => (
+        <>
+            {itineraryDays.map((dayData) => (
+                <View key={dayData.day} style={styles.overviewDayCard}>
+                    <Image
+                        source={{ uri: getDayImage(dayData) }}
+                        style={styles.overviewDayImage}
+                    />
+                    <View style={styles.overviewDayInfo}>
+                        <Text style={styles.overviewDayCardTitle}>Day {dayData.day}</Text>
+                        <Text style={styles.overviewDayCardSpots}>
+                            {formatSpots(dayData.spots)}
+                        </Text>
+                    </View>
+                </View>
+            ))}
+        </>
+    );
+
+    const renderItineraryItems = () => {
+        const activeDayData = getActiveDayData();
+        return renderDayItinerary(activeDayData);
+    };
+
+    return (
+        <BottomSheet
+            ref={ref}
+            index={-1}
+            snapPoints={snapPoints}
+            enableDynamicSizing={false}
+            enablePanDownToClose={true}
+            backdropComponent={renderBackdrop}
+            backgroundStyle={styles.sheetBackground}
+            handleIndicatorStyle={styles.handleIndicator}
+            onChange={onChange}
+            animationConfigs={animationConfigs}
+        >
+            {/* Fixed Header + Tabs */}
+            <View style={styles.header}>
+                {mode === 'overview' && (
+                    <View>
+                        <View style={styles.titleRow}>
+                            <Text style={styles.tripTitle}>{numDays}-Day {locationName} Trip</Text>
+                            <TouchableOpacity style={styles.shareIconButton}>
+                                <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                    <Path d="m17 8-5-5-5 5" />
+                                    <Path d="M12 3v12" />
+                                </Svg>
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={styles.duration}>📅 {numDays} days {numDays - 1} nights • <Text style={{ color: '#0F172A' }}>Choose dates {'>'}</Text></Text>
+                    </View>
+                )}
+
+                {/* Tabs */}
+                {mode === 'overview' ? (
+                    /* Full-width tabs for overview mode */
+                    <View style={styles.tabsFullWidth}>
+                        <TouchableOpacity
+                            style={[styles.tabFull, styles.tabActive]}
+                            onPress={() => setMode('overview')}
+                        >
+                            <Text style={[styles.tabText, styles.tabTextActive]}>Overview</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.tabFull}
+                            onPress={() => { setMode('itinerary'); setSelectedDay(1); }}
+                        >
+                            <Text style={styles.tabText}>Itinerary</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    /* Scrollable compact tabs for itinerary mode */
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.tabsScrollView}
+                        contentContainerStyle={styles.tabsContainer}
+                    >
+                        <TouchableOpacity
+                            style={styles.tab}
+                            onPress={() => setMode('overview')}
+                        >
+                            <Text style={styles.tabText}>Overview</Text>
+                        </TouchableOpacity>
+                        {itineraryDays.map((d) => (
+                            <TouchableOpacity
+                                key={d.day}
+                                style={[styles.tab, selectedDay === d.day && styles.tabActive]}
+                                onPress={() => setSelectedDay(d.day)}
+                            >
+                                <Text style={[styles.tabText, selectedDay === d.day && styles.tabTextActive]}>
+                                    Day {d.day}
+                                </Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                )}
+            </View>
+
+            {/* Scrollable Content */}
+            <BottomSheetScrollView
+                style={styles.scrollContent}
+                contentContainerStyle={{ paddingBottom: 40 }}
+            >
+                {mode === 'overview' ? renderOverviewItems() : renderItineraryItems()}
+            </BottomSheetScrollView>
+        </BottomSheet>
+    );
+});
+
+const styles = StyleSheet.create({
+    sheetBackground: {
+        backgroundColor: '#FFFFFF',
+        borderTopLeftRadius: 36,
+        borderTopRightRadius: 36,
+    },
+    handleIndicator: {
+        backgroundColor: '#CBD5E1',
+        width: 40,
+        height: 5,
+        borderRadius: 3,
+    },
+    container: {
+        flex: 1,
+    },
+    content: {
+        flex: 1,
+    },
+    header: {
+        paddingHorizontal: 24,
+        paddingTop: 8,
+    },
+    titleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 4,
+    },
+    tripTitle: {
+        fontSize: 26,
+        fontWeight: '800',
+        color: '#0F172A',
+        letterSpacing: -0.5,
+        flex: 1,
+    },
+    shareIconButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: '#F1F5F9',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    shareButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#0F172A',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 20,
+    },
+    shareButtonText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#FFFFFF',
+    },
+    duration: {
+        fontSize: 15,
+        fontWeight: '500',
+        color: '#94A3B8',
+        marginBottom: 16,
+        marginTop: 4,
+    },
+
+    // Tab styles - Full width for overview mode
+    tabsFullWidth: {
+        flexDirection: 'row',
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9',
+    },
+    tabFull: {
+        flex: 1,
+        alignItems: 'center',
+        paddingBottom: 12,
+    },
+
+    // Tab styles - Scrollable for itinerary mode
+    tabsScrollView: {
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9',
+        flexGrow: 0,
+    },
+    tabsContainer: {
+        flexDirection: 'row',
+        paddingRight: 24,
+        flexGrow: 0,
+    },
+    tab: {
+        paddingBottom: 12,
+        marginRight: 24,
+    },
+    tabActive: {
+        borderBottomWidth: 3,
+        borderBottomColor: '#0F172A',
+    },
+    tabText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#94A3B8',
+    },
+    tabTextActive: {
+        color: '#0F172A',
+        fontWeight: '700',
+    },
+
+    // Scroll content
+    scrollContent: {
+        flex: 1,
+        paddingHorizontal: 20,
+    },
+
+    // Overview styles
+    overviewDayCard: {
+        flexDirection: 'row',
+        backgroundColor: '#F8FAFC',
+        borderRadius: 20,
+        marginBottom: 14,
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
+        overflow: 'hidden',
+        marginTop: 4,
+    },
+    overviewDayImage: {
+        width: 130,
+        height: 160,
+        backgroundColor: '#E2E8F0',
+    },
+    overviewDayInfo: {
+        flex: 1,
+        padding: 16,
+        justifyContent: 'center',
+    },
+    overviewDayCardTitle: {
+        fontSize: 22,
+        fontWeight: '800',
+        color: '#0F172A',
+        marginBottom: 8,
+    },
+    overviewDayCardSpots: {
+        fontSize: 13,
+        fontWeight: '500',
+        color: '#64748B',
+        lineHeight: 20,
+    },
+
+    // Day itinerary styles
+    optimizeRow: {
+        alignItems: 'flex-end',
+        marginTop: 16,
+        marginBottom: 20,
+    },
+    optimizeButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#F1F5F9',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 22,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+    },
+    optimizeText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#0F172A',
+    },
+
+    // Spot card styles
+    spotCard: {
+        flexDirection: 'row',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 14,
+        padding: 12,
+        borderWidth: 1,
+        borderColor: '#E8EDF2',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 6,
+        elevation: 2,
+    },
+    leftColumn: {
+        alignItems: 'center',
+    },
+    imageWrapper: {
+        position: 'relative',
+    },
+    spotNumberBadge: {
+        position: 'absolute',
+        top: -4,
+        left: -4,
+        backgroundColor: '#FFFFFF',
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1.5,
+        borderColor: '#CBD5E1',
+        zIndex: 2,
+    },
+    spotNumberText: {
+        fontSize: 11,
+        fontWeight: '800',
+        color: '#475569',
+    },
+    dotsColumn: {
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 8,
+    },
+    spotImage: {
+        width: 64,
+        height: 64,
+        borderRadius: 12,
+        backgroundColor: '#F1F5F9',
+    },
+    spotInfo: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    spotName: {
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#0F172A',
+        marginBottom: 4,
+    },
+    spotMeta: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    spotRating: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#475569',
+    },
+    categoryBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'flex-start',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 10,
+    },
+    categoryText: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
+
+    // Travel info inside card (right column)
+    cardTravelRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginTop: 10,
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#F1F5F9',
+    },
+    travelModeLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#475569',
+        marginBottom: 1,
+    },
+    travelText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#64748B',
+    },
+    directionsButton: {
+        backgroundColor: '#1E293B',
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 10,
+    },
+    directionsText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#FFFFFF',
+    },
+
+    // Dotted connector between cards (aligned with image center)
+    dottedConnectorContainer: {
+        alignItems: 'center',
+        paddingLeft: 12,   // matches card padding
+        width: 12 + 64,    // card padding + image width (centers dots under image)
+        paddingVertical: 2,
+        gap: 4,
+    },
+    dot: {
+        width: 4,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: '#CBD5E1',
+    },
+});
+
+export default TripOverviewSheet;

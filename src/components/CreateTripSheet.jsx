@@ -1,5 +1,5 @@
 import React, { forwardRef, useMemo, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, Image, ScrollView } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -13,8 +13,8 @@ import { Calendar } from 'react-native-calendars';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FULL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.92;
 
-const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
-    const [step, setStep] = useState('home'); // 'home', 'searching', 'preferences', 'howManyDays'
+const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated }, ref) => {
+    const [step, setStep] = useState('home'); // 'home', 'searching', 'preferences', 'howManyDays', 'discoverSpots'
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedLocation, setSelectedLocation] = useState(null);
     const [numDays, setNumDays] = useState(4);
@@ -24,6 +24,8 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
     const [endDate, setEndDate] = useState(null);
     const [daysSelected, setDaysSelected] = useState(false);
     const [selectedPrefs, setSelectedPrefs] = useState([]);
+    const [spotCategory, setSpotCategory] = useState('All');
+    const [selectedSpots, setSelectedSpots] = useState([]);
     const inputRef = useRef(null);
 
     const snapPoints = useMemo(() => ['92%'], []);
@@ -223,7 +225,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                 {/* Continue Button */}
                 <TouchableOpacity
                     style={[styles.blackContinueButton, { marginTop: 24 }]}
-                    onPress={() => ref.current?.close()}
+                    onPress={() => setStep('discoverSpots')}
                 >
                     <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <Path d="M5 12h14M12 5l7 7-7 7" />
@@ -372,6 +374,99 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
         </Animated.View>
     );
 
+    const spotCategories = ['All', 'Attractions', 'Cafe', 'Museum', 'Nature', 'Shopping'];
+
+    const spots = [
+        { id: 1, name: 'Varanasi railway station', desc: '', image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no' },
+        { id: 2, name: 'Sarnath Buddhist Temple Va...', desc: 'Expansive Buddhist temple complex with a museum, multiple shrines & an archaeolo...', image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no' },
+        { id: 3, name: 'Kerala Cafe Since 1962', desc: 'Cafe', image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no' },
+        { id: 4, name: 'Banaras Railway Station', desc: '', image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no' },
+        { id: 5, name: 'Sarnath Museum', desc: 'Museum in Sarnath. See the original Lion Capital of Ashoka Pillar.', image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no' },
+        { id: 6, name: 'Taste king', desc: 'Restaurant', image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no' },
+        { id: 7, name: 'Shree Shivay Thali Dining Var...', desc: 'Vegetarian courses are served in bronze bowls during the set thali meals at this wa...', image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no' },
+    ];
+
+    const toggleSpot = (id) => {
+        setSelectedSpots(prev =>
+            prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+        );
+    };
+
+    const renderDiscoverSpots = () => (
+        <Animated.View entering={FadeIn} style={[styles.content, { paddingHorizontal: 0, paddingTop: 0 }]}>
+            <View style={styles.discoverHeader}>
+                <Text style={styles.discoverTitle}>Discover spots</Text>
+
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll} contentContainerStyle={styles.categoryContainer}>
+                    {spotCategories.map((cat) => (
+                        <TouchableOpacity
+                            key={cat}
+                            style={[styles.categoryChip, spotCategory === cat && styles.categoryChipActive]}
+                            onPress={() => setSpotCategory(cat)}
+                        >
+                            <Text style={[styles.categoryText, spotCategory === cat && styles.categoryTextActive]}>{cat}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            </View>
+
+            <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
+                {/* City Section */}
+                <View style={styles.cityHeader}>
+                    <View style={styles.cityHeaderLeft}>
+                        <View style={styles.cityCheck}>
+                            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M20 6L9 17l-5-5" />
+                            </Svg>
+                        </View>
+                        <Text style={styles.cityName}>{selectedLocation?.name || 'Varanasi'}</Text>
+                    </View>
+                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <Path d="M6 9l6 6 6-6" />
+                    </Svg>
+                </View>
+
+                {/* Spots List */}
+                {spots.map((spot, idx) => {
+                    const isChecked = selectedSpots.includes(spot.id);
+                    return (
+                        <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)}>
+                            <Text style={styles.spotNumber}>{idx + 1}.</Text>
+                            <Image source={{ uri: spot.image }} style={styles.spotImage} />
+                            <View style={styles.spotInfo}>
+                                <Text style={styles.spotName} numberOfLines={1}>✨ {spot.name}</Text>
+                                {spot.desc ? <Text style={styles.spotDesc} numberOfLines={2}>{spot.desc}</Text> : null}
+                            </View>
+                            <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
+                                {isChecked && (
+                                    <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M20 6L9 17l-5-5" />
+                                    </Svg>
+                                )}
+                            </View>
+                        </TouchableOpacity>
+                    );
+                })}
+            </ScrollView>
+
+            {/* Bottom Add Button */}
+            <View style={styles.addSpotsBar}>
+                <TouchableOpacity
+                    style={styles.addSpotsButton}
+                    onPress={() => {
+                        onTripCreated?.({
+                            numDays,
+                            locationName: selectedLocation?.name || 'Varanasi'
+                        });
+                        ref.current?.close();
+                    }}
+                >
+                    <Text style={styles.addSpotsText}>Add {selectedSpots.length > 0 ? selectedSpots.length : spots.length} spots</Text>
+                </TouchableOpacity>
+            </View>
+        </Animated.View>
+    );
+
     return (
         <BottomSheet
             ref={ref}
@@ -399,6 +494,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                 {step === 'searching' && renderSearching()}
                 {step === 'preferences' && renderPreferences()}
                 {step === 'howManyDays' && renderHowManyDays()}
+                {step === 'discoverSpots' && renderDiscoverSpots()}
             </BottomSheetView>
         </BottomSheet>
     );
@@ -776,6 +872,145 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     blackConfirmText: {
+        fontSize: 17,
+        fontWeight: '700',
+        color: '#FFFFFF',
+    },
+    // Discover Spots Styles
+    discoverHeader: {
+        paddingHorizontal: 24,
+        paddingTop: 8,
+    },
+    discoverTitle: {
+        fontSize: 28,
+        fontWeight: '800',
+        color: '#0F172A',
+        letterSpacing: -0.5,
+        marginBottom: 16,
+    },
+    categoryScroll: {
+        marginBottom: 8,
+    },
+    categoryContainer: {
+        gap: 10,
+        paddingRight: 24,
+    },
+    categoryChip: {
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 20,
+        borderWidth: 1.5,
+        borderColor: '#E2E8F0',
+        backgroundColor: '#FFFFFF',
+    },
+    categoryChipActive: {
+        backgroundColor: '#0F172A',
+        borderColor: '#0F172A',
+    },
+    categoryText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#64748B',
+    },
+    categoryTextActive: {
+        color: '#FFFFFF',
+    },
+    spotsList: {
+        flex: 1,
+        paddingHorizontal: 24,
+    },
+    cityHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 20,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9',
+    },
+    cityHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    cityCheck: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: '#0F172A',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    cityName: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#0F172A',
+    },
+    spotRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F8FAFC',
+        gap: 12,
+    },
+    spotNumber: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#94A3B8',
+        width: 22,
+    },
+    spotImage: {
+        width: 56,
+        height: 56,
+        borderRadius: 12,
+        backgroundColor: '#F1F5F9',
+    },
+    spotInfo: {
+        flex: 1,
+    },
+    spotName: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#0F172A',
+        marginBottom: 2,
+    },
+    spotDesc: {
+        fontSize: 13,
+        fontWeight: '500',
+        color: '#94A3B8',
+        lineHeight: 18,
+    },
+    spotCheck: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        borderWidth: 2,
+        borderColor: '#E2E8F0',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    spotCheckActive: {
+        backgroundColor: '#0F172A',
+        borderColor: '#0F172A',
+    },
+    addSpotsBar: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        paddingHorizontal: 24,
+        paddingBottom: Platform.OS === 'ios' ? 34 : 20,
+        paddingTop: 12,
+        backgroundColor: '#FFFFFF',
+    },
+    addSpotsButton: {
+        backgroundColor: '#0F172A',
+        height: 56,
+        borderRadius: 28,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    addSpotsText: {
         fontSize: 17,
         fontWeight: '700',
         color: '#FFFFFF',
