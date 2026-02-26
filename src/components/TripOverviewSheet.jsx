@@ -235,7 +235,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
                         <View style={styles.dotsColumn}>
                             <View style={styles.dot} />
                             <View style={styles.dot} />
-                            <View style={styles.dot} />
+                            <View style={[styles.dot, { marginBottom: -5 }]} />
                         </View>
                     )}
                 </View>
@@ -254,10 +254,8 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
                     {travelInfo && (
                         <View style={styles.cardTravelRow}>
                             <View>
-                                {isTransit && (
-                                    <Text style={styles.travelModeLabel}>🚌 Transit</Text>
-                                )}
                                 <Text style={styles.travelText}>
+                                    {travelInfo.mode === 'walking' ? '🚶' : travelInfo.mode === 'transit' ? '🚌' : '🚗'}{' '}
                                     {travelInfo.time} • {travelInfo.distance}
                                 </Text>
                             </View>
@@ -275,14 +273,16 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
         <View key={`connector-${index}`} style={styles.dottedConnectorContainer}>
             <View style={styles.dot} />
             <View style={styles.dot} />
+            <View style={styles.dot} />
         </View>
     );
 
     const renderDayItinerary = (dayData) => {
         return (
             <View key={`day-${dayData.day}`}>
-                {/* Optimize button */}
+                {/* Day title + Optimize button */}
                 <View style={styles.optimizeRow}>
+                    <Text style={styles.dayTitle}>Day {dayData.day}</Text>
                     <TouchableOpacity style={styles.optimizeButton}>
                         <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <Path d="M2 20h.01M7 20v-4M12 20V10M17 20V4" />
@@ -330,12 +330,17 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
         <>
             {itineraryDays.map((dayData) => (
                 <View key={dayData.day} style={styles.overviewDayCard}>
-                    <Image
-                        source={{ uri: getDayImage(dayData) }}
-                        style={styles.overviewDayImage}
-                    />
+                    <View style={styles.overviewImageWrapper}>
+                        <Image
+                            source={{ uri: getDayImage(dayData) }}
+                            style={styles.overviewDayImage}
+                        />
+                        <View style={styles.overviewDayBadge}>
+                            <Text style={styles.overviewDayBadgeText}>Day {dayData.day}</Text>
+                        </View>
+                    </View>
                     <View style={styles.overviewDayInfo}>
-                        <Text style={styles.overviewDayCardTitle}>Day {dayData.day}</Text>
+                        {/* <Text style={styles.overviewDayCardTitle}>Day {dayData.day}</Text> */}
                         <Text style={styles.overviewDayCardSpots}>
                             {formatSpots(dayData.spots)}
                         </Text>
@@ -561,10 +566,27 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         marginTop: 4,
     },
+    overviewImageWrapper: {
+        position: 'relative',
+    },
     overviewDayImage: {
         width: 130,
         height: 160,
         backgroundColor: '#E2E8F0',
+    },
+    overviewDayBadge: {
+        position: 'absolute',
+        top: 8,
+        left: 8,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 8,
+    },
+    overviewDayBadgeText: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#FFFFFF',
     },
     overviewDayInfo: {
         flex: 1,
@@ -586,24 +608,31 @@ const styles = StyleSheet.create({
 
     // Day itinerary styles
     optimizeRow: {
-        alignItems: 'flex-end',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         marginTop: 16,
-        marginBottom: 20,
+        marginBottom: 16,
+    },
+    dayTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#0F172A',
     },
     optimizeButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
+        gap: 4,
         backgroundColor: '#F1F5F9',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 22,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
         borderWidth: 1,
         borderColor: '#E2E8F0',
     },
     optimizeText: {
-        fontSize: 14,
-        fontWeight: '700',
+        fontSize: 12,
+        fontWeight: '600',
         color: '#0F172A',
     },
 
@@ -729,11 +758,11 @@ const styles = StyleSheet.create({
         paddingLeft: 12,   // matches card padding
         width: 12 + 64,    // card padding + image width (centers dots under image)
         paddingVertical: 2,
-        gap: 4,
+        gap: 2,
     },
     dot: {
-        width: 4,
-        height: 4,
+        width: 2,
+        height: 3,
         borderRadius: 2,
         backgroundColor: '#CBD5E1',
     },
