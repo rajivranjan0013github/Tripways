@@ -6,7 +6,6 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import Animated, {
     FadeIn,
     FadeOut,
-    Layout
 } from 'react-native-reanimated';
 import WheelPicker from '@quidone/react-native-wheel-picker';
 import { Calendar } from 'react-native-calendars';
@@ -15,7 +14,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FULL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.92;
 
 const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
-    const [step, setStep] = useState('home'); // 'home', 'searching', 'preferences', 'duration', 'howManyDays', 'durationConfirmed'
+    const [step, setStep] = useState('home'); // 'home', 'searching', 'preferences', 'howManyDays'
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedLocation, setSelectedLocation] = useState(null);
     const [numDays, setNumDays] = useState(4);
@@ -23,6 +22,8 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
     const [selectedDates, setSelectedDates] = useState({});
     const [startDate, setStartDate] = useState(null);
     const [endDate, setEndDate] = useState(null);
+    const [daysSelected, setDaysSelected] = useState(false);
+    const [selectedPrefs, setSelectedPrefs] = useState([]);
     const inputRef = useRef(null);
 
     const snapPoints = useMemo(() => ['92%'], []);
@@ -163,88 +164,71 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                 </View>
             )}
             <View style={styles.footer}>
-                <View style={styles.thumbIcon}>
-                    <Svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
-                    </Svg>
-                </View>
-                <Text style={styles.preferenceTitle}>Trip Preferences</Text>
-                <Text style={styles.preferenceSubtitle}>What should your trip be about?</Text>
-
-                <View style={styles.tagGrid}>
-                    {[
-                        { name: 'Popular', icon: '📌' },
-                        { name: 'Museum', icon: '🎨' },
-                        { name: 'Nature', icon: '⛰️' },
-                        { name: 'Foodie', icon: '🍕' },
-                        { name: 'History', icon: '🏛️' },
-                        { name: 'Shopping', icon: '🛍️' },
-                    ].map((tag, idx) => (
-                        <TouchableOpacity key={idx} style={styles.tagChip}>
-                            <Text style={styles.tagIcon}>{tag.icon}</Text>
-                            <Text style={styles.tagText}>{tag.name}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </View>
-
-                <TouchableOpacity style={[styles.durationSection, { marginBottom: 64 }]}>
-                    <View style={styles.calendarIconContainer}>
-                        <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM16 2v4M8 2v4M3 10h18" />
+                {/* Trip Preferences Section */}
+                <View style={styles.prefSection}>
+                    <View style={styles.prefSectionHeader}>
+                        <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <Path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
                         </Svg>
+                        <Text style={styles.prefSectionTitle}>Trip Preferences</Text>
                     </View>
-                    <Text style={styles.durationText}>Trip Duration</Text>
+                    <View style={styles.tagGrid}>
+                        {[
+                            { name: 'Popular', icon: '📌' },
+                            { name: 'Museum', icon: '🎨' },
+                            { name: 'Nature', icon: '⛰️' },
+                            { name: 'Foodie', icon: '🍕' },
+                            { name: 'History', icon: '🏛️' },
+                            { name: 'Shopping', icon: '🛍️' },
+                        ].map((tag, idx) => {
+                            const isSelected = selectedPrefs.includes(tag.name);
+                            return (
+                                <TouchableOpacity
+                                    key={idx}
+                                    style={[styles.tagChip, isSelected && styles.tagChipSelected]}
+                                    onPress={() => {
+                                        setSelectedPrefs(prev =>
+                                            prev.includes(tag.name)
+                                                ? prev.filter(p => p !== tag.name)
+                                                : [...prev, tag.name]
+                                        );
+                                    }}
+                                >
+                                    <Text style={styles.tagIcon}>{tag.icon}</Text>
+                                    <Text style={[styles.tagText, isSelected && styles.tagTextSelected]}>{tag.name}</Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </View>
+                </View>
+
+                {/* Trip Duration Section */}
+                <TouchableOpacity style={styles.durationRow} onPress={() => setStep('howManyDays')}>
+                    <View style={styles.durationRowLeft}>
+                        <View style={styles.durationRowIcon}>
+                            <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM16 2v4M8 2v4M3 10h18" />
+                            </Svg>
+                        </View>
+                        <View>
+                            <Text style={styles.durationRowTitle}>Trip Duration</Text>
+                            <Text style={styles.durationRowValue}>{daysSelected ? `${numDays} days` : 'Choose trip duration'}</Text>
+                        </View>
+                    </View>
+                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <Path d="M9 18l6-6-6-6" />
+                    </Svg>
                 </TouchableOpacity>
 
+                {/* Continue Button */}
                 <TouchableOpacity
-                    style={styles.blackContinueButton}
-                    onPress={() => setStep('duration')}
+                    style={[styles.blackContinueButton, { marginTop: 24 }]}
+                    onPress={() => ref.current?.close()}
                 >
-                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M20 6L9 17l-5-5" />
+                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <Path d="M5 12h14M12 5l7 7-7 7" />
                     </Svg>
                     <Text style={styles.blackContinueText}>Continue</Text>
-                </TouchableOpacity>
-            </View>
-        </Animated.View>
-    );
-
-    const renderDuration = () => (
-        <Animated.View entering={FadeIn} style={[styles.content, { justifyContent: 'flex-end' }]}>
-            <LinearGradient
-                colors={['#CCFBF1', '#FFFFFF']}
-                style={[StyleSheet.absoluteFill, { height: '50%' }]}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-            />
-
-            <View style={styles.footer}>
-                <View style={[styles.breadcrumb, { marginBottom: 32 }]}>
-                    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
-                    </Svg>
-                    <Text style={styles.breadcrumbText}>Trip Preferences</Text>
-                </View>
-
-                <View style={styles.durationContent}>
-                    <View style={styles.activeIconContainer}>
-                        <Svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM16 2v4M8 2v4M3 10h18" />
-                            <Path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" />
-                        </Svg>
-                    </View>
-                    <Text style={styles.durationTitleText}>Trip Duration</Text>
-                    <Text style={styles.durationSubtitleText}>Choose your dates or trip length</Text>
-                </View>
-
-                <TouchableOpacity
-                    style={[styles.whiteSelectButton, { marginTop: 40 }]}
-                    onPress={() => setStep('howManyDays')}
-                >
-                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM16 2v4M8 2v4M3 10h18" />
-                    </Svg>
-                    <Text style={styles.whiteSelectText}>Select Days</Text>
                 </TouchableOpacity>
             </View>
         </Animated.View>
@@ -261,7 +245,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
 
             <View style={styles.howManyHeader}>
                 <View style={styles.howManyTopRow}>
-                    <TouchableOpacity onPress={() => setStep('duration')} style={styles.backButtonLarge}>
+                    <TouchableOpacity onPress={() => setStep('preferences')} style={styles.backButtonLarge}>
                         <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <Path d="M15 18l-6-6 6-6" />
                         </Svg>
@@ -381,65 +365,8 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
             )}
 
             <View style={styles.footer}>
-                <TouchableOpacity style={styles.blackConfirmButton} onPress={() => setStep('durationConfirmed')}>
+                <TouchableOpacity style={styles.blackConfirmButton} onPress={() => { setDaysSelected(true); setStep('preferences'); }}>
                     <Text style={styles.blackConfirmText}>Confirm</Text>
-                </TouchableOpacity>
-            </View>
-        </Animated.View>
-    );
-
-    const renderDurationConfirmed = () => (
-        <Animated.View entering={FadeIn} style={[styles.content, { justifyContent: 'flex-end' }]}>
-            <LinearGradient
-                colors={['#CCFBF1', '#FFFFFF']}
-                style={[StyleSheet.absoluteFill, { height: '60%' }]}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-            />
-
-            <View style={styles.footer}>
-                {selectedLocation && (
-                    <View style={[styles.breadcrumb, { marginBottom: 16 }]}>
-                        <Text style={{ fontSize: 18 }}>{selectedLocation.flag}</Text>
-                        <Text style={styles.breadcrumbText}>{selectedLocation.name}</Text>
-                    </View>
-                )}
-
-                <View style={[styles.breadcrumb, { marginBottom: 32 }]}>
-                    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
-                    </Svg>
-                    <Text style={styles.breadcrumbText}>Trip Preferences</Text>
-                </View>
-
-                <View style={styles.durationContent}>
-                    <View style={styles.activeIconContainer}>
-                        <Svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM16 2v4M8 2v4M3 10h18" />
-                            <Path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" />
-                        </Svg>
-                    </View>
-                    <Text style={styles.durationTitleText}>Trip Duration</Text>
-                    <View style={styles.daysRow}>
-                        <Text style={styles.daysSelectedText}>{numDays} days</Text>
-                        <TouchableOpacity onPress={() => setStep('howManyDays')}>
-                            <View style={styles.editIconCircle}>
-                                <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2.5">
-                                    <Path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-                                </Svg>
-                            </View>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                <TouchableOpacity
-                    style={[styles.blackContinueButton, { marginTop: 40 }]}
-                    onPress={() => ref.current?.close()}
-                >
-                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M5 12h14M12 5l7 7-7 7" />
-                    </Svg>
-                    <Text style={styles.blackContinueText}>Continue</Text>
                 </TouchableOpacity>
             </View>
         </Animated.View>
@@ -460,6 +387,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                 if (index === -1) {
                     setStep('home');
                     setSearchQuery('');
+                    setDaysSelected(false);
                 }
             }}
             animationConfigs={animationConfigs}
@@ -470,9 +398,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                 {step === 'home' && renderHome()}
                 {step === 'searching' && renderSearching()}
                 {step === 'preferences' && renderPreferences()}
-                {step === 'duration' && renderDuration()}
                 {step === 'howManyDays' && renderHowManyDays()}
-                {step === 'durationConfirmed' && renderDurationConfirmed()}
             </BottomSheetView>
         </BottomSheet>
     );
@@ -670,26 +596,8 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#0F172A',
     },
-    // Preferences Styles
-    preferenceHeader: {
-        paddingHorizontal: 32,
-    },
-    thumbIcon: {
-        marginBottom: 16,
-    },
-    preferenceTitle: {
-        fontSize: 30,
-        fontWeight: '800',
-        color: '#0F172A',
-        marginBottom: 8,
-        letterSpacing: -1,
-    },
-    preferenceSubtitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#94A3B8',
-        marginBottom: 24,
-    },
+
+
     tagGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -718,18 +626,15 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#0F172A',
     },
-    durationSection: {
-        flexDirection: 'row',
-        alignItems: 'center',
+    tagChipSelected: {
+        borderWidth: 2,
+        borderColor: '#0F172A',
+        backgroundColor: '#FFFFFF',
     },
-    calendarIconContainer: {
-        marginRight: 16,
-    },
-    durationText: {
-        fontSize: 22,
+    tagTextSelected: {
         fontWeight: '700',
-        color: '#94A3B8',
     },
+
     blackContinueButton: {
         backgroundColor: '#000000',
         height: 56,
@@ -744,68 +649,52 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#FFFFFF',
     },
-    // Duration Screen Styles
-    breadcrumb: {
+    prefSection: {
+        marginBottom: 24,
+    },
+    prefSectionHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 10,
+        marginBottom: 16,
     },
-    breadcrumbText: {
+    prefSectionTitle: {
         fontSize: 22,
-        fontWeight: '700',
-        color: '#94A3B8',
-    },
-    activeIconContainer: {
-        backgroundColor: '#2DD4BF',
-        width: 48,
-        height: 48,
-        borderRadius: 8,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 20,
-    },
-    durationTitleText: {
-        fontSize: 42,
         fontWeight: '800',
         color: '#0F172A',
-        marginBottom: 8,
-        letterSpacing: -1,
     },
-    durationSubtitleText: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#94A3B8',
-    },
-    daysRow: {
+    durationRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginTop: 4,
+        justifyContent: 'space-between',
+        backgroundColor: '#F1F5F9',
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 16,
     },
-    daysSelectedText: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#64748B',
-    },
-    whiteSelectButton: {
-        backgroundColor: '#FFFFFF',
-        height: 64,
-        borderRadius: 32,
+    durationRowLeft: {
         flexDirection: 'row',
+        alignItems: 'center',
+        gap: 14,
+    },
+    durationRowIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: '#E2E8F0',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 12,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 12,
-        elevation: 5,
-        marginBottom: 20,
     },
-    whiteSelectText: {
-        fontSize: 18,
+    durationRowTitle: {
+        fontSize: 15,
         fontWeight: '700',
         color: '#0F172A',
+    },
+    durationRowValue: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#64748B',
+        marginTop: 2,
     },
     // How Many Days Styles
     howManyHeader: {
