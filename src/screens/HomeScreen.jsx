@@ -6,7 +6,7 @@
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Image, Dimensions, Platform, ScrollView, TextInput } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing } from 'react-native-reanimated';
-import MapView, { PROVIDER_GOOGLE, Marker } from 'react-native-maps';
+import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
@@ -17,6 +17,38 @@ import ProfileOverlay from '../components/ProfileOverlay';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
+// Day colors matching the frontendweb reference
+const DAY_COLORS = ['#6366F1', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
+
+/**
+ * Decode an encoded polyline string into an array of {latitude, longitude} coordinates.
+ * Uses the standard Google Polyline Encoding Algorithm.
+ */
+function decodePolyline(encoded) {
+    const points = [];
+    let index = 0, lat = 0, lng = 0;
+    while (index < encoded.length) {
+        let b, shift = 0, result = 0;
+        do {
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+        } while (b >= 0x20);
+        lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+
+        shift = 0; result = 0;
+        do {
+            b = encoded.charCodeAt(index++) - 63;
+            result |= (b & 0x1f) << shift;
+            shift += 5;
+        } while (b >= 0x20);
+        lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+
+        points.push({ latitude: lat / 1e5, longitude: lng / 1e5 });
+    }
+    return points;
+}
+
 const HomeScreen = () => {
     const insets = useSafeAreaInsets();
     const tabBarHeight = 56 + insets.bottom;
@@ -24,6 +56,7 @@ const HomeScreen = () => {
     const addSpotsSheetRef = useRef(null); // Ref for Add Spots BottomSheet
     const createTripSheetRef = useRef(null); // Ref for Create Trip BottomSheet
     const tripOverviewSheetRef = useRef(null);
+    const mapRef = useRef(null);
     const [tripData, setTripData] = useState(null);
     const [activeTab, setActiveTab] = React.useState('home');
     const [showCreateOptions, setShowCreateOptions] = React.useState(false);
@@ -88,6 +121,27 @@ const HomeScreen = () => {
             }
         }
     }, [activeTab]);
+
+    // Fit the map to show all itinerary markers when tripData changes
+    useEffect(() => {
+        if (!tripData?.itinerary || !mapRef.current) return;
+        const coords = [];
+        tripData.itinerary.forEach(day => {
+            (day.places || []).forEach(place => {
+                if (place.coordinates?.lat && place.coordinates?.lng) {
+                    coords.push({ latitude: place.coordinates.lat, longitude: place.coordinates.lng });
+                }
+            });
+        });
+        if (coords.length > 0) {
+            setTimeout(() => {
+                mapRef.current?.fitToCoordinates(coords, {
+                    edgePadding: { top: 100, right: 60, bottom: 400, left: 60 },
+                    animated: true,
+                });
+            }, 600);
+        }
+    }, [tripData]);
 
     useEffect(() => {
         if (showCreateOptions) {
@@ -190,6 +244,7 @@ const HomeScreen = () => {
 
             {/* Map Background */}
             <MapView
+                ref={mapRef}
                 provider={PROVIDER_GOOGLE}
                 style={styles.map}
                 initialRegion={{
@@ -199,11 +254,86 @@ const HomeScreen = () => {
                     longitudeDelta: 0.05,
                 }}
             >
-                <Marker
-                    coordinate={{ latitude: 28.6139, longitude: 77.2090 }}
-                    title={"TripWays"}
-                    description={"Start your journey here"}
-                />
+                {/* Default marker when no trip data */}
+                {!tripData && (
+                    <Marker
+                        coordinate={{ latitude: 28.6139, longitude: 77.2090 }}
+                        title={"TripWays"}
+                        description={"Start your journey here"}
+                    />
+                )}
+
+                {/* Itinerary place markers — styled circles with numbers like frontendweb */}
+                {tripData?.itinerary?.flatMap((day, dayIndex) => {
+                    const dayColor = DAY_COLORS[dayIndex % DAY_COLORS.length];
+                    return (day.places || [])
+                        .filter(place => place.coordinates?.lat && place.coordinates?.lng)
+                        .map((place, placeIndex) => (
+                            <Marker
+                                key={`marker-${day.day}-${placeIndex}`}
+                                coordinate={{
+                                    latitude: place.coordinates.lat,
+                                    longitude: place.coordinates.lng,
+                                }}
+                                title={place.name}
+                                description={`Day ${day.day} • ${place.category || 'sightseeing'}`}
+                                anchor={{ x: 0.5, y: 0.5 }}
+                            >
+                                <View style={{
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: 14,
+                                    backgroundColor: dayColor,
+                                    borderWidth: 2,
+                                    borderColor: '#FFFFFF',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.3,
+                                    shadowRadius: 3,
+                                    elevation: 4,
+                                }}>
+                                    <Text style={{
+                                        color: '#FFFFFF',
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                    }}>{placeIndex + 1}</Text>
+                                </View>
+                            </Marker>
+                        ));
+                })}
+
+                {/* Route polylines — decoded from backend route data */}
+                {tripData?.itinerary?.map((day, dayIndex) => {
+                    if (!day.route?.polyline) return null;
+                    return (
+                        <Polyline
+                            key={`route-${day.day}`}
+                            coordinates={decodePolyline(day.route.polyline)}
+                            strokeColor={DAY_COLORS[dayIndex % DAY_COLORS.length]}
+                            strokeWidth={4}
+                        />
+                    );
+                })}
+
+                {/* Fallback straight-line polylines when no route polyline exists */}
+                {tripData?.itinerary?.map((day, dayIndex) => {
+                    if (day.route?.polyline) return null;
+                    const coords = (day.places || [])
+                        .filter(p => p.coordinates?.lat && p.coordinates?.lng)
+                        .map(p => ({ latitude: p.coordinates.lat, longitude: p.coordinates.lng }));
+                    if (coords.length <= 1) return null;
+                    return (
+                        <Polyline
+                            key={`fallback-${day.day}`}
+                            coordinates={coords}
+                            strokeColor={DAY_COLORS[dayIndex % DAY_COLORS.length]}
+                            strokeWidth={3}
+                            lineDashPattern={[6, 4]}
+                        />
+                    );
+                })}
             </MapView>
 
             {/* Search Bar - Google Maps style */}

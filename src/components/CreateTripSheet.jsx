@@ -1,5 +1,5 @@
 import React, { forwardRef, useMemo, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, Image, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, Image, ScrollView, ActivityIndicator } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -9,6 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import WheelPicker from '@quidone/react-native-wheel-picker';
 import { Calendar } from 'react-native-calendars';
+import Config from 'react-native-config';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FULL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.92;
@@ -26,6 +27,9 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
     const [selectedPrefs, setSelectedPrefs] = useState([]);
     const [spotCategory, setSpotCategory] = useState('All');
     const [selectedSpots, setSelectedSpots] = useState([]);
+    const [discoveredPlaces, setDiscoveredPlaces] = useState([]);
+    const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
+    const [isPlanning, setIsPlanning] = useState(false);
     const inputRef = useRef(null);
 
     const snapPoints = useMemo(() => ['92%'], []);
@@ -37,13 +41,46 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
         { name: 'Japan', flag: '🇯🇵', active: false },
     ];
 
-    const searchResults = [
-        { id: '1', name: 'Varanasi', country: 'India', flag: '🇮🇳' },
-        { id: '2', name: 'Puerto Varas', country: 'Chile', flag: '🇨🇱' },
-        { id: '3', name: 'Varaždin', country: 'Croatia', flag: '🇭🇷' },
-        { id: '4', name: 'Varadero', country: 'Cuba', flag: '🇨🇺' },
-        { id: '5', name: 'Varaždin County', country: 'Croatia', flag: '🇭🇷' },
-    ];
+    const [searchResults, setSearchResults] = useState([]);
+
+    // Fetch Google Places Autocomplete when searchQuery changes
+    React.useEffect(() => {
+        if (searchQuery.length < 2) {
+            setSearchResults([]);
+            return;
+        }
+
+        const fetchPlaces = async () => {
+            try {
+                const apiKey = Config.GOOGLE_MAPS_API_KEY;
+                if (!apiKey) {
+                    console.warn("Google Maps API Key missing in react-native-config");
+                    return;
+                }
+                const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(searchQuery)}&types=(regions)&key=${apiKey}`;
+
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data.status === 'OK') {
+                    const mappedResults = data.predictions.map(prediction => ({
+                        id: prediction.place_id,
+                        name: prediction.structured_formatting.main_text,
+                        country: prediction.structured_formatting.secondary_text,
+                        flag: '📍'
+                    }));
+                    setSearchResults(mappedResults);
+                } else {
+                    console.warn("Places API Error:", data.status, data.error_message);
+                }
+            } catch (error) {
+                console.error("Failed to fetch places", error);
+            }
+        };
+
+        const timeoutId = setTimeout(fetchPlaces, 300); // 300ms debounce
+        return () => clearTimeout(timeoutId);
+    }, [searchQuery]);
 
     const renderBackdrop = React.useCallback(
         (props) => (
@@ -225,7 +262,10 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                 {/* Continue Button */}
                 <TouchableOpacity
                     style={[styles.blackContinueButton, { marginTop: 24 }]}
-                    onPress={() => setStep('discoverSpots')}
+                    onPress={() => {
+                        setStep('discoverSpots');
+                        fetchDiscoverPlaces();
+                    }}
                 >
                     <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <Path d="M5 12h14M12 5l7 7-7 7" />
@@ -374,17 +414,135 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
         </Animated.View>
     );
 
-    const spotCategories = ['All', 'Attractions', 'Cafe', 'Museum', 'Nature', 'Shopping'];
+    // Preference name -> backend interest name mapping
+    const PREF_TO_INTEREST = {
+        'Popular': 'popular',
+        'Museum': 'museum',
+        'Nature': 'nature',
+        'Foodie': 'food',
+        'History': 'history',
+        'Shopping': 'shopping',
+    };
 
-    const spots = [
-        { id: 1, name: 'Varanasi railway station', desc: '', image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no' },
-        { id: 2, name: 'Sarnath Buddhist Temple Va...', desc: 'Expansive Buddhist temple complex with a museum, multiple shrines & an archaeolo...', image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no' },
-        { id: 3, name: 'Kerala Cafe Since 1962', desc: 'Cafe', image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no' },
-        { id: 4, name: 'Banaras Railway Station', desc: '', image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no' },
-        { id: 5, name: 'Sarnath Museum', desc: 'Museum in Sarnath. See the original Lion Capital of Ashoka Pillar.', image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no' },
-        { id: 6, name: 'Taste king', desc: 'Restaurant', image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no' },
-        { id: 7, name: 'Shree Shivay Thali Dining Var...', desc: 'Vegetarian courses are served in bronze bowls during the set thali meals at this wa...', image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no' },
-    ];
+    const fetchDiscoverPlaces = async () => {
+        if (!selectedLocation) return;
+        setIsLoadingPlaces(true);
+        setDiscoveredPlaces([]);
+        setSelectedSpots([]);
+        try {
+            const backendUrl = Config.BACKEND_URL || 'http://localhost:3000';
+            const interests = selectedPrefs.length > 0
+                ? selectedPrefs.map(p => PREF_TO_INTEREST[p] || p.toLowerCase())
+                : ['popular'];
+            const response = await fetch(`${backendUrl}/api/discover-places`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    place: selectedLocation.name,
+                    interests,
+                    days: numDays,
+                }),
+            });
+            const data = await response.json();
+            if (data.success && data.places) {
+                setDiscoveredPlaces(data.places);
+                // Auto-select all places
+                setSelectedSpots(data.places.map(p => p.id));
+            }
+        } catch (error) {
+            console.error('Failed to discover places:', error);
+        } finally {
+            setIsLoadingPlaces(false);
+        }
+    };
+
+    const handlePlanTrip = async () => {
+        setIsPlanning(true);
+        try {
+            const backendUrl = Config.BACKEND_URL || 'http://localhost:3000';
+            const interests = selectedPrefs.length > 0
+                ? selectedPrefs.map(p => PREF_TO_INTEREST[p] || p.toLowerCase())
+                : ['popular'];
+            // Get selected place objects
+            const selectedPlaceObjects = discoveredPlaces.filter(p => selectedSpots.includes(p.id));
+
+            const response = await fetch(`${backendUrl}/api/plan-stream`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    place: selectedLocation?.name || 'Unknown',
+                    days: numDays,
+                    interests,
+                    discoveredPlaces: selectedPlaceObjects,
+                }),
+            });
+
+            const reader = response.body?.getReader?.();
+            // React Native fetch doesn't support ReadableStream natively,
+            // so fall back to reading the full text response
+            const text = await response.text();
+
+            // Parse SSE events from the text
+            let itineraryData = null;
+            let geocodedData = null;
+            let routedData = null;
+
+            const events = text.split('\n\n').filter(Boolean);
+            for (const eventBlock of events) {
+                const lines = eventBlock.split('\n');
+                let eventType = '';
+                let eventData = '';
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) eventType = line.slice(7);
+                    if (line.startsWith('data: ')) eventData = line.slice(6);
+                }
+                if (!eventType || !eventData) continue;
+                try {
+                    const parsed = JSON.parse(eventData);
+                    if (eventType === 'itinerary') itineraryData = parsed;
+                    if (eventType === 'geocoded') geocodedData = parsed;
+                    if (eventType === 'routed') routedData = parsed;
+                } catch (e) {
+                    console.warn('Failed to parse SSE event:', e);
+                }
+            }
+
+            // Use the most complete data available
+            const finalItinerary = routedData?.itinerary || geocodedData?.itinerary || itineraryData?.itinerary;
+            const destination = itineraryData?.destination || selectedLocation?.name;
+            const totalDays = itineraryData?.totalDays || numDays;
+
+            onTripCreated?.({
+                numDays: totalDays,
+                locationName: destination,
+                itinerary: finalItinerary,
+                discoveredPlaces: selectedPlaceObjects,
+            });
+            ref.current?.close();
+        } catch (error) {
+            console.error('Failed to plan trip:', error);
+        } finally {
+            setIsPlanning(false);
+        }
+    };
+
+    // Build dynamic spot categories from discovered data
+    const spotCategories = useMemo(() => {
+        const cats = new Set(['All']);
+        discoveredPlaces.forEach(p => {
+            if (p.interest) cats.add(p.interest.charAt(0).toUpperCase() + p.interest.slice(1));
+        });
+        return Array.from(cats);
+    }, [discoveredPlaces]);
+
+    // Filter spots by selected category
+    const filteredSpots = useMemo(() => {
+        if (spotCategory === 'All') return discoveredPlaces;
+        return discoveredPlaces.filter(p => {
+            const cat = p.interest?.charAt(0).toUpperCase() + p.interest?.slice(1);
+            return cat === spotCategory;
+        });
+    }, [discoveredPlaces, spotCategory]);
 
     const toggleSpot = (id) => {
         setSelectedSpots(prev =>
@@ -410,58 +568,74 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                 </ScrollView>
             </View>
 
-            <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
-                {/* City Section */}
-                <View style={styles.cityHeader}>
-                    <View style={styles.cityHeaderLeft}>
-                        <View style={styles.cityCheck}>
-                            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M20 6L9 17l-5-5" />
-                            </Svg>
-                        </View>
-                        <Text style={styles.cityName}>{selectedLocation?.name || 'Varanasi'}</Text>
-                    </View>
-                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M6 9l6 6 6-6" />
-                    </Svg>
+            {isLoadingPlaces ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color="#0F172A" />
+                    <Text style={styles.loadingText}>Discovering places...</Text>
                 </View>
-
-                {/* Spots List */}
-                {spots.map((spot, idx) => {
-                    const isChecked = selectedSpots.includes(spot.id);
-                    return (
-                        <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)}>
-                            <Text style={styles.spotNumber}>{idx + 1}.</Text>
-                            <Image source={{ uri: spot.image }} style={styles.spotImage} />
-                            <View style={styles.spotInfo}>
-                                <Text style={styles.spotName} numberOfLines={1}>✨ {spot.name}</Text>
-                                {spot.desc ? <Text style={styles.spotDesc} numberOfLines={2}>{spot.desc}</Text> : null}
+            ) : (
+                <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
+                    {/* City Section */}
+                    <View style={styles.cityHeader}>
+                        <View style={styles.cityHeaderLeft}>
+                            <View style={styles.cityCheck}>
+                                <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M20 6L9 17l-5-5" />
+                                </Svg>
                             </View>
-                            <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
-                                {isChecked && (
-                                    <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                        <Path d="M20 6L9 17l-5-5" />
-                                    </Svg>
+                            <Text style={styles.cityName}>{selectedLocation?.name || 'Unknown'}</Text>
+                        </View>
+                        <Text style={styles.spotsCount}>{filteredSpots.length} spots</Text>
+                    </View>
+
+                    {/* Spots List */}
+                    {filteredSpots.map((spot, idx) => {
+                        const isChecked = selectedSpots.includes(spot.id);
+                        return (
+                            <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)}>
+                                <Text style={styles.spotNumber}>{idx + 1}.</Text>
+                                {spot.photoUrl ? (
+                                    <Image source={{ uri: spot.photoUrl }} style={styles.spotImage} />
+                                ) : (
+                                    <View style={[styles.spotImage, styles.spotImagePlaceholder]}>
+                                        <Text style={styles.spotImagePlaceholderText}>📍</Text>
+                                    </View>
                                 )}
-                            </View>
-                        </TouchableOpacity>
-                    );
-                })}
-            </ScrollView>
+                                <View style={styles.spotInfo}>
+                                    <Text style={styles.spotName} numberOfLines={1}>✨ {spot.name}</Text>
+                                    {spot.address ? <Text style={styles.spotDesc} numberOfLines={1}>{spot.address}</Text> : null}
+                                    {spot.rating ? (
+                                        <Text style={styles.spotRating}>⭐ {spot.rating} ({spot.userRatingCount})</Text>
+                                    ) : null}
+                                </View>
+                                <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
+                                    {isChecked && (
+                                        <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                            <Path d="M20 6L9 17l-5-5" />
+                                        </Svg>
+                                    )}
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+            )}
 
-            {/* Bottom Add Button */}
+            {/* Bottom Plan Trip Button */}
             <View style={styles.addSpotsBar}>
                 <TouchableOpacity
-                    style={styles.addSpotsButton}
-                    onPress={() => {
-                        onTripCreated?.({
-                            numDays,
-                            locationName: selectedLocation?.name || 'Varanasi'
-                        });
-                        ref.current?.close();
-                    }}
+                    style={[styles.addSpotsButton, isPlanning && { opacity: 0.7 }]}
+                    onPress={handlePlanTrip}
+                    disabled={isPlanning || selectedSpots.length === 0}
                 >
-                    <Text style={styles.addSpotsText}>Add {selectedSpots.length > 0 ? selectedSpots.length : spots.length} spots</Text>
+                    {isPlanning ? (
+                        <View style={styles.planningRow}>
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                            <Text style={styles.addSpotsText}>  Planning your trip...</Text>
+                        </View>
+                    ) : (
+                        <Text style={styles.addSpotsText}>Plan the Trip ✨ ({selectedSpots.length} spots)</Text>
+                    )}
                 </TouchableOpacity>
             </View>
         </Animated.View>
@@ -1014,6 +1188,40 @@ const styles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '700',
         color: '#FFFFFF',
+    },
+    loadingContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 16,
+    },
+    loadingText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#64748B',
+    },
+    planningRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    spotRating: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#F59E0B',
+        marginTop: 2,
+    },
+    spotImagePlaceholder: {
+        backgroundColor: '#E2E8F0',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    spotImagePlaceholderText: {
+        fontSize: 22,
+    },
+    spotsCount: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#94A3B8',
     },
 });
 

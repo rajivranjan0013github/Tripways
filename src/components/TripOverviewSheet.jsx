@@ -1,5 +1,5 @@
 import React, { forwardRef, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image, ActivityIndicator } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Svg, { Path, Circle } from 'react-native-svg';
 import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
@@ -33,173 +33,90 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
     const snapPoints = useMemo(() => ['60%'], []);
 
     const numDays = tripData?.numDays || 4;
-    const locationName = tripData?.locationName || 'Varanasi';
+    const locationName = tripData?.locationName || 'Trip';
+    const discoveredPlaces = tripData?.discoveredPlaces || [];
 
-    const itineraryDays = [
-        {
-            day: 1,
-            spots: [
-                {
-                    name: 'Sarnath Buddhist Temple Vara...',
-                    fullName: 'Sarnath Buddhist Temple Varanasi',
-                    category: 'Attractions',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
-                },
-                {
-                    name: 'Sarnath Museum',
-                    fullName: 'Sarnath Museum',
-                    category: 'Museum',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
-                },
-                {
-                    name: 'Chaukhandi Stupa Sarnath Va...',
-                    fullName: 'Chaukhandi Stupa Sarnath Varanasi',
-                    category: 'Attractions',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
-                },
-                {
-                    name: 'Kashi Dham Museum',
-                    fullName: 'Kashi Dham Museum',
-                    category: 'Museum',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
-                },
-                {
-                    name: 'Ganga Ghat',
-                    fullName: 'Ganga Ghat',
-                    category: 'Ghat',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
-                },
-                {
-                    name: 'Man Singh Observatory',
-                    fullName: 'Man Singh Observatory',
-                    category: 'Observatory',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
-                },
-            ],
-            travelInfo: [
-                { mode: 'walking', time: '8 min', distance: '634 m' },
-                { mode: 'walking', time: '13 min', distance: '990 m' },
-                { mode: 'driving', time: '20 min', distance: '7.5 km' },
-                { mode: 'walking', time: '12 min', distance: '695 m' },
-                { mode: 'walking', time: '15 min', distance: '1.1 km' },
-            ],
-        },
-        {
-            day: 2,
-            spots: [
-                {
-                    name: 'The Keshari Restaurant',
-                    fullName: 'The Keshari Restaurant',
-                    category: 'Restaurant',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
-                },
-                {
-                    name: 'Kerala Cafe Since 1962',
-                    fullName: 'Kerala Cafe Since 1962',
-                    category: 'Cafe',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
-                },
-                {
-                    name: 'Tulsi Ghat',
-                    fullName: 'Tulsi Ghat',
-                    category: 'Ghat',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
-                },
-                {
-                    name: 'Tridev Mandir Varanasi',
-                    fullName: 'Tridev Mandir Varanasi',
-                    category: 'Temple',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
-                },
-            ],
-            travelInfo: [
-                { mode: 'walking', time: '10 min', distance: '750 m' },
-                { mode: 'driving', time: '15 min', distance: '4.2 km' },
-                { mode: 'walking', time: '8 min', distance: '580 m' },
-            ],
-        },
-        {
-            day: 3,
-            spots: [
-                {
-                    name: 'Madhuban',
-                    fullName: 'Madhuban',
-                    category: 'Restaurant',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
-                },
-                {
-                    name: 'Bharat Kala Bhavan Museum...',
-                    fullName: 'Bharat Kala Bhavan Museum, BHU Varanasi',
-                    category: 'Museum',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
-                },
-                {
-                    name: 'Birla Mandir',
-                    fullName: 'Birla Mandir',
-                    category: 'Temple',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
-                },
-                {
-                    name: 'Banaras Railway Station',
-                    fullName: 'Banaras Railway Station',
-                    category: 'Station',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
-                },
-                {
-                    name: 'Shri Batuk Bhairav Temple...',
-                    fullName: 'Shri Batuk Bhairav Temple and Shri Aadi Bhairav Temple',
-                    category: 'Temple',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
-                },
-                {
-                    name: 'Popular bati Chokha Restaurant',
-                    fullName: 'Popular bati Chokha Restaurant',
-                    category: 'Restaurant',
-                    image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
-                },
-            ],
-            travelInfo: [
-                { mode: 'driving', time: '12 min', distance: '3.8 km' },
-                { mode: 'walking', time: '7 min', distance: '500 m' },
-                { mode: 'driving', time: '18 min', distance: '6.2 km' },
-                { mode: 'walking', time: '10 min', distance: '720 m' },
-                { mode: 'walking', time: '14 min', distance: '1.0 km' },
-            ],
-        },
-    ];
+    // Build a lookup map from place name to photoUrl from discovered places
+    const photoLookup = useMemo(() => {
+        const map = {};
+        discoveredPlaces.forEach(p => {
+            if (p.name && p.photoUrl) map[p.name.toLowerCase()] = p.photoUrl;
+        });
+        return map;
+    }, [discoveredPlaces]);
 
-    // Add extra days if numDays > 3
-    if (numDays > 3) {
-        for (let i = 4; i <= numDays; i++) {
-            itineraryDays.push({
-                day: i,
-                spots: [
-                    {
-                        name: 'Dashashwamedh Ghat',
-                        fullName: 'Dashashwamedh Ghat',
-                        category: 'Ghat',
-                        image: 'https://lh5.googleusercontent.com/p/AF1QipMvGezknCpaTKcM7g0dMSqR9psMaGebsMW4AF1v=w408-h306-k-no',
-                    },
-                    {
-                        name: 'Manikarnika Ghat',
-                        fullName: 'Manikarnika Ghat',
-                        category: 'Ghat',
-                        image: 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no',
-                    },
-                    {
-                        name: 'Vishwanath Temple',
-                        fullName: 'Vishwanath Temple',
-                        category: 'Temple',
-                        image: 'https://lh5.googleusercontent.com/p/AF1QipP11BWKNZ_A2hCGR7jeNnB3bMbMbwhC2EKYXk4k=w408-h272-k-no',
-                    },
-                ],
-                travelInfo: [
-                    { mode: 'walking', time: '10 min', distance: '800 m' },
-                    { mode: 'walking', time: '6 min', distance: '450 m' },
-                ],
-            });
+    // Map category string to a display-friendly category
+    const mapCategory = (cat) => {
+        if (!cat) return 'Attractions';
+        const lower = cat.toLowerCase();
+        if (lower === 'food' || lower === 'restaurant') return 'Restaurant';
+        if (lower === 'cafe' || lower === 'coffee') return 'Cafe';
+        if (lower === 'museum') return 'Museum';
+        if (lower === 'nature') return 'Nature';
+        if (lower === 'shopping') return 'Shopping';
+        if (lower === 'spiritual' || lower === 'temple' || lower === 'religious') return 'Temple';
+        if (lower === 'sightseeing' || lower === 'popular') return 'Attractions';
+        if (lower === 'adventure') return 'Attractions';
+        if (lower === 'culture' || lower === 'history') return 'Museum';
+        if (lower === 'leisure') return 'Nature';
+        return 'Attractions';
+    };
+
+    // Transform backend itinerary into the format our UI expects
+    const itineraryDays = useMemo(() => {
+        const backendItinerary = tripData?.itinerary;
+        if (!backendItinerary || !Array.isArray(backendItinerary) || backendItinerary.length === 0) {
+            return [];
         }
-    }
+
+        return backendItinerary.map((dayData) => {
+            const spots = (dayData.places || []).map((place) => {
+                const nameLower = place.name?.toLowerCase() || '';
+                return {
+                    name: place.name?.length > 30 ? place.name.slice(0, 28) + '...' : place.name,
+                    fullName: place.name,
+                    category: mapCategory(place.category),
+                    image: photoLookup[nameLower] || null,
+                    description: place.description || '',
+                    estimatedTimeHours: place.estimatedTimeHours || 2,
+                    bestTimeOfDay: place.bestTimeOfDay || 'morning',
+                    coordinates: place.coordinates || null,
+                };
+            });
+
+            // Build travel info from route data if available
+            const travelInfo = [];
+            if (dayData.places) {
+                for (let i = 0; i < dayData.places.length - 1; i++) {
+                    const currentPlace = dayData.places[i];
+                    const nextPlace = dayData.places[i + 1];
+
+                    // Check if route data exists (from the 'routed' SSE event)
+                    if (currentPlace.routeToNext) {
+                        travelInfo.push({
+                            mode: currentPlace.routeToNext.travelMode?.toLowerCase() || 'driving',
+                            time: currentPlace.routeToNext.duration || '~',
+                            distance: currentPlace.routeToNext.distance || '~',
+                        });
+                    } else {
+                        // Estimate based on coordinates if available
+                        travelInfo.push({
+                            mode: 'driving',
+                            time: '~',
+                            distance: '~',
+                        });
+                    }
+                }
+            }
+
+            return {
+                day: dayData.day,
+                theme: dayData.theme || `Day ${dayData.day}`,
+                spots,
+                travelInfo,
+            };
+        });
+    }, [tripData, photoLookup]);
 
     const toggleDayExpanded = (day) => {
         setExpandedDays(prev => ({ ...prev, [day]: !prev[day] }));
@@ -216,7 +133,6 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
 
     const renderSpotCard = (spot, index, travelInfo, isLast) => {
         const config = CATEGORY_CONFIG[spot.category] || CATEGORY_CONFIG['Attractions'];
-        const isTransit = travelInfo && (travelInfo.mode === 'transit' || travelInfo.mode === 'driving');
         return (
             <View style={styles.spotCard}>
                 {/* Left Column: Image + dots below */}
@@ -225,10 +141,16 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
                         <View style={styles.spotNumberBadge}>
                             <Text style={styles.spotNumberText}>{index + 1}</Text>
                         </View>
-                        <Image
-                            source={{ uri: spot.image }}
-                            style={styles.spotImage}
-                        />
+                        {spot.image ? (
+                            <Image
+                                source={{ uri: spot.image }}
+                                style={styles.spotImage}
+                            />
+                        ) : (
+                            <View style={[styles.spotImage, styles.spotImageFallback]}>
+                                <Text style={styles.spotImageFallbackText}>{config.emoji}</Text>
+                            </View>
+                        )}
                     </View>
                     {/* Dots below image (inside card) */}
                     {travelInfo && (
@@ -304,7 +226,8 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
 
     // Pick a representative image for each day
     const getDayImage = (dayData) => {
-        return dayData.spots[0]?.image || 'https://lh5.googleusercontent.com/p/AF1QipNxBT6-mU-kg-8OI8F_HFkHWl7HVXZ9jz3GKGQ=w408-h544-k-no';
+        const spotWithImage = dayData.spots.find(s => s.image);
+        return spotWithImage?.image || null;
     };
 
     // Format spots as bullet points
@@ -326,29 +249,45 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
         return lines.map(l => '• ' + l).join('\n');
     };
 
-    const renderOverviewItems = () => (
-        <>
-            {itineraryDays.map((dayData) => (
-                <View key={dayData.day} style={styles.overviewDayCard}>
-                    <View style={styles.overviewImageWrapper}>
-                        <Image
-                            source={{ uri: getDayImage(dayData) }}
-                            style={styles.overviewDayImage}
-                        />
-                        <View style={styles.overviewDayBadge}>
-                            <Text style={styles.overviewDayBadgeText}>Day {dayData.day}</Text>
+    const renderOverviewItems = () => {
+        if (itineraryDays.length === 0) {
+            return (
+                <View style={styles.emptyStateContainer}>
+                    <ActivityIndicator size="large" color="#0F172A" />
+                    <Text style={styles.emptyStateText}>Generating your itinerary...</Text>
+                </View>
+            );
+        }
+        return (
+            <>
+                {itineraryDays.map((dayData) => (
+                    <View key={dayData.day} style={styles.overviewDayCard}>
+                        <View style={styles.overviewImageWrapper}>
+                            {getDayImage(dayData) ? (
+                                <Image
+                                    source={{ uri: getDayImage(dayData) }}
+                                    style={styles.overviewDayImage}
+                                />
+                            ) : (
+                                <View style={[styles.overviewDayImage, styles.overviewDayImageFallback]}>
+                                    <Text style={{ fontSize: 28 }}>📍</Text>
+                                </View>
+                            )}
+                            <View style={styles.overviewDayBadge}>
+                                <Text style={styles.overviewDayBadgeText}>Day {dayData.day}</Text>
+                            </View>
+                        </View>
+                        <View style={styles.overviewDayInfo}>
+                            {dayData.theme && <Text style={styles.overviewDayTheme}>{dayData.theme}</Text>}
+                            <Text style={styles.overviewDayCardSpots}>
+                                {formatSpots(dayData.spots)}
+                            </Text>
                         </View>
                     </View>
-                    <View style={styles.overviewDayInfo}>
-                        {/* <Text style={styles.overviewDayCardTitle}>Day {dayData.day}</Text> */}
-                        <Text style={styles.overviewDayCardSpots}>
-                            {formatSpots(dayData.spots)}
-                        </Text>
-                    </View>
-                </View>
-            ))}
-        </>
-    );
+                ))}
+            </>
+        );
+    };
 
     const renderItineraryItems = () => {
         const activeDayData = getActiveDayData();
@@ -765,6 +704,37 @@ const styles = StyleSheet.create({
         height: 3,
         borderRadius: 2,
         backgroundColor: '#CBD5E1',
+    },
+    spotImageFallback: {
+        backgroundColor: '#E2E8F0',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    spotImageFallbackText: {
+        fontSize: 22,
+    },
+    emptyStateContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 60,
+        gap: 16,
+    },
+    emptyStateText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#64748B',
+    },
+    overviewDayTheme: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#0F172A',
+        marginBottom: 4,
+    },
+    overviewDayImageFallback: {
+        backgroundColor: '#E2E8F0',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 });
 

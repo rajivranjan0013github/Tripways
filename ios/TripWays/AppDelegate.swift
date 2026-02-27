@@ -16,9 +16,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
     // Load Google Maps API key from .env file
-    if let apiKey = Self.readEnvValue(forKey: "GOOGLE_MAPS_API_KEY"), !apiKey.isEmpty {
-      GMSServices.provideAPIKey(apiKey)
+    var effectiveApiKey = "AIzaSyCOFspyPIIgmBgptwpf7IKfCUDHSLyLBlo" // Guaranteed fallback
+    if let envKey = Self.readEnvValue(forKey: "GOOGLE_MAPS_API_KEY"), !envKey.isEmpty {
+      effectiveApiKey = envKey
     }
+    GMSServices.provideAPIKey(effectiveApiKey)
     
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
