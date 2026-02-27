@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Image, Dimensions, Platform, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Image, Dimensions, Platform, ScrollView, TextInput } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing } from 'react-native-reanimated';
 import MapView, { PROVIDER_GOOGLE, Marker } from 'react-native-maps';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
@@ -13,6 +13,7 @@ import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import AddSpotsSheet from '../components/AddSpotsSheet';
 import CreateTripSheet from '../components/CreateTripSheet';
 import TripOverviewSheet from '../components/TripOverviewSheet';
+import ProfileOverlay from '../components/ProfileOverlay';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -26,6 +27,7 @@ const HomeScreen = () => {
     const [tripData, setTripData] = useState(null);
     const [activeTab, setActiveTab] = React.useState('home');
     const [showCreateOptions, setShowCreateOptions] = React.useState(false);
+    const [showProfile, setShowProfile] = useState(false);
 
     // Animation values
     const overlayOpacity = useSharedValue(0);
@@ -204,26 +206,20 @@ const HomeScreen = () => {
                 />
             </MapView>
 
-            {/* Top Header Actions */}
-            <View style={[styles.headerContainer, { top: insets.top + 10 }]}>
-                <View style={styles.headerRight}>
-                    <TouchableOpacity style={styles.iconButton}>
-                        <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                            <Path d="m17 8-5-5-5 5" />
-                            <Path d="M12 3v12" />
-                        </Svg>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.notificationButton}>
-                        <Text style={styles.notificationText}>5</Text>
-                        <View style={styles.badge}>
-                            <Text style={styles.badgeText}>2</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity style={styles.avatarButton}>
-                        <Text style={styles.avatarText}>Ak</Text>
+            {/* Search Bar - Google Maps style */}
+            <View style={[styles.searchBarContainer, { top: insets.top + 10 }]}>
+                <View style={styles.searchBar}>
+                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <Circle cx="11" cy="11" r="8" />
+                        <Path d="m21 21-4.3-4.3" />
+                    </Svg>
+                    <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search spots..."
+                        placeholderTextColor="#94A3B8"
+                    />
+                    <TouchableOpacity style={styles.searchAvatar} onPress={() => setShowProfile(true)}>
+                        <Text style={styles.searchAvatarText}>Ak</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -502,6 +498,12 @@ const HomeScreen = () => {
                     </Svg>
                 </TouchableOpacity>
             </Animated.View>
+
+            {/* Profile Overlay */}
+            <ProfileOverlay
+                visible={showProfile}
+                onClose={() => setShowProfile(false)}
+            />
         </View>
     );
 };
@@ -514,84 +516,47 @@ const styles = StyleSheet.create({
     map: {
         flex: 1,
     },
-    headerContainer: {
+    // Search Bar
+    searchBarContainer: {
         position: 'absolute',
         left: 0,
         right: 0,
-        paddingHorizontal: 20,
+        paddingHorizontal: 16,
+        zIndex: 10,
     },
-    headerRight: {
+    searchBar: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'flex-end',
-        gap: 12,
-    },
-    iconButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: 'rgba(255,255,255,0.9)',
-        alignItems: 'center',
-        justifyContent: 'center',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 28,
+        paddingHorizontal: 16,
+        height: 50,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
+        shadowOpacity: 0.12,
+        shadowRadius: 8,
+        elevation: 4,
     },
-    notificationButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: 'rgba(255,255,255,0.9)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    notificationText: {
-        fontSize: 18,
+    searchInput: {
+        flex: 1,
+        fontSize: 15,
         fontWeight: '500',
-        color: '#333',
+        color: '#1E293B',
+        marginLeft: 10,
+        paddingVertical: 0,
     },
-    badge: {
-        position: 'absolute',
-        top: -2,
-        right: -2,
-        backgroundColor: '#4ADE80',
-        width: 18,
-        height: 18,
-        borderRadius: 9,
+    searchAvatar: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#3B82F6',
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 2,
-        borderColor: '#FFF',
     },
-    badgeText: {
-        color: '#FFF',
-        fontSize: 10,
+    searchAvatarText: {
+        fontSize: 13,
         fontWeight: '700',
-    },
-    avatarButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: '#FB923C',
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 3,
-    },
-    avatarText: {
-        color: '#FFF',
-        fontSize: 18,
-        fontWeight: '600',
+        color: '#FFFFFF',
     },
     sheetBackground: {
         backgroundColor: '#FFFFFF',
