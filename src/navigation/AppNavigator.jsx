@@ -6,23 +6,37 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { MMKV } from 'react-native-mmkv';
 
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
 import DetailsScreen from '../screens/DetailsScreen';
 
 const Stack = createNativeStackNavigator();
+const storage = new MMKV();
+
+// Check if a user session exists in MMKV
+const getInitialRoute = () => {
+    try {
+        const user = storage.getString('user');
+        return user ? 'Home' : 'Login';
+    } catch {
+        return 'Login';
+    }
+};
 
 const AppNavigator = () => {
+    const initialRoute = getInitialRoute();
+
     return (
         <NavigationContainer>
             <Stack.Navigator
-                initialRouteName="Home"
+                initialRouteName={initialRoute}
                 screenOptions={{
                     headerShown: false,
                     animation: 'slide_from_right',
                 }}>
-                     <Stack.Screen
+                <Stack.Screen
                     name="Home"
                     component={HomeScreen}
                     options={{
@@ -36,7 +50,7 @@ const AppNavigator = () => {
                         contentStyle: { backgroundColor: '#7DD3FC' },
                     }}
                 />
-               
+
                 <Stack.Screen
                     name="Details"
                     component={DetailsScreen}

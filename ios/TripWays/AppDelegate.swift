@@ -3,6 +3,7 @@ import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
 import GoogleMaps
+import GoogleSignIn
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -21,6 +22,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
       effectiveApiKey = envKey
     }
     GMSServices.provideAPIKey(effectiveApiKey)
+
+    // Configure Google Sign-In with iOS client ID
+    GIDSignIn.sharedInstance.configuration = GIDConfiguration(
+      clientID: "600831714498-3e2apuej7ojgf568elvibrifo4qn05lu.apps.googleusercontent.com"
+    )
     
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
@@ -38,6 +44,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     )
 
     return true
+  }
+
+  // Handle Google Sign-In URL callback
+  func application(_ app: UIApplication,
+                   open url: URL,
+                   options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+    return GIDSignIn.sharedInstance.handle(url)
   }
 
   /// Reads a value from the .env file in the project root

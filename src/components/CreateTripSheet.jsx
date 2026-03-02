@@ -1,4 +1,4 @@
-import React, { forwardRef, useMemo, useState, useRef } from 'react';
+import React, { forwardRef, useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, Image, ScrollView, ActivityIndicator } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import LinearGradient from 'react-native-linear-gradient';
@@ -6,6 +6,12 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import Animated, {
     FadeIn,
     FadeOut,
+    useSharedValue,
+    useAnimatedStyle,
+    withRepeat,
+    withTiming,
+    Easing,
+    interpolate,
 } from 'react-native-reanimated';
 import WheelPicker from '@quidone/react-native-wheel-picker';
 import { Calendar } from 'react-native-calendars';
@@ -31,6 +37,37 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
     const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
     const [isPlanning, setIsPlanning] = useState(false);
     const inputRef = useRef(null);
+
+    // Skeleton pulse animation
+    const pulseAnim = useSharedValue(0);
+    useEffect(() => {
+        if (isLoadingPlaces) {
+            pulseAnim.value = withRepeat(
+                withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+                -1,
+                true
+            );
+        } else {
+            pulseAnim.value = 0;
+        }
+    }, [isLoadingPlaces]);
+
+    const skeletonStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(pulseAnim.value, [0, 1], [0.3, 0.7]),
+    }));
+
+    const renderSkeletonSpot = useCallback((index) => (
+        <View key={`skeleton-${index}`} style={styles.spotRow}>
+            <Animated.View style={[styles.skeletonNumber, skeletonStyle]} />
+            <Animated.View style={[styles.spotImage, styles.skeletonImage, skeletonStyle]} />
+            <View style={styles.spotInfo}>
+                <Animated.View style={[styles.skeletonTextLong, skeletonStyle]} />
+                <Animated.View style={[styles.skeletonTextMedium, skeletonStyle]} />
+                <Animated.View style={[styles.skeletonTextShort, skeletonStyle]} />
+            </View>
+            <Animated.View style={[styles.spotCheck, styles.skeletonCheck, skeletonStyle]} />
+        </View>
+    ), [skeletonStyle]);
 
     const snapPoints = useMemo(() => ['92%'], []);
 
@@ -551,30 +588,55 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
     };
 
     const renderDiscoverSpots = () => (
-        <Animated.View entering={FadeIn} style={[styles.content, { paddingHorizontal: 0, paddingTop: 0 }]}>
+        <Animated.View entering={FadeIn} style={[styles.content, { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }]}>
             <View style={styles.discoverHeader}>
-                <Text style={styles.discoverTitle}>Discover spots</Text>
+                <View style={styles.discoverTitleRow}>
+                    <Text style={styles.discoverTitle}>Discover spots</Text>
+                    {isLoadingPlaces && (
+                        <View style={styles.discoverLoadingBadge}>
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                            <Text style={styles.discoverLoadingBadgeText}>Loading</Text>
+                        </View>
+                    )}
+                </View>
 
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll} contentContainerStyle={styles.categoryContainer}>
-                    {spotCategories.map((cat) => (
-                        <TouchableOpacity
-                            key={cat}
-                            style={[styles.categoryChip, spotCategory === cat && styles.categoryChipActive]}
-                            onPress={() => setSpotCategory(cat)}
-                        >
-                            <Text style={[styles.categoryText, spotCategory === cat && styles.categoryTextActive]}>{cat}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
+                {isLoadingPlaces ? (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll} contentContainerStyle={styles.categoryContainer}>
+                        {[1, 2, 3, 4].map((i) => (
+                            <Animated.View key={`cat-skel-${i}`} style={[styles.skeletonCategoryChip, skeletonStyle]} />
+                        ))}
+                    </ScrollView>
+                ) : (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll} contentContainerStyle={styles.categoryContainer}>
+                        {spotCategories.map((cat) => (
+                            <TouchableOpacity
+                                key={cat}
+                                style={[styles.categoryChip, spotCategory === cat && styles.categoryChipActive]}
+                                onPress={() => setSpotCategory(cat)}
+                            >
+                                <Text style={[styles.categoryText, spotCategory === cat && styles.categoryTextActive]}>{cat}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                )}
             </View>
 
             {isLoadingPlaces ? (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#0F172A" />
-                    <Text style={styles.loadingText}>Discovering places...</Text>
-                </View>
+                <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 20 }}>
+                    {/* Skeleton City Header */}
+                    <View style={styles.cityHeader}>
+                        <View style={styles.cityHeaderLeft}>
+                            <Animated.View style={[styles.cityCheck, styles.skeletonCityCheck, skeletonStyle]} />
+                            <Animated.View style={[styles.skeletonCityName, skeletonStyle]} />
+                        </View>
+                        <Animated.View style={[styles.skeletonSpotsCount, skeletonStyle]} />
+                    </View>
+
+                    {/* Skeleton Spot Rows */}
+                    {[0, 1, 2, 3, 4, 5].map(renderSkeletonSpot)}
+                </ScrollView>
             ) : (
-                <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
+                <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 20 }}>
                     {/* City Section */}
                     <View style={styles.cityHeader}>
                         <View style={styles.cityHeaderLeft}>
@@ -624,14 +686,19 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
             {/* Bottom Plan Trip Button */}
             <View style={styles.addSpotsBar}>
                 <TouchableOpacity
-                    style={[styles.addSpotsButton, isPlanning && { opacity: 0.7 }]}
+                    style={[styles.addSpotsButton, (isPlanning || isLoadingPlaces) && { opacity: 0.7 }]}
                     onPress={handlePlanTrip}
-                    disabled={isPlanning || selectedSpots.length === 0}
+                    disabled={isPlanning || isLoadingPlaces || selectedSpots.length === 0}
                 >
                     {isPlanning ? (
                         <View style={styles.planningRow}>
                             <ActivityIndicator size="small" color="#FFFFFF" />
                             <Text style={styles.addSpotsText}>  Planning your trip...</Text>
+                        </View>
+                    ) : isLoadingPlaces ? (
+                        <View style={styles.planningRow}>
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                            <Text style={styles.addSpotsText}>  Discovering spots...</Text>
                         </View>
                     ) : (
                         <Text style={styles.addSpotsText}>Plan the Trip ✨ ({selectedSpots.length} spots)</Text>
@@ -1060,7 +1127,6 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         color: '#0F172A',
         letterSpacing: -0.5,
-        marginBottom: 16,
     },
     categoryScroll: {
         marginBottom: 8,
@@ -1168,10 +1234,6 @@ const styles = StyleSheet.create({
         borderColor: '#0F172A',
     },
     addSpotsBar: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
         paddingHorizontal: 24,
         paddingBottom: Platform.OS === 'ios' ? 34 : 20,
         paddingTop: 12,
@@ -1222,6 +1284,82 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '600',
         color: '#94A3B8',
+    },
+    // Discover Spots Title Row
+    discoverTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+    },
+    discoverLoadingBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#0F172A',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
+        gap: 6,
+    },
+    discoverLoadingBadgeText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#FFFFFF',
+    },
+    // Skeleton Placeholder Styles
+    skeletonCategoryChip: {
+        width: 72,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#E2E8F0',
+    },
+    skeletonCityCheck: {
+        backgroundColor: '#CBD5E1',
+    },
+    skeletonCityName: {
+        width: 120,
+        height: 20,
+        borderRadius: 8,
+        backgroundColor: '#E2E8F0',
+    },
+    skeletonSpotsCount: {
+        width: 60,
+        height: 16,
+        borderRadius: 6,
+        backgroundColor: '#E2E8F0',
+    },
+    skeletonNumber: {
+        width: 18,
+        height: 14,
+        borderRadius: 4,
+        backgroundColor: '#E2E8F0',
+    },
+    skeletonImage: {
+        backgroundColor: '#E2E8F0',
+    },
+    skeletonTextLong: {
+        width: '85%',
+        height: 14,
+        borderRadius: 6,
+        backgroundColor: '#E2E8F0',
+        marginBottom: 6,
+    },
+    skeletonTextMedium: {
+        width: '65%',
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: '#E2E8F0',
+        marginBottom: 4,
+    },
+    skeletonTextShort: {
+        width: '40%',
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: '#E2E8F0',
+    },
+    skeletonCheck: {
+        backgroundColor: '#E2E8F0',
+        borderColor: '#E2E8F0',
     },
 });
 

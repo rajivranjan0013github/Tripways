@@ -10,6 +10,8 @@
 		0C80B921A6F3F58F76C31292 /* libPods-TripWays.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-TripWays.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
+		790070202F5634E500ADABE6 /* GoogleSignInModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 7900701D2F5634E500ADABE6 /* GoogleSignInModule.m */; };
+		790070212F5634E500ADABE6 /* GoogleSignInModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7900701E2F5634E500ADABE6 /* GoogleSignInModule.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		FF96245184CD69C5D488F3BD /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
@@ -23,6 +25,11 @@
 		5709B34CF0A7D63546082F79 /* Pods-TripWays.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TripWays.release.xcconfig"; path = "Target Support Files/Pods-TripWays/Pods-TripWays.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-TripWays.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-TripWays.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = TripWays/AppDelegate.swift; sourceTree = "<group>"; };
+		7900701C2F560A9D00ADABE6 /* TripWays.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = TripWays.entitlements; path = TripWays/TripWays.entitlements; sourceTree = "<group>"; };
+		7900701D2F5634E500ADABE6 /* GoogleSignInModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = GoogleSignInModule.m; path = TripWays/GoogleSignInModule.m; sourceTree = "<group>"; };
+		7900701E2F5634E500ADABE6 /* GoogleSignInModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GoogleSignInModule.swift; path = TripWays/GoogleSignInModule.swift; sourceTree = "<group>"; };
+		7900701F2F5634E500ADABE6 /* TripWays-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "TripWays-Bridging-Header.h"; path = "TripWays/TripWays-Bridging-Header.h"; sourceTree = "<group>"; };
+		790070222F5634E900ADABE6 /* TripWays-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "TripWays-Bridging-Header.h"; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = TripWays/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
@@ -42,6 +49,7 @@
 		13B07FAE1A68108700A75B9A /* TripWays */ = {
 			isa = PBXGroup;
 			children = (
+				7900701C2F560A9D00ADABE6 /* TripWays.entitlements */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -70,11 +78,15 @@
 		83CBB9F61A601CBA00E9B192 = {
 			isa = PBXGroup;
 			children = (
+				7900701D2F5634E500ADABE6 /* GoogleSignInModule.m */,
+				7900701E2F5634E500ADABE6 /* GoogleSignInModule.swift */,
+				7900701F2F5634E500ADABE6 /* TripWays-Bridging-Header.h */,
 				13B07FAE1A68108700A75B9A /* TripWays */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				BBD78D7AC51CEA395F1C20DB /* Pods */,
+				790070222F5634E900ADABE6 /* TripWays-Bridging-Header.h */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -131,7 +143,7 @@
 				LastUpgradeCheck = 1210;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
-						LastSwiftMigration = 1120;
+						LastSwiftMigration = 2600;
 					};
 				};
 			};
@@ -246,6 +258,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				790070202F5634E500ADABE6 /* GoogleSignInModule.m in Sources */,
+				790070212F5634E500ADABE6 /* GoogleSignInModule.swift in Sources */,
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -259,6 +273,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = TripWays/TripWays.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 5244NF9YV8;
 				ENABLE_BITCODE = NO;
@@ -276,6 +291,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.thousandways.travel;
 				PRODUCT_NAME = TripWays;
+				SWIFT_OBJC_BRIDGING_HEADER = "TripWays-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -288,6 +304,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = TripWays/TripWays.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 5244NF9YV8;
 				INFOPLIST_FILE = TripWays/Info.plist;
@@ -304,6 +321,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.thousandways.travel;
 				PRODUCT_NAME = TripWays;
+				SWIFT_OBJC_BRIDGING_HEADER = "TripWays-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
 			};

@@ -21,6 +21,9 @@ target 'TripWays' do
   rn_maps_path = '../node_modules/react-native-maps'
   pod 'react-native-maps/Google', :path => rn_maps_path
 
+  # Google Sign-In
+  pod 'GoogleSignIn', '~> 8.0'
+
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.
