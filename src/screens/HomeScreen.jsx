@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Image, Dimensions, Platform, ScrollView, TextInput } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, ScrollView, TextInput } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing } from 'react-native-reanimated';
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
@@ -17,6 +17,7 @@ import AddSpotsSheet from '../components/AddSpotsSheet';
 import CreateTripSheet from '../components/CreateTripSheet';
 import TripOverviewSheet from '../components/TripOverviewSheet';
 import ProfileOverlay from '../components/ProfileOverlay';
+import MySpotIcon from '../assets/My-spot';
 
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
@@ -57,7 +58,7 @@ function decodePolyline(encoded) {
 const HomeScreen = () => {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation();
-    const tabBarHeight = 56 + insets.bottom;
+    const tabBarHeight = 52 + insets.bottom;
     const bottomSheetRef = useRef(null);
     const addSpotsSheetRef = useRef(null); // Ref for Add Spots BottomSheet
     const createTripSheetRef = useRef(null); // Ref for Create Trip BottomSheet
@@ -121,6 +122,8 @@ const HomeScreen = () => {
     const createMenuScale = useSharedValue(0.9);
     const plusRotation = useSharedValue(0);
     const tabBarTranslateY = useSharedValue(0);
+    // Tracks the real-time Y position of the spots sheet (from top of screen)
+    const sheetAnimatedPosition = useSharedValue(SCREEN_HEIGHT * 0.5);
 
     const animatedOverlayStyle = useAnimatedStyle(() => {
         return {
@@ -145,6 +148,16 @@ const HomeScreen = () => {
     const animatedTabBarStyle = useAnimatedStyle(() => {
         return {
             transform: [{ translateY: tabBarTranslateY.value }],
+        };
+    });
+
+    // FAB floats 16px above whatever height the sheet currently is
+    // On Android, animatedPosition is measured from below the status bar,
+    // so we subtract its height to keep the FAB aligned correctly.
+    const statusBarOffset = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
+    const fabAnimatedStyle = useAnimatedStyle(() => {
+        return {
+            bottom: SCREEN_HEIGHT - sheetAnimatedPosition.value + 16 - statusBarOffset,
         };
     });
 
@@ -386,25 +399,18 @@ const HomeScreen = () => {
                 })}
             </MapView>
 
-            {/* Search Bar - Google Maps style */}
-            <View style={[styles.searchBarContainer, { top: insets.top + 10 }]}>
-                <View style={styles.searchBar}>
-                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <Circle cx="11" cy="11" r="8" />
-                        <Path d="m21 21-4.3-4.3" />
-                    </Svg>
-                    <TextInput
-                        style={styles.searchInput}
-                        placeholder="Search spots..."
-                        placeholderTextColor="#94A3B8"
-                    />
-                    <TouchableOpacity style={styles.searchAvatar} onPress={() => setShowProfile(true)}>
-                        <Text style={styles.searchAvatarText}>{userInitials}</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
 
-            {/* Bottom Sheet */}
+            {/* Floating My Spots button — tracks the spots sheet */}
+            <Animated.View
+                style={[styles.mySpotFab, fabAnimatedStyle]}
+                pointerEvents="box-none"
+            >
+                <TouchableOpacity activeOpacity={0.85} style={styles.mySpotFabInner}>
+                    <MySpotIcon width={22} height={22} fill="#3B82F6" />
+                </TouchableOpacity>
+            </Animated.View>
+
+            {/* Bottom Sheet spots */}
             <BottomSheet
                 ref={bottomSheetRef}
                 index={1}
@@ -415,47 +421,47 @@ const HomeScreen = () => {
                 handleIndicatorStyle={styles.handleIndicator}
                 enablePanDownToClose={true}
                 animationConfigs={sheetAnimationConfig}
+                animatedPosition={sheetAnimatedPosition}
             >
                 <BottomSheetView style={styles.sheetContent}>
-                    <View style={styles.welcomeRow}>
-                        <View>
-                            <Text style={styles.welcomeLabel}>Welcome,</Text>
-                            <Text style={styles.userName}>{userName.split(' ')[0]}!</Text>
-                        </View>
-                        <TouchableOpacity style={styles.importGuideBtn}>
-                            <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF8C42" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
-                                <Path d="M6 2v20" />
-                                <Rect x="10" y="6" width="6" height="4" rx="1" />
+                    {/* Apple Maps-style search row */}
+                    <View style={styles.sheetSearchRow}>
+                        <View style={styles.sheetSearchBar}>
+                            <Svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <Circle cx="11" cy="11" r="8" />
+                                <Path d="m21 21-4.3-4.3" />
                             </Svg>
-                            <Text style={styles.importGuideText}>Import Guide</Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.illustrationContainer}>
-                        <Image
-                            source={require('../assets/illustration.png')}
-                            style={styles.illustration}
-                            resizeMode="contain"
-                        />
-                    </View>
-
-                    <View style={styles.importSpotCard}>
-                        <View style={styles.importRow}>
-                            <View style={styles.importIconContainer}>
-                                <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <Rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                    <Circle cx="8.5" cy="8.5" r="1.5" />
-                                    <Path d="m21 15-5-5L5 21" />
-                                </Svg>
-                            </View>
-                            <Text style={styles.importText}>Import your First Spots</Text>
+                            <TextInput
+                                style={styles.sheetSearchInput}
+                                placeholder="Search spots..."
+                                placeholderTextColor="#94A3B8"
+                            />
                         </View>
-
-                        <TouchableOpacity style={styles.getStartedBtn}>
-                            <Text style={styles.getStartedText}>Get Started</Text>
+                        <TouchableOpacity style={styles.sheetSearchAvatar} onPress={() => setShowProfile(true)}>
+                            <Text style={styles.sheetSearchAvatarText}>Ak</Text>
                         </TouchableOpacity>
                     </View>
+
+                    {/* Recent / Suggested spots */}
+                    <Text style={styles.sheetSectionLabel}>Recent Spots</Text>
+                    {[
+                        { name: 'India Gate', sub: 'New Delhi · 3.2 km', icon: '📍' },
+                        { name: 'Humayun\'s Tomb', sub: 'New Delhi · 5.8 km', icon: '🏛️' },
+                        { name: 'Qutub Minar', sub: 'New Delhi · 14 km', icon: '🕌' },
+                    ].map((spot, idx) => (
+                        <TouchableOpacity key={idx} style={styles.spotRow}>
+                            <View style={styles.spotIconWrap}>
+                                <Text style={styles.spotEmoji}>{spot.icon}</Text>
+                            </View>
+                            <View style={styles.spotTextWrap}>
+                                <Text style={styles.spotName}>{spot.name}</Text>
+                                <Text style={styles.spotSub}>{spot.sub}</Text>
+                            </View>
+                            <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M9 18l6-6-6-6" />
+                            </Svg>
+                        </TouchableOpacity>
+                    ))}
                 </BottomSheetView>
             </BottomSheet>
 
@@ -524,7 +530,7 @@ const HomeScreen = () => {
             {/* Create Options Menu */}
             {showCreateOptions && (
                 <TouchableOpacity
-                    style={[styles.createMenuBackdrop, { paddingBottom: 65 + insets.bottom }]}
+                    style={[styles.createMenuBackdrop, { paddingBottom: 64 + insets.bottom + 24 }]}
                     activeOpacity={1}
                     onPress={() => setShowCreateOptions(false)}
                 >
@@ -652,8 +658,8 @@ const HomeScreen = () => {
                 tripData={tripData}
             />
 
-            {/* Custom Bottom Tab Bar */}
-            <Animated.View style={[styles.tabBarContainer, { height: tabBarHeight, paddingBottom: insets.bottom }, animatedTabBarStyle]}>
+            {/* Custom Bottom Tab Bar — floating pill */}
+            <Animated.View style={[styles.tabBarContainer, { bottom: insets.bottom + (Platform.OS === 'android' ? 15 : 0) }, animatedTabBarStyle]}>
                 <TouchableOpacity
                     style={styles.tabItem}
                     onPress={() => {
@@ -661,7 +667,7 @@ const HomeScreen = () => {
                         setShowCreateOptions(false);
                     }}
                 >
-                    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={activeTab === 'home' ? "#3B82F6" : "#71717A"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={activeTab === 'home' ? "#3B82F6" : "#71717A"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <Circle cx="12" cy="12" r="10" />
                         <Path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z" fill={activeTab === 'home' ? "#3B82F6" : "none"} />
                     </Svg>
@@ -672,7 +678,7 @@ const HomeScreen = () => {
                     onPress={() => setShowCreateOptions(!showCreateOptions)}
                 >
                     <Animated.View style={animatedPlusStyle}>
-                        <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <Path d="M12 5v14M5 12h14" />
                         </Svg>
                     </Animated.View>
@@ -685,7 +691,7 @@ const HomeScreen = () => {
                         setShowCreateOptions(false);
                     }}
                 >
-                    <Svg width="24" height="24" viewBox="0 0 24 24" fill={activeTab === 'trips' ? "#3B82F6" : "none"} stroke={activeTab === 'trips' ? "#3B82F6" : "#71717A"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <Svg width="20" height="20" viewBox="0 0 24 24" fill={activeTab === 'trips' ? "#3B82F6" : "none"} stroke={activeTab === 'trips' ? "#3B82F6" : "#71717A"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <Rect x="2" y="7" width="20" height="14" rx="2" />
                         <Path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
                     </Svg>
@@ -710,28 +716,25 @@ const styles = StyleSheet.create({
     map: {
         flex: 1,
     },
-    // Search Bar
-    searchBarContainer: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        paddingHorizontal: 16,
-        zIndex: 10,
-    },
-    searchBar: {
+    // Sheet search row (avatar sits outside the pill)
+    sheetSearchRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        backgroundColor: '#FFFFFF',
-        borderRadius: 28,
-        paddingHorizontal: 16,
-        height: 50,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.12,
-        shadowRadius: 8,
-        elevation: 4,
+        gap: 10,
+        marginTop: 8,
+        marginBottom: 16,
     },
-    searchInput: {
+    // Sheet search bar (Apple Maps style)
+    sheetSearchBar: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F1F5F9',
+        borderRadius: 24,
+        paddingHorizontal: 14,
+        height: 48,
+    },
+    sheetSearchInput: {
         flex: 1,
         fontSize: 15,
         fontWeight: '500',
@@ -739,22 +742,82 @@ const styles = StyleSheet.create({
         marginLeft: 10,
         paddingVertical: 0,
     },
-    searchAvatar: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
+    sheetSearchAvatar: {
+        width: 30,
+        height: 30,
+        borderRadius: 15,
         backgroundColor: '#3B82F6',
         alignItems: 'center',
         justifyContent: 'center',
     },
-    searchAvatarText: {
-        fontSize: 13,
+    sheetSearchAvatarText: {
+        fontSize: 12,
         fontWeight: '700',
         color: '#FFFFFF',
     },
+    sheetSectionLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#94A3B8',
+        letterSpacing: 0.5,
+        marginBottom: 8,
+    },
+    spotRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 11,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9',
+    },
+    spotIconWrap: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: '#F8FAFC',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 14,
+    },
+    spotEmoji: {
+        fontSize: 20,
+    },
+    spotTextWrap: {
+        flex: 1,
+    },
+    spotName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#1E293B',
+    },
+    spotSub: {
+        fontSize: 13,
+        color: '#94A3B8',
+        marginTop: 2,
+    },
+    mySpotFab: {
+        position: 'absolute',
+        right: 16,
+        width: 46,
+        height: 46,
+        borderRadius: 14,
+        backgroundColor: '#FFFFFF',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 12,
+        elevation: 6,
+        zIndex: 5,
+    },
+    mySpotFabInner: {
+        width: 46,
+        height: 46,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     sheetBackground: {
         backgroundColor: '#FFFFFF',
-        borderRadius: 32,
+        borderRadius: 24,
     },
     handleIndicator: {
         backgroundColor: '#E5E7EB',
@@ -763,8 +826,9 @@ const styles = StyleSheet.create({
     },
     sheetContent: {
         flex: 1,
-        paddingHorizontal: 24,
-        paddingTop: 12,
+        paddingHorizontal: 16,
+        paddingTop: 0,
+        marginTop: -10,
     },
     welcomeRow: {
         flexDirection: 'row',
@@ -856,36 +920,42 @@ const styles = StyleSheet.create({
     },
     tabBarContainer: {
         position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: '#FFFFFF',
+        left: 60,
+        right: 60,
+        height: 52,
+        backgroundColor: 'rgba(255,255,255,0.95)',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-around',
         paddingHorizontal: 20,
-        borderTopWidth: 1,
-        borderTopColor: '#F4F4F5',
+        borderRadius: 26,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.10,
+        shadowRadius: 16,
+        elevation: 10,
         zIndex: 1000,
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.06)',
     },
     tabItem: {
-        width: 36,
-        height: 36,
+        width: 30,
+        height: 30,
         alignItems: 'center',
         justifyContent: 'center',
     },
     plusButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 34,
+        height: 34,
+        borderRadius: 17,
         backgroundColor: '#3F3F46',
         alignItems: 'center',
         justifyContent: 'center',
         shadowColor: '#3F3F46',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 5,
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.25,
+        shadowRadius: 6,
+        elevation: 4,
     },
     // Trips Overlay Styles
     tripsOverlay: {

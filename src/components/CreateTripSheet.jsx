@@ -208,6 +208,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                     data={searchResults}
                     keyExtractor={(item) => item.id}
                     showsVerticalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
                     contentContainerStyle={styles.resultsList}
                     renderItem={({ item }) => (
                         <TouchableOpacity
@@ -978,6 +979,8 @@ const styles = StyleSheet.create({
         borderRadius: 24,
         flexDirection: 'row',
         alignItems: 'center',
+        borderWidth: 2,
+        borderColor: 'transparent',
         elevation: 2,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -994,7 +997,6 @@ const styles = StyleSheet.create({
         color: '#0F172A',
     },
     tagChipSelected: {
-        borderWidth: 2,
         borderColor: '#0F172A',
         backgroundColor: '#FFFFFF',
     },
