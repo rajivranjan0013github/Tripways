@@ -16,6 +16,10 @@ import Animated, {
 import WheelPicker from '@quidone/react-native-wheel-picker';
 import { Calendar } from 'react-native-calendars';
 import Config from 'react-native-config';
+import { MMKV } from 'react-native-mmkv';
+
+const storage = new MMKV();
+const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FULL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.92;
@@ -555,6 +559,32 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                 itinerary: finalItinerary,
                 discoveredPlaces: selectedPlaceObjects,
             });
+
+            // Auto-save trip to backend
+            try {
+                const userStr = storage.getString('user');
+                if (userStr) {
+                    const user = JSON.parse(userStr);
+                    const userId = user?.id || user?._id;
+                    if (userId) {
+                        await fetch(`${BACKEND_URL}/api/trips`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                userId,
+                                destination: destination || selectedLocation?.name,
+                                days: totalDays || numDays,
+                                interests: selectedPrefs.map(p => PREF_TO_INTEREST[p] || p.toLowerCase()),
+                                itinerary: finalItinerary,
+                                discoveredPlaces: selectedPlaceObjects,
+                            }),
+                        });
+                    }
+                }
+            } catch (saveErr) {
+                console.warn('Failed to save trip to backend:', saveErr);
+            }
+
             ref.current?.close();
         } catch (error) {
             console.error('Failed to plan trip:', error);

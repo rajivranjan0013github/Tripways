@@ -239,6 +239,9 @@ const LoginScreen = ({ navigation }) => {
     const handlePostLogin = (data) => {
         if (data?.success && data?.user) {
             storage.set('user', JSON.stringify(data.user));
+            if (data.isNewUser !== undefined) {
+                storage.set('isNewUser', data.isNewUser);
+            }
             navigation.reset({
                 index: 0,
                 routes: [{ name: 'Home' }],

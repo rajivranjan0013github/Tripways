@@ -9,12 +9,17 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easi
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { MMKV } from 'react-native-mmkv';
+import Config from 'react-native-config';
 import AddSpotsSheet from '../components/AddSpotsSheet';
 import CreateTripSheet from '../components/CreateTripSheet';
 import TripOverviewSheet from '../components/TripOverviewSheet';
 import ProfileOverlay from '../components/ProfileOverlay';
 
+const storage = new MMKV();
+const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Day colors matching the frontendweb reference
@@ -51,6 +56,7 @@ function decodePolyline(encoded) {
 
 const HomeScreen = () => {
     const insets = useSafeAreaInsets();
+    const navigation = useNavigation();
     const tabBarHeight = 56 + insets.bottom;
     const bottomSheetRef = useRef(null);
     const addSpotsSheetRef = useRef(null); // Ref for Add Spots BottomSheet
@@ -61,6 +67,50 @@ const HomeScreen = () => {
     const [activeTab, setActiveTab] = React.useState('home');
     const [showCreateOptions, setShowCreateOptions] = React.useState(false);
     const [showProfile, setShowProfile] = useState(false);
+    const [savedTrips, setSavedTrips] = useState([]);
+
+    // Load user data from MMKV
+    const storedUser = useMemo(() => {
+        try {
+            const userStr = storage.getString('user');
+            return userStr ? JSON.parse(userStr) : null;
+        } catch (e) {
+            return null;
+        }
+    }, []);
+
+    const userName = storedUser?.name || 'Traveler';
+    const userInitials = useMemo(() => {
+        if (!userName) return '?';
+        const parts = userName.trim().split(' ');
+        if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+        return userName.substring(0, 2).toUpperCase();
+    }, [userName]);
+
+    // Fetch saved trips from backend
+    const fetchTrips = useCallback(() => {
+        const userId = storedUser?.id || storedUser?._id;
+        if (userId) {
+            fetch(`${BACKEND_URL}/api/trips/user/${userId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data?.success && data?.trips) {
+                        setSavedTrips(data.trips);
+                    }
+                })
+                .catch(err => console.warn('Failed to fetch saved trips:', err));
+        }
+    }, [storedUser]);
+
+    useEffect(() => {
+        fetchTrips();
+    }, [fetchTrips]);
+
+    useEffect(() => {
+        if (activeTab === 'trips') {
+            fetchTrips();
+        }
+    }, [activeTab, fetchTrips]);
 
     // Animation values
     const overlayOpacity = useSharedValue(0);
@@ -349,7 +399,7 @@ const HomeScreen = () => {
                         placeholderTextColor="#94A3B8"
                     />
                     <TouchableOpacity style={styles.searchAvatar} onPress={() => setShowProfile(true)}>
-                        <Text style={styles.searchAvatarText}>Ak</Text>
+                        <Text style={styles.searchAvatarText}>{userInitials}</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -370,7 +420,7 @@ const HomeScreen = () => {
                     <View style={styles.welcomeRow}>
                         <View>
                             <Text style={styles.welcomeLabel}>Welcome,</Text>
-                            <Text style={styles.userName}>Ak K!</Text>
+                            <Text style={styles.userName}>{userName.split(' ')[0]}!</Text>
                         </View>
                         <TouchableOpacity style={styles.importGuideBtn}>
                             <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF8C42" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -444,20 +494,29 @@ const HomeScreen = () => {
 
                     <Text style={styles.sectionTitle}>My Trips</Text>
                     <View style={styles.myTripsList}>
-                        {[
-                            { title: '5-Day Delhi Trip', info: '5 Days 4 Nights', spots: '30 Spots', color: '#EEF2FF', iconColor: '#3B82F6' },
-                            { title: '4-Day Varanasi Trip', info: '4 Days 3 Nights', spots: '24 Spots', color: '#F7FEE7', iconColor: '#84CC16' },
-                            { title: '2-Day Bengaluru Trip', info: '2 Days 1 Night', spots: '15 Spots', color: '#FDF2F8', iconColor: '#D946EF' },
-                        ].map((trip, idx) => (
-                            <TouchableOpacity key={idx} style={[styles.tripCard, { backgroundColor: trip.color }]}>
-                                <View style={styles.tripImagePlaceholder} />
-                                <View style={styles.tripInfo}>
-                                    <Text style={[styles.tripTitle, { color: trip.iconColor }]}>{trip.title}</Text>
-                                    <Text style={styles.tripDetails}>{trip.info}</Text>
-                                    <Text style={styles.tripDetails}>{trip.spots}</Text>
-                                </View>
-                            </TouchableOpacity>
-                        ))}
+                        {savedTrips.length > 0 ? (
+                            savedTrips.map((trip, idx) => {
+                                const tripColors = ['#EEF2FF', '#F7FEE7', '#FDF2F8', '#FFF7ED', '#F0F9FF'];
+                                const iconColors = ['#3B82F6', '#84CC16', '#D946EF', '#F97316', '#06B6D4'];
+                                return (
+                                    <TouchableOpacity key={trip._id || idx} style={[styles.tripCard, { backgroundColor: tripColors[idx % tripColors.length] }]}>
+                                        <View style={styles.tripImagePlaceholder} />
+                                        <View style={styles.tripInfo}>
+                                            <Text style={[styles.tripTitle, { color: iconColors[idx % iconColors.length] }]}>
+                                                {trip.days}-Day {trip.destination} Trip
+                                            </Text>
+                                            <Text style={styles.tripDetails}>{trip.days} Days {trip.days - 1} Nights</Text>
+                                            <Text style={styles.tripDetails}>{(trip.interests || []).join(', ')}</Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })
+                        ) : (
+                            <View style={{ padding: 20, alignItems: 'center' }}>
+                                <Text style={{ color: '#94A3B8', fontSize: 14, fontWeight: '500' }}>No saved trips yet</Text>
+                                <Text style={{ color: '#CBD5E1', fontSize: 12, marginTop: 4 }}>Create your first trip to see it here!</Text>
+                            </View>
+                        )}
                     </View>
                 </ScrollView>
             </Animated.View>
@@ -575,6 +634,10 @@ const HomeScreen = () => {
                 animationConfigs={sheetAnimationConfig}
                 onTripCreated={(data) => {
                     setTripData(data);
+                    // Fetch trips after delay to ensure backend has saved
+                    setTimeout(() => {
+                        fetchTrips();
+                    }, 2000);
                     setTimeout(() => {
                         tripOverviewSheetRef.current?.expand();
                     }, 500);
@@ -633,6 +696,7 @@ const HomeScreen = () => {
             <ProfileOverlay
                 visible={showProfile}
                 onClose={() => setShowProfile(false)}
+                navigation={navigation}
             />
         </View>
     );

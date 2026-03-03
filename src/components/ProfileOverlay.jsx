@@ -20,6 +20,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { MMKV } from 'react-native-mmkv';
+import Config from 'react-native-config';
+
+const storage = new MMKV();
+const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -96,11 +101,41 @@ const renderIcon = (icon, color) => {
     }
 };
 
-const ProfileOverlay = ({ visible, onClose }) => {
+const ProfileOverlay = ({ visible, onClose, navigation }) => {
     const insets = useSafeAreaInsets();
     const [showContent, setShowContent] = React.useState(false);
+    const [userData, setUserData] = React.useState(null);
+    const [tripCount, setTripCount] = React.useState(0);
     const opacity = useSharedValue(0);
     const translateY = useSharedValue(30);
+
+    // Load user data from MMKV and fetch trip count from backend
+    React.useEffect(() => {
+        if (visible) {
+            try {
+                const userStr = storage.getString('user');
+                if (userStr) {
+                    const user = JSON.parse(userStr);
+                    setUserData(user);
+
+                    // Fetch latest data from backend
+                    const userId = user?.id || user?._id;
+                    if (userId) {
+                        fetch(`${BACKEND_URL}/api/users/${userId}`)
+                            .then(res => res.json())
+                            .then(data => {
+                                if (data && !data.error) {
+                                    setTripCount(data.tripCount || 0);
+                                }
+                            })
+                            .catch(err => console.warn('Failed to fetch user data:', err));
+                    }
+                }
+            } catch (e) {
+                console.warn('Failed to load user data:', e);
+            }
+        }
+    }, [visible]);
 
     React.useEffect(() => {
         if (visible) {
@@ -124,6 +159,51 @@ const ProfileOverlay = ({ visible, onClose }) => {
         transform: [{ translateY: translateY.value }],
     }));
 
+    const handleLogout = () => {
+        try {
+            storage.delete('user');
+            storage.delete('isNewUser');
+        } catch (e) {
+            console.warn('Failed to clear storage:', e);
+        }
+        onClose();
+        if (navigation) {
+            navigation.reset({
+                index: 0,
+                routes: [{ name: 'Login' }],
+            });
+        }
+    };
+
+    const handleDeleteAccount = async () => {
+        const userId = userData?.id || userData?._id;
+        if (!userId) return;
+
+        try {
+            await fetch(`${BACKEND_URL}/api/users/${userId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+            });
+        } catch (e) {
+            console.warn('Failed to delete account on server:', e);
+        }
+        handleLogout();
+    };
+
+    // Get user initials for avatar
+    const getInitials = (name) => {
+        if (!name) return '?';
+        const parts = name.trim().split(' ');
+        if (parts.length >= 2) {
+            return (parts[0][0] + parts[1][0]).toUpperCase();
+        }
+        return name.substring(0, 2).toUpperCase();
+    };
+
+    const userName = userData?.name || 'User';
+    const userEmail = userData?.email || '';
+    const userInitials = getInitials(userName);
+
     if (!showContent) return null;
 
     return (
@@ -144,34 +224,22 @@ const ProfileOverlay = ({ visible, onClose }) => {
                         </Svg>
                     </TouchableOpacity>
 
-                    <View style={styles.avatarLarge}>
-                        <Text style={styles.avatarLargeText}>AK</Text>
-                    </View>
-                    <Text style={styles.profileName}>Ak Kumar</Text>
-                    <Text style={styles.profileEmail}>ak.kumar@email.com</Text>
-                    <TouchableOpacity style={styles.editProfileBtn}>
-                        <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
-                        </Svg>
-                        <Text style={styles.editProfileText}>Edit Profile</Text>
-                    </TouchableOpacity>
+                    {userData?.picture ? (
+                        <Image source={{ uri: userData.picture }} style={styles.avatarImage} />
+                    ) : (
+                        <View style={styles.avatarLarge}>
+                            <Text style={styles.avatarLargeText}>{userInitials}</Text>
+                        </View>
+                    )}
+                    <Text style={styles.profileName}>{userName}</Text>
+                    <Text style={styles.profileEmail}>{userEmail}</Text>
                 </View>
 
                 {/* Stats Row */}
                 <View style={styles.statsRow}>
                     <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>4</Text>
+                        <Text style={styles.statNumber}>{tripCount}</Text>
                         <Text style={styles.statLabel}>Trips</Text>
-                    </View>
-                    <View style={styles.statDivider} />
-                    <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>12</Text>
-                        <Text style={styles.statLabel}>Spots</Text>
-                    </View>
-                    <View style={styles.statDivider} />
-                    <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>3</Text>
-                        <Text style={styles.statLabel}>Countries</Text>
                     </View>
                 </View>
 
@@ -198,7 +266,7 @@ const ProfileOverlay = ({ visible, onClose }) => {
                 </View>
 
                 {/* Logout Button */}
-                <TouchableOpacity style={styles.logoutButton} activeOpacity={0.7}>
+                <TouchableOpacity style={styles.logoutButton} activeOpacity={0.7} onPress={handleLogout}>
                     <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <Path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                         <Path d="m16 17 5-5-5-5" />
@@ -219,7 +287,7 @@ const ProfileOverlay = ({ visible, onClose }) => {
                 </View>
 
                 {/* Delete Account */}
-                <TouchableOpacity style={styles.deleteAccountButton} activeOpacity={0.7}>
+                <TouchableOpacity style={styles.deleteAccountButton} activeOpacity={0.7} onPress={handleDeleteAccount}>
                     <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <Path d="M3 6h18" />
                         <Path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
@@ -274,6 +342,12 @@ const styles = StyleSheet.create({
         backgroundColor: '#3B82F6',
         alignItems: 'center',
         justifyContent: 'center',
+        marginBottom: 12,
+    },
+    avatarImage: {
+        width: 72,
+        height: 72,
+        borderRadius: 36,
         marginBottom: 12,
     },
     avatarLargeText: {
