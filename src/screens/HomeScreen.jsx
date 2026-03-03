@@ -4,8 +4,8 @@
  */
 
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, ScrollView, TextInput } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing } from 'react-native-reanimated';
+import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, ScrollView, TextInput, Keyboard } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing, interpolate } from 'react-native-reanimated';
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -64,11 +64,17 @@ const HomeScreen = () => {
     const createTripSheetRef = useRef(null); // Ref for Create Trip BottomSheet
     const tripOverviewSheetRef = useRef(null);
     const mapRef = useRef(null);
+    const searchInputRef = useRef(null);
     const [tripData, setTripData] = useState(null);
     const [activeTab, setActiveTab] = React.useState('home');
     const [showCreateOptions, setShowCreateOptions] = React.useState(false);
     const [showProfile, setShowProfile] = useState(false);
+    const [keyboardVisible, setKeyboardVisible] = useState(false);
+    const [sheetIndex, setSheetIndex] = useState(1);
     const [savedTrips, setSavedTrips] = useState([]);
+    const [searchText, setSearchText] = useState('');
+    const [searchFocused, setSearchFocused] = useState(false);
+    const [socialMode, setSocialMode] = useState(null); // null | 'instagram' | 'tiktok'
 
     // Load user data from MMKV
     const storedUser = useMemo(() => {
@@ -151,15 +157,69 @@ const HomeScreen = () => {
         };
     });
 
-    // FAB floats 16px above whatever height the sheet currently is
-    // On Android, animatedPosition is measured from below the status bar,
-    // so we subtract its height to keep the FAB aligned correctly.
-    const statusBarOffset = Platform.OS === 'android' ? (StatusBar.currentHeight || 0) : 0;
+    // FAB floats 16px above whatever height the sheet currently is.
+    // On Android, animatedPosition is relative to the full screen, so we use
+    // screen height (includes nav bar) rather than window height.
+    // Fades out smoothly when the sheet goes above the 50% snap point.
+    const fabScreenHeight = Platform.OS === 'android'
+        ? Dimensions.get('screen').height
+        : SCREEN_HEIGHT;
+    const halfSnapY = SCREEN_HEIGHT * 0.5; // Y position when sheet is at 50%
     const fabAnimatedStyle = useAnimatedStyle(() => {
+        // Fade from fully visible to hidden over a small range above 50%
+        const opacity = interpolate(
+            sheetAnimatedPosition.value,
+            [halfSnapY - SCREEN_HEIGHT * 0.08, halfSnapY],
+            [0, 1],
+            'clamp'
+        );
         return {
-            bottom: SCREEN_HEIGHT - sheetAnimatedPosition.value + 16 - statusBarOffset,
+            bottom: fabScreenHeight - sheetAnimatedPosition.value + 16,
+            opacity,
         };
     });
+
+    // Crossfade between avatar and close button based on sheet position
+    const thresholdY = SCREEN_HEIGHT * 0.5;  // 50% snap Y from top
+    const fadeRange = SCREEN_HEIGHT * 0.06;   // smooth over ~6% of screen
+    const avatarAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(
+            sheetAnimatedPosition.value,
+            [thresholdY - fadeRange, thresholdY],
+            [0, 1],
+            'clamp'
+        ),
+    }));
+    const closeAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(
+            sheetAnimatedPosition.value,
+            [thresholdY - fadeRange, thresholdY],
+            [1, 0],
+            'clamp'
+        ),
+    }));
+
+    // Hide floating tab bar when keyboard is open
+    useEffect(() => {
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+        const onShow = () => {
+            setKeyboardVisible(true);
+            tabBarTranslateY.value = withTiming(200, { duration: 250 });
+        };
+        const onHide = () => {
+            setKeyboardVisible(false);
+            tabBarTranslateY.value = withTiming(0, { duration: 250 });
+        };
+
+        const sub1 = Keyboard.addListener(showEvent, onShow);
+        const sub2 = Keyboard.addListener(hideEvent, onHide);
+        return () => {
+            sub1.remove();
+            sub2.remove();
+        };
+    }, []);
 
     useEffect(() => {
         if (activeTab === 'trips') {
@@ -241,6 +301,10 @@ const HomeScreen = () => {
 
     const handleSheetChanges = useCallback((index) => {
         console.log('handleSheetChanges', index);
+        setSheetIndex(index);
+        if (index !== 2) {
+            Keyboard.dismiss();
+        }
     }, []);
 
     const handleAddSpotsSheetChange = useCallback((index) => {
@@ -427,41 +491,217 @@ const HomeScreen = () => {
                     {/* Apple Maps-style search row */}
                     <View style={styles.sheetSearchRow}>
                         <View style={styles.sheetSearchBar}>
-                            <Svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                                <Circle cx="11" cy="11" r="8" />
-                                <Path d="m21 21-4.3-4.3" />
-                            </Svg>
+                            {socialMode === 'instagram' ? (
+                                <Svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+                                    <Rect x="2" y="2" width="20" height="20" rx="5" stroke="#E1306C" strokeWidth="2" />
+                                    <Circle cx="12" cy="12" r="5" stroke="#E1306C" strokeWidth="2" />
+                                    <Circle cx="17.5" cy="6.5" r="1.5" fill="#E1306C" />
+                                </Svg>
+                            ) : socialMode === 'tiktok' ? (
+                                <Svg width="17" height="19" viewBox="0 0 22 24" fill="none">
+                                    <Path d="M16 0H12v16.5a3.5 3.5 0 1 1-3-3.46V9a7.5 7.5 0 1 0 7 7.5V8a8.22 8.22 0 0 0 4 1V5a4 4 0 0 1-4-4" fill="#000" />
+                                </Svg>
+                            ) : (
+                                <Svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Circle cx="11" cy="11" r="8" />
+                                    <Path d="m21 21-4.3-4.3" />
+                                </Svg>
+                            )}
                             <TextInput
+                                ref={searchInputRef}
                                 style={styles.sheetSearchInput}
-                                placeholder="Search spots..."
-                                placeholderTextColor="#94A3B8"
+                                placeholder={socialMode === 'instagram' ? 'Paste reels URL...' : socialMode === 'tiktok' ? 'Paste video URL...' : 'Search spots...'}
+                                placeholderTextColor={socialMode === 'instagram' ? '#E1306C' : socialMode === 'tiktok' ? '#000' : '#94A3B8'}
+                                value={searchText}
+                                onChangeText={setSearchText}
+                                onFocus={() => {
+                                    setSearchFocused(true);
+                                    bottomSheetRef.current?.snapToIndex(2);
+                                }}
+                                onBlur={() => setSearchFocused(false)}
+                                returnKeyType="search"
                             />
                         </View>
-                        <TouchableOpacity style={styles.sheetSearchAvatar} onPress={() => setShowProfile(true)}>
-                            <Text style={styles.sheetSearchAvatarText}>Ak</Text>
-                        </TouchableOpacity>
+                        <View style={styles.searchButtonWrap}>
+                            <Animated.View style={[styles.searchButtonLayer, avatarAnimatedStyle]}>
+                                <TouchableOpacity style={styles.sheetSearchAvatar} onPress={() => setShowProfile(true)}>
+                                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                                        <Circle cx="12" cy="7" r="4" />
+                                    </Svg>
+                                </TouchableOpacity>
+                            </Animated.View>
+                            <Animated.View style={[styles.searchButtonLayer, closeAnimatedStyle]}>
+                                <TouchableOpacity
+                                    style={styles.sheetSearchClose}
+                                    onPress={() => {
+                                        setSearchText('');
+                                        setSocialMode(null);
+                                        searchInputRef.current?.blur();
+                                        Keyboard.dismiss();
+                                        bottomSheetRef.current?.snapToIndex(1);
+                                    }}
+                                >
+                                    <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M18 6 6 18M6 6l12 12" />
+                                    </Svg>
+                                </TouchableOpacity>
+                            </Animated.View>
+                        </View>
                     </View>
 
-                    {/* Recent / Suggested spots */}
-                    <Text style={styles.sheetSectionLabel}>Recent Spots</Text>
-                    {[
-                        { name: 'India Gate', sub: 'New Delhi · 3.2 km', icon: '📍' },
-                        { name: 'Humayun\'s Tomb', sub: 'New Delhi · 5.8 km', icon: '🏛️' },
-                        { name: 'Qutub Minar', sub: 'New Delhi · 14 km', icon: '🕌' },
-                    ].map((spot, idx) => (
-                        <TouchableOpacity key={idx} style={styles.spotRow}>
-                            <View style={styles.spotIconWrap}>
-                                <Text style={styles.spotEmoji}>{spot.icon}</Text>
+                    {/* Conditional content based on search focus & text */}
+                    {searchFocused && searchText.length === 0 && !socialMode ? (
+                        /* ── Social Search: shown when focused + nothing typed + no platform selected ── */
+                        <View style={styles.socialSearchContainer}>
+                            <Text style={styles.sheetSectionLabel}>Search on</Text>
+                            <View style={styles.socialCardsRow}>
+                                {/* Instagram card */}
+                                <TouchableOpacity style={styles.socialCard} activeOpacity={0.8} onPress={() => setSocialMode('instagram')}>
+                                    <View style={[styles.socialIconWrap, { backgroundColor: '#FFEEF4' }]}>
+                                        <Svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                            <Rect x="2" y="2" width="20" height="20" rx="5" stroke="#E1306C" strokeWidth="2" />
+                                            <Circle cx="12" cy="12" r="5" stroke="#E1306C" strokeWidth="2" />
+                                            <Circle cx="17.5" cy="6.5" r="1.5" fill="#E1306C" />
+                                        </Svg>
+                                    </View>
+                                    <Text style={styles.socialCardTitle}>Instagram</Text>
+                                    <Text style={styles.socialCardSub}>Paste reels link</Text>
+                                </TouchableOpacity>
+
+                                {/* TikTok card */}
+                                <TouchableOpacity style={styles.socialCard} activeOpacity={0.8} onPress={() => setSocialMode('tiktok')}>
+                                    <View style={[styles.socialIconWrap, { backgroundColor: '#F0F0F0' }]}>
+                                        <Svg width="22" height="24" viewBox="0 0 22 24" fill="none">
+                                            <Path d="M16 0H12v16.5a3.5 3.5 0 1 1-3-3.46V9a7.5 7.5 0 1 0 7 7.5V8a8.22 8.22 0 0 0 4 1V5a4 4 0 0 1-4-4" fill="#000" />
+                                        </Svg>
+                                    </View>
+                                    <Text style={styles.socialCardTitle}>TikTok</Text>
+                                    <Text style={styles.socialCardSub}>Paste video link</Text>
+                                </TouchableOpacity>
                             </View>
-                            <View style={styles.spotTextWrap}>
-                                <Text style={styles.spotName}>{spot.name}</Text>
-                                <Text style={styles.spotSub}>{spot.sub}</Text>
+
+                            {/* Quick suggestion chips */}
+                            <Text style={[styles.sheetSectionLabel, { marginTop: 20 }]}>Trending Searches</Text>
+                            <View style={styles.chipRow}>
+                                {['Cafés in Paris', 'Bali hidden gems', 'Tokyo street food', 'NYC rooftops'].map((chip, i) => (
+                                    <TouchableOpacity
+                                        key={i}
+                                        style={styles.trendChip}
+                                        activeOpacity={0.7}
+                                        onPress={() => setSearchText(chip)}
+                                    >
+                                        <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <Path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+                                        </Svg>
+                                        <Text style={styles.trendChipText}>{chip}</Text>
+                                    </TouchableOpacity>
+                                ))}
                             </View>
-                            <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M9 18l6-6-6-6" />
-                            </Svg>
-                        </TouchableOpacity>
-                    ))}
+                        </View>
+                    ) : searchFocused && (searchText.length > 0 || socialMode) ? (
+                        /* ── Search results / URL input: shown when focused + user has typed or platform selected ── */
+                        <View style={styles.searchResultsContainer}>
+                            {socialMode ? (
+                                <>
+                                    <Text style={styles.sheetSectionLabel}>
+                                        {socialMode === 'instagram' ? 'Instagram Reels' : 'TikTok Video'}
+                                    </Text>
+                                    <View style={styles.emptySpots}>
+                                        {socialMode === 'instagram' ? (
+                                            <Svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+                                                <Rect x="2" y="2" width="20" height="20" rx="5" stroke="#E1306C" strokeWidth="1.5" />
+                                                <Circle cx="12" cy="12" r="5" stroke="#E1306C" strokeWidth="1.5" />
+                                                <Circle cx="17.5" cy="6.5" r="1.5" fill="#E1306C" />
+                                            </Svg>
+                                        ) : (
+                                            <Svg width="36" height="40" viewBox="0 0 22 24" fill="none">
+                                                <Path d="M16 0H12v16.5a3.5 3.5 0 1 1-3-3.46V9a7.5 7.5 0 1 0 7 7.5V8a8.22 8.22 0 0 0 4 1V5a4 4 0 0 1-4-4" fill="#CBD5E1" />
+                                            </Svg>
+                                        )}
+                                        <Text style={[styles.emptySpotsText, { marginTop: 12 }]}>
+                                            {searchText.length === 0
+                                                ? `Paste a ${socialMode === 'instagram' ? 'reels' : 'TikTok'} URL above`
+                                                : 'Processing link…'}
+                                        </Text>
+                                        <Text style={styles.emptySpotsHint}>We'll extract places from the video</Text>
+                                    </View>
+                                </>
+                            ) : (
+                                <>
+                                    <Text style={styles.sheetSectionLabel}>Results for "{searchText}"</Text>
+                                    <View style={styles.emptySpots}>
+                                        <Svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <Circle cx="11" cy="11" r="8" />
+                                            <Path d="m21 21-4.3-4.3" />
+                                        </Svg>
+                                        <Text style={[styles.emptySpotsText, { marginTop: 12 }]}>Searching places…</Text>
+                                        <Text style={styles.emptySpotsHint}>Results will appear here</Text>
+                                    </View>
+                                </>
+                            )}
+                        </View>
+                    ) : (
+                        /* ── Saved Spots: default view when not searching ── */
+                        <View>
+                            <Text style={styles.sheetSectionLabel}>Saved Spots</Text>
+                            {(() => {
+                                const spots = [];
+                                const seen = new Set();
+                                const categoryIcons = {
+                                    sightseeing: '📍',
+                                    food: '🍽️',
+                                    restaurant: '🍽️',
+                                    shopping: '🛍️',
+                                    nature: '🌿',
+                                    adventure: '🏔️',
+                                    temple: '🛕',
+                                    museum: '🏛️',
+                                    beach: '🏖️',
+                                    nightlife: '🌃',
+                                    default: '📍',
+                                };
+                                (savedTrips || []).forEach(trip => {
+                                    (trip.itinerary || []).forEach(day => {
+                                        (day.places || []).forEach(place => {
+                                            if (place.name && !seen.has(place.name)) {
+                                                seen.add(place.name);
+                                                const cat = (place.category || '').toLowerCase();
+                                                spots.push({
+                                                    name: place.name,
+                                                    sub: `${trip.destination || 'Trip'} · Day ${day.day}`,
+                                                    icon: categoryIcons[cat] || categoryIcons.default,
+                                                });
+                                            }
+                                        });
+                                    });
+                                });
+                                if (spots.length === 0) {
+                                    return (
+                                        <View style={styles.emptySpots}>
+                                            <Text style={styles.emptySpotsIcon}>🔖</Text>
+                                            <Text style={styles.emptySpotsText}>No saved spots yet</Text>
+                                            <Text style={styles.emptySpotsHint}>Create a trip to see your spots here</Text>
+                                        </View>
+                                    );
+                                }
+                                return spots.slice(0, 5).map((spot, idx) => (
+                                    <TouchableOpacity key={idx} style={styles.spotRow}>
+                                        <View style={styles.spotIconWrap}>
+                                            <Text style={styles.spotEmoji}>{spot.icon}</Text>
+                                        </View>
+                                        <View style={styles.spotTextWrap}>
+                                            <Text style={styles.spotName}>{spot.name}</Text>
+                                            <Text style={styles.spotSub}>{spot.sub}</Text>
+                                        </View>
+                                        <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <Path d="M9 18l6-6-6-6" />
+                                        </Svg>
+                                    </TouchableOpacity>
+                                ));
+                            })()}
+                        </View>
+                    )}
                 </BottomSheetView>
             </BottomSheet>
 
@@ -742,16 +982,35 @@ const styles = StyleSheet.create({
         marginLeft: 10,
         paddingVertical: 0,
     },
+    searchButtonWrap: {
+        width: 38,
+        height: 38,
+    },
+    searchButtonLayer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: 38,
+        height: 38,
+    },
+    sheetSearchClose: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        backgroundColor: '#F1F5F9',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     sheetSearchAvatar: {
-        width: 30,
-        height: 30,
-        borderRadius: 15,
-        backgroundColor: '#3B82F6',
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        backgroundColor: '#F1F5F9',
         alignItems: 'center',
         justifyContent: 'center',
     },
     sheetSearchAvatarText: {
-        fontSize: 12,
+        fontSize: 14,
         fontWeight: '700',
         color: '#FFFFFF',
     },
@@ -793,6 +1052,86 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: '#94A3B8',
         marginTop: 2,
+    },
+    emptySpots: {
+        alignItems: 'center',
+        paddingVertical: 24,
+    },
+    emptySpotsIcon: {
+        fontSize: 28,
+        marginBottom: 8,
+    },
+    emptySpotsText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#94A3B8',
+    },
+    emptySpotsHint: {
+        fontSize: 12,
+        color: '#CBD5E1',
+        marginTop: 4,
+    },
+    // Social Search styles
+    socialSearchContainer: {
+        paddingTop: 4,
+    },
+    socialCardsRow: {
+        flexDirection: 'row',
+        gap: 12,
+        marginTop: 8,
+    },
+    socialCard: {
+        flex: 1,
+        backgroundColor: '#F8FAFC',
+        borderRadius: 16,
+        padding: 16,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
+    },
+    socialIconWrap: {
+        width: 52,
+        height: 52,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 10,
+    },
+    socialCardTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#1E293B',
+        marginBottom: 2,
+    },
+    socialCardSub: {
+        fontSize: 12,
+        color: '#94A3B8',
+        fontWeight: '500',
+    },
+    chipRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginTop: 10,
+    },
+    trendChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#F8FAFC',
+        borderRadius: 20,
+        paddingHorizontal: 14,
+        paddingVertical: 9,
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
+    },
+    trendChipText: {
+        fontSize: 13,
+        fontWeight: '500',
+        color: '#64748B',
+    },
+    searchResultsContainer: {
+        paddingTop: 4,
     },
     mySpotFab: {
         position: 'absolute',
@@ -920,8 +1259,8 @@ const styles = StyleSheet.create({
     },
     tabBarContainer: {
         position: 'absolute',
-        left: 60,
-        right: 60,
+        left: 90,
+        right: 90,
         height: 52,
         backgroundColor: 'rgba(255,255,255,0.95)',
         flexDirection: 'row',
