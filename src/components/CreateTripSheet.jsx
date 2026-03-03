@@ -1,4 +1,4 @@
-import React, { forwardRef, useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import React, { forwardRef, useMemo, useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, Image, ScrollView, ActivityIndicator } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import LinearGradient from 'react-native-linear-gradient';
@@ -41,6 +41,29 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
     const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
     const [isPlanning, setIsPlanning] = useState(false);
     const inputRef = useRef(null);
+    const bottomSheetInternalRef = useRef(null);
+
+    // Expose BottomSheet methods + custom openDiscoverSpots
+    useImperativeHandle(ref, () => ({
+        snapToIndex: (...args) => bottomSheetInternalRef.current?.snapToIndex(...args),
+        snapToPosition: (...args) => bottomSheetInternalRef.current?.snapToPosition(...args),
+        expand: (...args) => bottomSheetInternalRef.current?.expand(...args),
+        collapse: (...args) => bottomSheetInternalRef.current?.collapse(...args),
+        close: (...args) => bottomSheetInternalRef.current?.close(...args),
+        forceClose: (...args) => bottomSheetInternalRef.current?.forceClose(...args),
+        // DEV: Open directly to discover spots with trip data
+        openDiscoverSpots: (trip) => {
+            setSelectedLocation({ name: trip.destination });
+            setNumDays(trip.days || 4);
+            setSelectedPrefs((trip.interests || []).map(i => i.charAt(0).toUpperCase() + i.slice(1)));
+            setStep('discoverSpots');
+            bottomSheetInternalRef.current?.expand();
+            // Trigger fetch after state is set
+            setTimeout(() => {
+                fetchDiscoverPlacesWithArgs(trip.destination, trip.interests || ['popular'], trip.days || 4);
+            }, 100);
+        },
+    }));
 
     // Skeleton pulse animation
     const pulseAnim = useSharedValue(0);
@@ -498,6 +521,30 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
         }
     };
 
+    // DEV: Fetch discover places with explicit args (used by openDiscoverSpots)
+    const fetchDiscoverPlacesWithArgs = async (placeName, interests, days) => {
+        setIsLoadingPlaces(true);
+        setDiscoveredPlaces([]);
+        setSelectedSpots([]);
+        try {
+            const backendUrl = Config.BACKEND_URL || 'http://localhost:3000';
+            const response = await fetch(`${backendUrl}/api/discover-places`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ place: placeName, interests, days }),
+            });
+            const data = await response.json();
+            if (data.success && data.places) {
+                setDiscoveredPlaces(data.places);
+                setSelectedSpots(data.places.map(p => p.id));
+            }
+        } catch (error) {
+            console.error('Failed to discover places:', error);
+        } finally {
+            setIsLoadingPlaces(false);
+        }
+    };
+
     const handlePlanTrip = async () => {
         setIsPlanning(true);
         try {
@@ -652,96 +699,78 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                 )}
             </View>
 
-            {isLoadingPlaces ? (
-                <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 20 }}>
-                    {/* Skeleton City Header */}
-                    <View style={styles.cityHeader}>
-                        <View style={styles.cityHeaderLeft}>
-                            <Animated.View style={[styles.cityCheck, styles.skeletonCityCheck, skeletonStyle]} />
-                            <Animated.View style={[styles.skeletonCityName, skeletonStyle]} />
-                        </View>
-                        <Animated.View style={[styles.skeletonSpotsCount, skeletonStyle]} />
-                    </View>
-
-                    {/* Skeleton Spot Rows */}
-                    {[0, 1, 2, 3, 4, 5].map(renderSkeletonSpot)}
-                </ScrollView>
-            ) : (
-                <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 20 }}>
-                    {/* City Section */}
-                    <View style={styles.cityHeader}>
-                        <View style={styles.cityHeaderLeft}>
-                            <View style={styles.cityCheck}>
-                                <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                    <Path d="M20 6L9 17l-5-5" />
-                                </Svg>
+            <View style={{ flex: 1 }}>
+                {isLoadingPlaces ? (
+                    <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
+                        {/* Skeleton City Header */}
+                        <View style={styles.cityHeader}>
+                            <View style={styles.cityHeaderLeft}>
+                                <Animated.View style={[styles.cityCheck, styles.skeletonCityCheck, skeletonStyle]} />
+                                <Animated.View style={[styles.skeletonCityName, skeletonStyle]} />
                             </View>
-                            <Text style={styles.cityName}>{selectedLocation?.name || 'Unknown'}</Text>
+                            <Animated.View style={[styles.skeletonSpotsCount, skeletonStyle]} />
                         </View>
-                        <Text style={styles.spotsCount}>{filteredSpots.length} spots</Text>
-                    </View>
 
-                    {/* Spots List */}
-                    {filteredSpots.map((spot, idx) => {
-                        const isChecked = selectedSpots.includes(spot.id);
-                        return (
-                            <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)}>
-                                <Text style={styles.spotNumber}>{idx + 1}.</Text>
-                                {spot.photoUrl ? (
-                                    <Image source={{ uri: spot.photoUrl }} style={styles.spotImage} />
-                                ) : (
-                                    <View style={[styles.spotImage, styles.spotImagePlaceholder]}>
-                                        <Text style={styles.spotImagePlaceholderText}>📍</Text>
-                                    </View>
-                                )}
-                                <View style={styles.spotInfo}>
-                                    <Text style={styles.spotName} numberOfLines={1}>✨ {spot.name}</Text>
-                                    {spot.address ? <Text style={styles.spotDesc} numberOfLines={1}>{spot.address}</Text> : null}
-                                    {spot.rating ? (
-                                        <Text style={styles.spotRating}>⭐ {spot.rating} ({spot.userRatingCount})</Text>
-                                    ) : null}
+                        {/* Skeleton Spot Rows */}
+                        {[0, 1, 2, 3, 4, 5].map(renderSkeletonSpot)}
+                    </ScrollView>
+                ) : (
+                    <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
+                        {/* City Section */}
+                        <View style={styles.cityHeader}>
+                            <View style={styles.cityHeaderLeft}>
+                                <View style={styles.cityCheck}>
+                                    <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M20 6L9 17l-5-5" />
+                                    </Svg>
                                 </View>
-                                <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
-                                    {isChecked && (
-                                        <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                            <Path d="M20 6L9 17l-5-5" />
-                                        </Svg>
+                                <Text style={styles.cityName}>{selectedLocation?.name || 'Unknown'}</Text>
+                            </View>
+                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M6 9l6 6 6-6" />
+                            </Svg>
+                        </View>
+
+                        {/* Spots List */}
+                        {filteredSpots.map((spot, idx) => {
+                            const isChecked = selectedSpots.includes(spot.id);
+                            const shortDesc = spot.interest
+                                ? spot.interest.charAt(0).toUpperCase() + spot.interest.slice(1)
+                                : spot.address || '';
+                            return (
+                                <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)} activeOpacity={0.7} delayPressIn={100}>
+                                    <Text style={styles.spotNumber}>{idx + 1}.</Text>
+                                    {spot.photoUrl ? (
+                                        <Image source={{ uri: spot.photoUrl }} style={styles.spotImage} />
+                                    ) : (
+                                        <View style={[styles.spotImage, styles.spotImagePlaceholder]}>
+                                            <Text style={styles.spotImagePlaceholderText}>📍</Text>
+                                        </View>
                                     )}
-                                </View>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </ScrollView>
-            )}
+                                    <View style={styles.spotInfo}>
+                                        <Text style={styles.spotName} numberOfLines={1}>✨ {spot.name}</Text>
+                                        {shortDesc ? <Text style={styles.spotDesc} numberOfLines={2}>{shortDesc}</Text> : null}
+                                    </View>
+                                    <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
+                                        {isChecked && (
+                                            <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                                <Path d="M20 6L9 17l-5-5" />
+                                            </Svg>
+                                        )}
+                                    </View>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </ScrollView>
+                )}
 
-            {/* Bottom Plan Trip Button */}
-            <View style={styles.addSpotsBar}>
-                <TouchableOpacity
-                    style={[styles.addSpotsButton, (isPlanning || isLoadingPlaces) && { opacity: 0.7 }]}
-                    onPress={handlePlanTrip}
-                    disabled={isPlanning || isLoadingPlaces || selectedSpots.length === 0}
-                >
-                    {isPlanning ? (
-                        <View style={styles.planningRow}>
-                            <ActivityIndicator size="small" color="#FFFFFF" />
-                            <Text style={styles.addSpotsText}>  Planning your trip...</Text>
-                        </View>
-                    ) : isLoadingPlaces ? (
-                        <View style={styles.planningRow}>
-                            <ActivityIndicator size="small" color="#FFFFFF" />
-                            <Text style={styles.addSpotsText}>  Discovering spots...</Text>
-                        </View>
-                    ) : (
-                        <Text style={styles.addSpotsText}>Plan the Trip ✨ ({selectedSpots.length} spots)</Text>
-                    )}
-                </TouchableOpacity>
             </View>
         </Animated.View>
     );
 
     return (
         <BottomSheet
-            ref={ref}
+            ref={bottomSheetInternalRef}
             index={-1}
             snapPoints={snapPoints}
             enableDynamicSizing={false}
@@ -754,7 +783,17 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                 if (index === -1) {
                     setStep('home');
                     setSearchQuery('');
+                    setSelectedLocation(null);
+                    setNumDays(4);
+                    setSelectionMode('days');
+                    setSelectedDates({});
+                    setStartDate(null);
+                    setEndDate(null);
                     setDaysSelected(false);
+                    setSelectedPrefs([]);
+                    setSpotCategory('All');
+                    setSelectedSpots([]);
+                    setDiscoveredPlaces([]);
                 }
             }}
             animationConfigs={animationConfigs}
@@ -767,6 +806,31 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                 {step === 'preferences' && renderPreferences()}
                 {step === 'howManyDays' && renderHowManyDays()}
                 {step === 'discoverSpots' && renderDiscoverSpots()}
+
+                {/* Floating Add Spots Button — rendered at BottomSheetView level */}
+                {step === 'discoverSpots' && (
+                    <View style={styles.addSpotsBar} pointerEvents="box-none">
+                        <TouchableOpacity
+                            style={[styles.addSpotsButton, (isPlanning || isLoadingPlaces) && { opacity: 0.7 }]}
+                            onPress={handlePlanTrip}
+                            disabled={isPlanning || isLoadingPlaces || selectedSpots.length === 0}
+                        >
+                            {isPlanning ? (
+                                <View style={styles.planningRow}>
+                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                    <Text style={styles.addSpotsText}>  Planning your trip...</Text>
+                                </View>
+                            ) : isLoadingPlaces ? (
+                                <View style={styles.planningRow}>
+                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                    <Text style={styles.addSpotsText}>  Discovering spots...</Text>
+                                </View>
+                            ) : (
+                                <Text style={styles.addSpotsText}>Add {selectedSpots.length} spots</Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                )}
             </BottomSheetView>
         </BottomSheet>
     );
@@ -969,7 +1033,6 @@ const styles = StyleSheet.create({
     tagGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 12,
         marginBottom: 32,
     },
     tagChip: {
@@ -986,6 +1049,10 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.05,
         shadowRadius: 4,
+        flexGrow: 0,
+        flexShrink: 0,
+        marginRight: 10,
+        marginBottom: 10,
     },
     tagIcon: {
         fontSize: 16,
@@ -1205,9 +1272,9 @@ const styles = StyleSheet.create({
         gap: 12,
     },
     cityCheck: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
+        width: 24,
+        height: 24,
+        borderRadius: 12,
         backgroundColor: '#0F172A',
         alignItems: 'center',
         justifyContent: 'center',
@@ -1253,10 +1320,10 @@ const styles = StyleSheet.create({
         lineHeight: 18,
     },
     spotCheck: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        borderWidth: 2,
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        borderWidth: 1.5,
         borderColor: '#E2E8F0',
         alignItems: 'center',
         justifyContent: 'center',
@@ -1266,10 +1333,10 @@ const styles = StyleSheet.create({
         borderColor: '#0F172A',
     },
     addSpotsBar: {
-        paddingHorizontal: 24,
-        paddingBottom: Platform.OS === 'ios' ? 34 : 20,
-        paddingTop: 12,
-        backgroundColor: '#FFFFFF',
+        position: 'absolute',
+        bottom: Platform.OS === 'ios' ? 28 : 16,
+        left: 24,
+        right: 24,
     },
     addSpotsButton: {
         backgroundColor: '#0F172A',

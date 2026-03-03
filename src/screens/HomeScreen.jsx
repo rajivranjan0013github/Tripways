@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, ScrollView, TextInput } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, ScrollView, TextInput, Image } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing } from 'react-native-reanimated';
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
@@ -505,8 +505,64 @@ const HomeScreen = () => {
                                 const tripColors = ['#EEF2FF', '#F7FEE7', '#FDF2F8', '#FFF7ED', '#F0F9FF'];
                                 const iconColors = ['#3B82F6', '#84CC16', '#D946EF', '#F97316', '#06B6D4'];
                                 return (
-                                    <TouchableOpacity key={trip._id || idx} style={[styles.tripCard, { backgroundColor: tripColors[idx % tripColors.length] }]}>
-                                        <View style={styles.tripImagePlaceholder} />
+                                    <TouchableOpacity
+                                        key={trip._id || idx}
+                                        style={[styles.tripCard, { backgroundColor: tripColors[idx % tripColors.length] }]}
+                                        activeOpacity={0.7}
+                                        delayPressIn={100}
+                                        onPress={() => {
+                                            // DEV: Open Discover Spots UI directly
+                                            setActiveTab('home');
+                                            setTimeout(() => {
+                                                bottomSheetRef.current?.close();
+                                                setTimeout(() => {
+                                                    tabBarTranslateY.value = withTiming(tabBarHeight, {
+                                                        duration: 400,
+                                                        easing: Easing.bezier(0.33, 1, 0.68, 1),
+                                                    });
+                                                }, 150);
+                                                setTimeout(() => {
+                                                    createTripSheetRef.current?.openDiscoverSpots(trip);
+                                                }, 400);
+                                            }, 200);
+                                            /* ORIGINAL HANDLER — restore when done:
+                                            const tripId = trip._id;
+                                            if (!tripId) return;
+                                            fetch(`${BACKEND_URL}/api/trips/${tripId}`)
+                                                .then(res => res.json())
+                                                .then(data => {
+                                                    if (data?.success && data?.trip) {
+                                                        const fullTrip = data.trip;
+                                                        setTripData({
+                                                            numDays: fullTrip.days,
+                                                            locationName: fullTrip.destination,
+                                                            itinerary: fullTrip.itinerary,
+                                                            discoveredPlaces: fullTrip.discoveredPlaces || [],
+                                                        });
+                                                        setActiveTab('home');
+                                                        setTimeout(() => {
+                                                            bottomSheetRef.current?.close();
+                                                            setTimeout(() => {
+                                                                tabBarTranslateY.value = withTiming(tabBarHeight, {
+                                                                    duration: 400,
+                                                                    easing: Easing.bezier(0.33, 1, 0.68, 1),
+                                                                });
+                                                            }, 150);
+                                                            setTimeout(() => {
+                                                                tripOverviewSheetRef.current?.expand();
+                                                            }, 400);
+                                                        }, 200);
+                                                    }
+                                                })
+                                                .catch(err => console.warn('Failed to fetch trip details:', err));
+                                            */
+                                        }}
+                                    >
+                                        {trip.tripRepPic ? (
+                                            <Image source={{ uri: trip.tripRepPic }} style={styles.tripImage} />
+                                        ) : (
+                                            <View style={styles.tripImagePlaceholder} />
+                                        )}
                                         <View style={styles.tripInfo}>
                                             <Text style={[styles.tripTitle, { color: iconColors[idx % iconColors.length] }]}>
                                                 {trip.days}-Day {trip.destination} Trip
@@ -530,7 +586,7 @@ const HomeScreen = () => {
             {/* Create Options Menu */}
             {showCreateOptions && (
                 <TouchableOpacity
-                    style={[styles.createMenuBackdrop, { paddingBottom: 64 + insets.bottom + 24 }]}
+                    style={[styles.createMenuBackdrop, { paddingBottom: 52 + insets.bottom + 12 }]}
                     activeOpacity={1}
                     onPress={() => setShowCreateOptions(false)}
                 >
@@ -1043,6 +1099,11 @@ const styles = StyleSheet.create({
         height: 100,
         borderRadius: 20,
         backgroundColor: 'rgba(0,0,0,0.05)',
+    },
+    tripImage: {
+        width: 100,
+        height: 100,
+        borderRadius: 20,
     },
     tripInfo: {
         flex: 1,
