@@ -13,7 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { MMKV } from 'react-native-mmkv';
 import Config from 'react-native-config';
-import AddSpotsSheet from '../components/AddSpotsSheet';
+
 import CreateTripSheet from '../components/CreateTripSheet';
 import TripOverviewSheet from '../components/TripOverviewSheet';
 import ProfileOverlay from '../components/ProfileOverlay';
@@ -60,11 +60,12 @@ const HomeScreen = () => {
     const navigation = useNavigation();
     const tabBarHeight = 52 + insets.bottom;
     const bottomSheetRef = useRef(null);
-    const addSpotsSheetRef = useRef(null); // Ref for Add Spots BottomSheet
+
     const createTripSheetRef = useRef(null); // Ref for Create Trip BottomSheet
     const tripOverviewSheetRef = useRef(null);
     const mapRef = useRef(null);
     const searchInputRef = useRef(null);
+    const secondarySheetOpen = useRef(false); // Track if any overlay sheet is open
     const [tripData, setTripData] = useState(null);
     const [activeTab, setActiveTab] = React.useState('home');
     const [showCreateOptions, setShowCreateOptions] = React.useState(false);
@@ -160,22 +161,30 @@ const HomeScreen = () => {
     // FAB floats 16px above whatever height the sheet currently is.
     // On Android, animatedPosition is relative to the full screen, so we use
     // screen height (includes nav bar) rather than window height.
-    // Fades out smoothly when the sheet goes above the 50% snap point.
+    // Only visible near the 50% snap point — fades out both above AND below.
     const fabScreenHeight = Platform.OS === 'android'
         ? Dimensions.get('screen').height
         : SCREEN_HEIGHT;
     const halfSnapY = SCREEN_HEIGHT * 0.5; // Y position when sheet is at 50%
+    const bottomSnapY = SCREEN_HEIGHT * 0.88; // Y position when sheet is at 12%
     const fabAnimatedStyle = useAnimatedStyle(() => {
-        // Fade from fully visible to hidden over a small range above 50%
-        const opacity = interpolate(
+        // Fade out above 50%
+        const opacityAbove = interpolate(
             sheetAnimatedPosition.value,
             [halfSnapY - SCREEN_HEIGHT * 0.08, halfSnapY],
             [0, 1],
             'clamp'
         );
+        // Fade out below 50%
+        const opacityBelow = interpolate(
+            sheetAnimatedPosition.value,
+            [halfSnapY, bottomSnapY],
+            [1, 0],
+            'clamp'
+        );
         return {
             bottom: fabScreenHeight - sheetAnimatedPosition.value + 16,
-            opacity,
+            opacity: opacityAbove * opacityBelow,
         };
     });
 
@@ -210,7 +219,10 @@ const HomeScreen = () => {
         };
         const onHide = () => {
             setKeyboardVisible(false);
-            tabBarTranslateY.value = withTiming(0, { duration: 250 });
+            // Only restore tab bar if no secondary sheet is open
+            if (!secondarySheetOpen.current) {
+                tabBarTranslateY.value = withTiming(0, { duration: 250 });
+            }
         };
 
         const sub1 = Keyboard.addListener(showEvent, onShow);
@@ -229,11 +241,8 @@ const HomeScreen = () => {
             overlayOpacity.value = withTiming(0, { duration: 350 });
             overlayTranslateY.value = withTiming(20, { duration: 350 });
 
-            // Only restore if we aren't about to open or already in the Add Spots sheet
-            const isAddSpotsOpen = addSpotsSheetRef.current?.snapToIndex !== undefined && addSpotsSheetRef.current?.snapToIndex > -1;
-            const isCreateTripOpen = createTripSheetRef.current?.snapToIndex !== undefined && createTripSheetRef.current?.snapToIndex > -1;
-
-            if (!isAddSpotsOpen && !isCreateTripOpen) {
+            // Only restore if no secondary sheet is open
+            if (!secondarySheetOpen.current) {
                 tabBarTranslateY.value = withTiming(0, {
                     duration: 400,
                     easing: Easing.bezier(0.33, 1, 0.68, 1)
@@ -307,27 +316,9 @@ const HomeScreen = () => {
         }
     }, []);
 
-    const handleAddSpotsSheetChange = useCallback((index) => {
-        if (index > -1) {
-            tabBarTranslateY.value = withTiming(tabBarHeight, {
-                duration: 400,
-                easing: Easing.bezier(0.33, 1, 0.68, 1)
-            });
-        } else {
-            // Restore Home view: Tab bar first, then welcome sheet
-            tabBarTranslateY.value = withTiming(0, {
-                duration: 400,
-                easing: Easing.bezier(0.33, 1, 0.68, 1)
-            });
-            if (activeTab === 'home') {
-                setTimeout(() => {
-                    bottomSheetRef.current?.snapToIndex(1);
-                }, 150);
-            }
-        }
-    }, [tabBarHeight, activeTab]);
 
     const handleTripOverviewSheetChange = useCallback((index) => {
+        secondarySheetOpen.current = index > -1;
         if (index > -1) {
             tabBarTranslateY.value = withTiming(tabBarHeight, {
                 duration: 400,
@@ -347,6 +338,7 @@ const HomeScreen = () => {
     }, [tabBarHeight, activeTab]);
 
     const handleCreateTripSheetChange = useCallback((index) => {
+        secondarySheetOpen.current = index > -1;
         if (index > -1) {
             tabBarTranslateY.value = withTiming(tabBarHeight, {
                 duration: 400,
@@ -873,61 +865,12 @@ const HomeScreen = () => {
                             </View>
                         </TouchableOpacity>
 
-                        <View style={styles.menuDivider} />
 
-                        <TouchableOpacity
-                            style={styles.createOptionItem}
-                            onPress={() => {
-                                setShowCreateOptions(false);
-
-                                // Step 1: Handle Trips Overlay if visible
-                                let overlayDelay = 0;
-                                if (activeTab === 'trips') {
-                                    setActiveTab('home');
-                                    overlayDelay = 200; // Give some head start to overlay closing
-                                }
-
-                                // Sequence: Close Welcome Sheet -> Hide Tab Bar -> Open Add Spots
-                                setTimeout(() => {
-                                    bottomSheetRef.current?.close();
-
-                                    setTimeout(() => {
-                                        tabBarTranslateY.value = withTiming(tabBarHeight, {
-                                            duration: 400,
-                                            easing: Easing.bezier(0.33, 1, 0.68, 1)
-                                        });
-                                    }, 150);
-
-                                    setTimeout(() => {
-                                        addSpotsSheetRef.current?.expand();
-                                    }, 400);
-                                }, overlayDelay);
-                            }}
-                        >
-                            <View style={styles.optionIconContainer}>
-                                <Svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <Path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
-                                    <Path d="M14 2v4a2 2 0 0 0 2 2h4" />
-                                    <Circle cx="10" cy="13" r="2" />
-                                    <Path d="m14 17-3-3-3 3" />
-                                </Svg>
-                            </View>
-                            <View style={styles.optionTextContainer}>
-                                <Text style={styles.optionTitle}>Add Spots</Text>
-                                <Text style={styles.optionSubtitle}>Save places you love</Text>
-                            </View>
-                        </TouchableOpacity>
                     </Animated.View>
                 </TouchableOpacity>
             )}
 
-            {/* Add Spots Bottom Sheet */}
-            <AddSpotsSheet
-                ref={addSpotsSheetRef}
-                onChange={handleAddSpotsSheetChange}
-                tabBarHeight={tabBarHeight}
-                animationConfigs={sheetAnimationConfig}
-            />
+
 
             {/* Create Trip Bottom Sheet */}
             <CreateTripSheet

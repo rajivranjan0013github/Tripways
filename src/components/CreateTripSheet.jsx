@@ -98,12 +98,6 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
 
     const snapPoints = useMemo(() => ['92%'], []);
 
-    const locations = [
-        { name: 'France', flag: '🇫🇷', active: false },
-        { name: 'Thailand', flag: '🇹🇭', active: true },
-        { name: 'Canada', flag: '🇨🇦', active: false },
-        { name: 'Japan', flag: '🇯🇵', active: false },
-    ];
 
     const [searchResults, setSearchResults] = useState([]);
 
@@ -160,21 +154,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
 
     const renderHome = () => (
         <Animated.View exiting={FadeOut} style={[styles.content, { justifyContent: 'flex-end', paddingTop: 0 }]}>
-            <View style={[styles.locationContainer, { marginBottom: 40 }]}>
-                {locations.map((loc, idx) => (
-                    <View key={idx} style={styles.locationItem}>
-                        <View style={styles.textRow}>
-                            {loc.active && <Text style={styles.flagEmoji}>{loc.flag}</Text>}
-                            <Text style={[
-                                styles.locationText,
-                                loc.active ? styles.activeText : styles.inactiveText
-                            ]}>
-                                {loc.name}
-                            </Text>
-                        </View>
-                    </View>
-                ))}
-            </View>
+            <View style={{ flex: 1 }} />
 
             <View style={styles.footer}>
                 <Text style={styles.footerTitle}>Where are we going?</Text>
@@ -776,8 +756,9 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
             enableDynamicSizing={false}
             enablePanDownToClose={true}
             backdropComponent={renderBackdrop}
-            backgroundStyle={styles.sheetBackground}
-            handleIndicatorStyle={styles.handleIndicator}
+            backgroundStyle={step === 'home' ? styles.sheetBackgroundTransparent : styles.sheetBackground}
+            handleIndicatorStyle={step === 'home' ? { height: 0 } : styles.handleIndicator}
+            handleStyle={step === 'home' ? { height: 0, padding: 0 } : undefined}
             onChange={(index) => {
                 onChange(index);
                 if (index === -1) {
@@ -800,7 +781,19 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
         >
             <BottomSheetView style={[styles.container, { height: FULL_SHEET_HEIGHT }]}>
 
-
+                {/* Background image — only on home step */}
+                {step === 'home' && (
+                    <Image
+                        source={require('../assets/abcd.png')}
+                        style={styles.sheetBgImage}
+                    />
+                )}
+                {/* Custom handle indicator on top of image */}
+                {step === 'home' && (
+                    <View style={styles.customHandleWrap}>
+                        <View style={styles.customHandle} />
+                    </View>
+                )}
                 {step === 'home' && renderHome()}
                 {step === 'searching' && renderSearching()}
                 {step === 'preferences' && renderPreferences()}
@@ -842,10 +835,42 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 36,
         borderTopRightRadius: 36,
     },
+    sheetBackgroundTransparent: {
+        backgroundColor: 'transparent',
+        borderTopLeftRadius: 36,
+        borderTopRightRadius: 36,
+    },
+    sheetBgImage: {
+        ...StyleSheet.absoluteFillObject,
+        width: '100%',
+        height: '100%',
+        resizeMode: 'cover',
+        borderTopLeftRadius: 36,
+        borderTopRightRadius: 36,
+    },
+    customHandleWrap: {
+        alignItems: 'center',
+        paddingTop: 12,
+        paddingBottom: 4,
+    },
+    customHandle: {
+        width: 40,
+        height: 5,
+        borderRadius: 3,
+        backgroundColor: 'rgba(255,255,255,0.6)',
+    },
     handleIndicator: {
         width: 40,
         height: 5,
         backgroundColor: '#E2E8F0',
+        borderRadius: 3,
+        alignSelf: 'center',
+        marginTop: 12,
+    },
+    handleIndicatorLight: {
+        width: 40,
+        height: 5,
+        backgroundColor: 'rgba(255,255,255,0.6)',
         borderRadius: 3,
         alignSelf: 'center',
         marginTop: 12,
