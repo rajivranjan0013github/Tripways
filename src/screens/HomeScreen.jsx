@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, ScrollView, TextInput, Keyboard, Image } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, ScrollView, TextInput, Keyboard, Image, ActivityIndicator } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing, interpolate } from 'react-native-reanimated';
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
@@ -72,9 +72,13 @@ const HomeScreen = () => {
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [sheetIndex, setSheetIndex] = useState(1);
     const [savedTrips, setSavedTrips] = useState([]);
+    const [savedSpots, setSavedSpots] = useState({});
+    const [totalSpotsCount, setTotalSpotsCount] = useState(0);
     const [searchText, setSearchText] = useState('');
     const [searchFocused, setSearchFocused] = useState(false);
     const [socialMode, setSocialMode] = useState(null); // null | 'instagram' | 'tiktok'
+    const [videoProcessing, setVideoProcessing] = useState(false);
+    const [videoProgress, setVideoProgress] = useState('');
 
     // Load user data from MMKV
     const storedUser = useMemo(() => {
@@ -109,15 +113,116 @@ const HomeScreen = () => {
         }
     }, [storedUser]);
 
+    // Fetch saved spots from backend (grouped by country → city)
+    const fetchSpots = useCallback(() => {
+        const userId = storedUser?.id || storedUser?._id;
+        if (userId) {
+            fetch(`${BACKEND_URL}/api/spots/user/${userId}`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data?.success && data?.grouped) {
+                        setSavedSpots(data.grouped);
+                        setTotalSpotsCount(data.totalSpots || 0);
+                    }
+                })
+                .catch(err => console.warn('Failed to fetch saved spots:', err));
+        }
+    }, [storedUser]);
+
     useEffect(() => {
         fetchTrips();
-    }, [fetchTrips]);
+        fetchSpots();
+    }, [fetchTrips, fetchSpots]);
 
     useEffect(() => {
         if (activeTab === 'trips') {
             fetchTrips();
         }
-    }, [activeTab, fetchTrips]);
+        if (activeTab === 'home') {
+            fetchSpots();
+        }
+    }, [activeTab, fetchTrips, fetchSpots]);
+
+    // Detect when user pastes a video URL in social mode and process it
+    useEffect(() => {
+        if (!socialMode || !searchText || videoProcessing) return;
+        // Check if it looks like a URL
+        const trimmed = searchText.trim();
+        if (!trimmed.startsWith('http')) return;
+
+        const processVideoUrl = async () => {
+            setVideoProcessing(true);
+            setVideoProgress('Starting...');
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/extract-video-places`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ videoUrl: trimmed }),
+                });
+
+                const text = await response.text();
+                // Parse SSE events
+                let placesData = null;
+                const events = text.split('\n\n').filter(Boolean);
+                for (const eventBlock of events) {
+                    const lines = eventBlock.split('\n');
+                    let eventType = '';
+                    let eventData = '';
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) eventType = line.slice(7);
+                        if (line.startsWith('data: ')) eventData = line.slice(6);
+                    }
+                    if (!eventType || !eventData) continue;
+                    try {
+                        const parsed = JSON.parse(eventData);
+                        if (eventType === 'progress') {
+                            setVideoProgress(parsed.message || 'Processing...');
+                        } else if (eventType === 'places') {
+                            placesData = parsed;
+                        } else if (eventType === 'error') {
+                            throw new Error(parsed.message || 'Unknown error');
+                        }
+                    } catch (e) {
+                        if (e.message && !e.message.includes('JSON')) throw e;
+                    }
+                }
+
+                if (placesData && placesData.places && placesData.places.length > 0) {
+                    // Clear search state
+                    setSearchText('');
+                    setSocialMode(null);
+                    searchInputRef.current?.blur();
+                    Keyboard.dismiss();
+                    bottomSheetRef.current?.close();
+
+                    // Open CreateTripSheet with video places
+                    setTimeout(() => {
+                        tabBarTranslateY.value = withTiming(tabBarHeight, {
+                            duration: 400,
+                            easing: Easing.bezier(0.33, 1, 0.68, 1),
+                        });
+                    }, 150);
+                    setTimeout(() => {
+                        createTripSheetRef.current?.openWithVideoPlaces(
+                            placesData.destination,
+                            placesData.places
+                        );
+                    }, 400);
+                } else {
+                    setVideoProgress('No places found in this video');
+                    setTimeout(() => setVideoProgress(''), 3000);
+                }
+            } catch (error) {
+                console.error('Video processing failed:', error);
+                setVideoProgress(`Error: ${error.message}`);
+                setTimeout(() => setVideoProgress(''), 4000);
+            } finally {
+                setVideoProcessing(false);
+            }
+        };
+
+        processVideoUrl();
+    }, [searchText, socialMode]);
 
     // Animation values
     const overlayOpacity = useSharedValue(0);
@@ -608,7 +713,9 @@ const HomeScreen = () => {
                                         {socialMode === 'instagram' ? 'Instagram Reels' : 'TikTok Video'}
                                     </Text>
                                     <View style={styles.emptySpots}>
-                                        {socialMode === 'instagram' ? (
+                                        {videoProcessing ? (
+                                            <ActivityIndicator size="large" color={socialMode === 'instagram' ? '#E1306C' : '#000'} />
+                                        ) : socialMode === 'instagram' ? (
                                             <Svg width="40" height="40" viewBox="0 0 24 24" fill="none">
                                                 <Rect x="2" y="2" width="20" height="20" rx="5" stroke="#E1306C" strokeWidth="1.5" />
                                                 <Circle cx="12" cy="12" r="5" stroke="#E1306C" strokeWidth="1.5" />
@@ -620,11 +727,15 @@ const HomeScreen = () => {
                                             </Svg>
                                         )}
                                         <Text style={[styles.emptySpotsText, { marginTop: 12 }]}>
-                                            {searchText.length === 0
-                                                ? `Paste a ${socialMode === 'instagram' ? 'reels' : 'TikTok'} URL above`
-                                                : 'Processing link…'}
+                                            {videoProcessing
+                                                ? (videoProgress || 'Processing video...')
+                                                : searchText.length === 0
+                                                    ? `Paste a ${socialMode === 'instagram' ? 'reels' : 'TikTok'} URL above`
+                                                    : 'Processing link…'}
                                         </Text>
-                                        <Text style={styles.emptySpotsHint}>We'll extract places from the video</Text>
+                                        <Text style={styles.emptySpotsHint}>
+                                            {videoProcessing ? 'This may take a minute' : "We'll extract places from the video"}
+                                        </Text>
                                     </View>
                                 </>
                             ) : (
@@ -642,64 +753,82 @@ const HomeScreen = () => {
                             )}
                         </View>
                     ) : (
-                        /* ── Saved Spots: default view when not searching ── */
+                        /* ── My Spots: default view when not searching ── */
                         <View>
-                            <Text style={styles.sheetSectionLabel}>Saved Spots</Text>
-                            {(() => {
-                                const spots = [];
-                                const seen = new Set();
-                                const categoryIcons = {
-                                    sightseeing: '📍',
-                                    food: '🍽️',
-                                    restaurant: '🍽️',
-                                    shopping: '🛍️',
-                                    nature: '🌿',
-                                    adventure: '🏔️',
-                                    temple: '🛕',
-                                    museum: '🏛️',
-                                    beach: '🏖️',
-                                    nightlife: '🌃',
-                                    default: '📍',
-                                };
-                                (savedTrips || []).forEach(trip => {
-                                    (trip.itinerary || []).forEach(day => {
-                                        (day.places || []).forEach(place => {
-                                            if (place.name && !seen.has(place.name)) {
-                                                seen.add(place.name);
-                                                const cat = (place.category || '').toLowerCase();
-                                                spots.push({
-                                                    name: place.name,
-                                                    sub: `${trip.destination || 'Trip'} · Day ${day.day}`,
-                                                    icon: categoryIcons[cat] || categoryIcons.default,
-                                                });
-                                            }
-                                        });
-                                    });
-                                });
-                                if (spots.length === 0) {
+                            {/* Header row */}
+                            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 4 }}>
+                                <View>
+                                    <Text style={{ fontSize: 22, fontWeight: '800', color: '#0F172A', letterSpacing: -0.5 }}>My Spots</Text>
+                                    {totalSpotsCount > 0 && (
+                                        <Text style={{ fontSize: 13, color: '#94A3B8', marginTop: 1 }}>{totalSpotsCount} Spots Saved</Text>
+                                    )}
+                                </View>
+                            </View>
+
+                            {Object.keys(savedSpots).length > 0 ? (
+                                Object.entries(savedSpots).map(([country, cities]) => {
+                                    const cityCount = Object.keys(cities).length;
+                                    const spotCount = Object.values(cities).reduce((sum, c) => sum + c.spots.length, 0);
                                     return (
-                                        <View style={styles.emptySpots}>
-                                            <Text style={styles.emptySpotsIcon}>🔖</Text>
-                                            <Text style={styles.emptySpotsText}>No saved spots yet</Text>
-                                            <Text style={styles.emptySpotsHint}>Create a trip to see your spots here</Text>
+                                        <View key={country} style={{ marginTop: 16 }}>
+                                            {/* Country row */}
+                                            <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 20, marginBottom: 12 }}>
+                                                <Text style={{ fontSize: 20, fontWeight: '700', color: '#1E293B' }}>{country}</Text>
+                                                <Text style={{ fontSize: 12, color: '#94A3B8' }}>{cityCount} {cityCount === 1 ? 'City' : 'Cities'} • {spotCount} {spotCount === 1 ? 'Spot' : 'Spots'}</Text>
+                                            </View>
+
+                                            {/* City cards — horizontal scroll */}
+                                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: 20, paddingRight: 12 }}>
+                                                {Object.entries(cities).map(([city, cityData]) => {
+                                                    const cityKey = `${country}::${city}`;
+                                                    return (
+                                                        <TouchableOpacity
+                                                            key={cityKey}
+                                                            activeOpacity={0.85}
+                                                            onPress={() => {
+                                                                // Close bottom sheet & hide tab bar, then open Discover Spots
+                                                                bottomSheetRef.current?.close();
+                                                                tabBarTranslateY.value = withTiming(tabBarHeight, {
+                                                                    duration: 400,
+                                                                    easing: Easing.bezier(0.33, 1, 0.68, 1),
+                                                                });
+                                                                setTimeout(() => {
+                                                                    createTripSheetRef.current?.openWithSavedSpots(country, city, cities);
+                                                                }, 350);
+                                                            }}
+                                                            style={{
+                                                                width: 150,
+                                                                marginRight: 12,
+                                                                borderRadius: 14,
+                                                                overflow: 'hidden',
+                                                                backgroundColor: '#F1F5F9',
+                                                            }}
+                                                        >
+                                                            {cityData.cityPhoto ? (
+                                                                <Image source={{ uri: cityData.cityPhoto }} style={{ width: 150, height: 110, borderTopLeftRadius: 14, borderTopRightRadius: 14 }} />
+                                                            ) : (
+                                                                <View style={{ width: 150, height: 110, backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }}>
+                                                                    <Text style={{ fontSize: 32 }}>🏙️</Text>
+                                                                </View>
+                                                            )}
+                                                            <View style={{ paddingHorizontal: 10, paddingVertical: 8 }}>
+                                                                <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E293B' }} numberOfLines={1}>{city}</Text>
+                                                                <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>{cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}</Text>
+                                                            </View>
+                                                        </TouchableOpacity>
+                                                    );
+                                                })}
+                                            </ScrollView>
                                         </View>
                                     );
-                                }
-                                return spots.slice(0, 5).map((spot, idx) => (
-                                    <TouchableOpacity key={idx} style={styles.spotRow}>
-                                        <View style={styles.spotIconWrap}>
-                                            <Text style={styles.spotEmoji}>{spot.icon}</Text>
-                                        </View>
-                                        <View style={styles.spotTextWrap}>
-                                            <Text style={styles.spotName}>{spot.name}</Text>
-                                            <Text style={styles.spotSub}>{spot.sub}</Text>
-                                        </View>
-                                        <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <Path d="M9 18l6-6-6-6" />
-                                        </Svg>
-                                    </TouchableOpacity>
-                                ));
-                            })()}
+                                })
+                            ) : (
+                                <View style={styles.emptySpots}>
+                                    <Text style={styles.emptySpotsIcon}>🔖</Text>
+                                    <Text style={styles.emptySpotsText}>No saved spots yet</Text>
+                                    <Text style={styles.emptySpotsHint}>Save spots from your trips to see them here</Text>
+                                </View>
+                            )}
                         </View>
                     )}
                 </BottomSheetView>
@@ -751,21 +880,6 @@ const HomeScreen = () => {
                                         activeOpacity={0.7}
                                         delayPressIn={100}
                                         onPress={() => {
-                                            // DEV: Open Discover Spots UI directly
-                                            setActiveTab('home');
-                                            setTimeout(() => {
-                                                bottomSheetRef.current?.close();
-                                                setTimeout(() => {
-                                                    tabBarTranslateY.value = withTiming(tabBarHeight, {
-                                                        duration: 400,
-                                                        easing: Easing.bezier(0.33, 1, 0.68, 1),
-                                                    });
-                                                }, 150);
-                                                setTimeout(() => {
-                                                    createTripSheetRef.current?.openDiscoverSpots(trip);
-                                                }, 400);
-                                            }, 200);
-                                            /* ORIGINAL HANDLER — restore when done:
                                             const tripId = trip._id;
                                             if (!tripId) return;
                                             fetch(`${BACKEND_URL}/api/trips/${tripId}`)
@@ -795,7 +909,6 @@ const HomeScreen = () => {
                                                     }
                                                 })
                                                 .catch(err => console.warn('Failed to fetch trip details:', err));
-                                            */
                                         }}
                                     >
                                         {trip.tripRepPic ? (
@@ -820,6 +933,57 @@ const HomeScreen = () => {
                             </View>
                         )}
                     </View>
+
+                    {/* Saved Spots Section */}
+                    {Object.keys(savedSpots).length > 0 && (
+                        <>
+                            <Text style={styles.sectionTitle}>📍 Saved Spots</Text>
+                            {Object.entries(savedSpots).map(([country, cities]) => (
+                                <View key={country} style={{ marginBottom: 12 }}>
+                                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E293B', paddingHorizontal: 20, marginBottom: 8 }}>
+                                        🌍 {country}
+                                    </Text>
+                                    {Object.entries(cities).map(([city, cityData]) => (
+                                        <View key={`${country}-${city}`} style={{ marginBottom: 12 }}>
+                                            {/* City banner with representative photo */}
+                                            {cityData.cityPhoto && (
+                                                <View style={{ marginHorizontal: 20, marginBottom: 8, borderRadius: 12, overflow: 'hidden' }}>
+                                                    <Image source={{ uri: cityData.cityPhoto }} style={{ width: '100%', height: 100, borderRadius: 12 }} />
+                                                    <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 8, backgroundColor: 'rgba(0,0,0,0.4)' }}>
+                                                        <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>{city}</Text>
+                                                        <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11 }}>{cityData.spots.length} saved spots</Text>
+                                                    </View>
+                                                </View>
+                                            )}
+                                            {!cityData.cityPhoto && (
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 28, marginBottom: 6 }}>
+                                                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569', flex: 1 }}>{city}</Text>
+                                                    <Text style={{ fontSize: 11, color: '#94A3B8' }}>{cityData.spots.length} spots</Text>
+                                                </View>
+                                            )}
+                                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: 20, paddingRight: 12 }}>
+                                                {cityData.spots.map((spot) => (
+                                                    <View key={spot._id} style={{ width: 120, marginRight: 10 }}>
+                                                        {spot.photoUrl ? (
+                                                            <Image source={{ uri: spot.photoUrl }} style={{ width: 120, height: 80, borderRadius: 10 }} />
+                                                        ) : (
+                                                            <View style={{ width: 120, height: 80, borderRadius: 10, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
+                                                                <Text style={{ fontSize: 24 }}>📍</Text>
+                                                            </View>
+                                                        )}
+                                                        <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '600', color: '#334155', marginTop: 4 }}>{spot.name}</Text>
+                                                        {spot.rating && (
+                                                            <Text style={{ fontSize: 10, color: '#94A3B8' }}>⭐ {spot.rating}</Text>
+                                                        )}
+                                                    </View>
+                                                ))}
+                                            </ScrollView>
+                                        </View>
+                                    ))}
+                                </View>
+                            ))}
+                        </>
+                    )}
                 </ScrollView>
             </Animated.View>
 

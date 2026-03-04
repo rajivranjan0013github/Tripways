@@ -40,6 +40,9 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
     const [discoveredPlaces, setDiscoveredPlaces] = useState([]);
     const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
     const [isPlanning, setIsPlanning] = useState(false);
+    const [isFromVideo, setIsFromVideo] = useState(false);
+    const [isFromSavedSpots, setIsFromSavedSpots] = useState(false);
+    const [isSavingSpots, setIsSavingSpots] = useState(false);
     const inputRef = useRef(null);
     const bottomSheetInternalRef = useRef(null);
 
@@ -62,6 +65,48 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
             setTimeout(() => {
                 fetchDiscoverPlacesWithArgs(trip.destination, trip.interests || ['popular'], trip.days || 4);
             }, 100);
+        },
+        // Open with places already extracted from a video URL
+        openWithVideoPlaces: (destination, places) => {
+            setSelectedLocation({ name: destination });
+            setNumDays(4);
+            setDiscoveredPlaces(places);
+            setSelectedSpots(places.map(p => p.id));
+            setIsLoadingPlaces(false);
+            setIsFromVideo(true);
+            setIsFromSavedSpots(false);
+            setStep('discoverSpots');
+            bottomSheetInternalRef.current?.expand();
+        },
+        // Open Discover Spots with saved spots from a country, pre-selecting a specific city
+        openWithSavedSpots: (country, selectedCity, cities) => {
+            // Flatten all spots from all cities, mapping _id → id for compatibility
+            const allSpots = [];
+            Object.entries(cities).forEach(([city, cityData]) => {
+                (cityData.spots || []).forEach(spot => {
+                    allSpots.push({
+                        ...spot,
+                        id: spot._id || spot.id,
+                        city: city,
+                        country: country,
+                        interest: spot.category || 'sightseeing',
+                    });
+                });
+            });
+            // Pre-select only the tapped city's spots
+            const preSelected = allSpots
+                .filter(s => s.city === selectedCity)
+                .map(s => s.id);
+
+            setSelectedLocation({ name: country });
+            setNumDays(4);
+            setDiscoveredPlaces(allSpots);
+            setSelectedSpots(preSelected);
+            setIsLoadingPlaces(false);
+            setIsFromVideo(true);
+            setIsFromSavedSpots(true);
+            setStep('discoverSpots');
+            bottomSheetInternalRef.current?.expand();
         },
     }));
 
@@ -643,21 +688,32 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
 
     // Build dynamic spot categories from discovered data
     const spotCategories = useMemo(() => {
+        if (isFromVideo) {
+            // For video places, use country names as categories
+            const cats = new Set(['All']);
+            discoveredPlaces.forEach(p => {
+                if (p.country) cats.add(p.country);
+            });
+            return Array.from(cats);
+        }
         const cats = new Set(['All']);
         discoveredPlaces.forEach(p => {
             if (p.interest) cats.add(p.interest.charAt(0).toUpperCase() + p.interest.slice(1));
         });
         return Array.from(cats);
-    }, [discoveredPlaces]);
+    }, [discoveredPlaces, isFromVideo]);
 
     // Filter spots by selected category
     const filteredSpots = useMemo(() => {
         if (spotCategory === 'All') return discoveredPlaces;
+        if (isFromVideo) {
+            return discoveredPlaces.filter(p => p.country === spotCategory);
+        }
         return discoveredPlaces.filter(p => {
             const cat = p.interest?.charAt(0).toUpperCase() + p.interest?.slice(1);
             return cat === spotCategory;
         });
-    }, [discoveredPlaces, spotCategory]);
+    }, [discoveredPlaces, spotCategory, isFromVideo]);
 
     const toggleSpot = (id) => {
         setSelectedSpots(prev =>
@@ -713,6 +769,77 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
 
                         {/* Skeleton Spot Rows */}
                         {[0, 1, 2, 3, 4, 5].map(renderSkeletonSpot)}
+                    </ScrollView>
+                ) : isFromVideo ? (
+                    /* ── Grouped by Country → City for video places ── */
+                    <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
+                        {(() => {
+                            // Group filteredSpots by country → city
+                            const grouped = {};
+                            filteredSpots.forEach(spot => {
+                                const c = spot.country || 'Unknown';
+                                const ci = spot.city || 'Unknown';
+                                if (!grouped[c]) grouped[c] = {};
+                                if (!grouped[c][ci]) grouped[c][ci] = [];
+                                grouped[c][ci].push(spot);
+                            });
+                            let globalIdx = 0;
+                            return Object.entries(grouped).map(([country, cities]) => (
+                                <View key={country}>
+                                    {/* Country Header */}
+                                    <View style={[styles.cityHeader, { backgroundColor: '#F8FAFC', marginTop: 4 }]}>
+                                        <View style={styles.cityHeaderLeft}>
+                                            <Text style={{ fontSize: 16 }}>🌍</Text>
+                                            <Text style={[styles.cityName, { fontWeight: '700', fontSize: 15, color: '#1E293B' }]}>{country}</Text>
+                                        </View>
+                                    </View>
+                                    {Object.entries(cities).map(([city, spots]) => (
+                                        <View key={`${country}-${city}`}>
+                                            {/* City Sub-header */}
+                                            <View style={[styles.cityHeader, { paddingLeft: 28 }]}>
+                                                <View style={styles.cityHeaderLeft}>
+                                                    <View style={styles.cityCheck}>
+                                                        <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                            <Path d="M20 6L9 17l-5-5" />
+                                                        </Svg>
+                                                    </View>
+                                                    <Text style={styles.cityName}>{city}</Text>
+                                                </View>
+                                                <Text style={{ fontSize: 12, color: '#94A3B8' }}>{spots.length} spots</Text>
+                                            </View>
+                                            {/* Spots */}
+                                            {spots.map((spot) => {
+                                                globalIdx++;
+                                                const isChecked = selectedSpots.includes(spot.id);
+                                                return (
+                                                    <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)} activeOpacity={0.7} delayPressIn={100}>
+                                                        <Text style={styles.spotNumber}>{globalIdx}.</Text>
+                                                        {spot.photoUrl ? (
+                                                            <Image source={{ uri: spot.photoUrl }} style={styles.spotImage} />
+                                                        ) : (
+                                                            <View style={[styles.spotImage, styles.spotImagePlaceholder]}>
+                                                                <Text style={styles.spotImagePlaceholderText}>📍</Text>
+                                                            </View>
+                                                        )}
+                                                        <View style={styles.spotInfo}>
+                                                            <Text style={styles.spotName} numberOfLines={1}>✨ {spot.name}</Text>
+                                                            {spot.address ? <Text style={styles.spotDesc} numberOfLines={2}>{spot.address}</Text> : null}
+                                                        </View>
+                                                        <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
+                                                            {isChecked && (
+                                                                <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <Path d="M20 6L9 17l-5-5" />
+                                                                </Svg>
+                                                            )}
+                                                        </View>
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
+                                        </View>
+                                    ))}
+                                </View>
+                            ));
+                        })()}
                     </ScrollView>
                 ) : (
                     <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
@@ -794,6 +921,8 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                     setSpotCategory('All');
                     setSelectedSpots([]);
                     setDiscoveredPlaces([]);
+                    setIsFromVideo(false);
+                    setIsFromSavedSpots(false);
                 }
             }}
             animationConfigs={animationConfigs}
@@ -807,9 +936,51 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                 {step === 'howManyDays' && renderHowManyDays()}
                 {step === 'discoverSpots' && renderDiscoverSpots()}
 
-                {/* Floating Add Spots Button — rendered at BottomSheetView level */}
+                {/* Floating Plan Trip Button — rendered at BottomSheetView level */}
                 {step === 'discoverSpots' && (
                     <View style={styles.addSpotsBar} pointerEvents="box-none">
+                        {/* Save Spots button for video places */}
+                        {isFromVideo && !isFromSavedSpots && selectedSpots.length > 0 && !isPlanning && !isLoadingPlaces && (
+                            <TouchableOpacity
+                                style={[styles.addSpotsButton, { backgroundColor: '#10B981', marginBottom: 8 }]}
+                                onPress={async () => {
+                                    const storedUser = (() => { try { const u = storage.getString('user'); return u ? JSON.parse(u) : null; } catch { return null; } })();
+                                    const userId = storedUser?.id || storedUser?._id;
+                                    if (!userId) return;
+                                    setIsSavingSpots(true);
+                                    try {
+                                        const spotsToSave = discoveredPlaces.filter(p => selectedSpots.includes(p.id)).map(p => ({
+                                            country: p.country || 'Unknown',
+                                            city: p.city || 'Unknown',
+                                            name: p.name,
+                                            placeId: p.id,
+                                            address: p.address,
+                                            rating: p.rating,
+                                            userRatingCount: p.userRatingCount,
+                                            photoUrl: p.photoUrl,
+                                            coordinates: p.coordinates,
+                                            source: 'video',
+                                        }));
+                                        await fetch(`${BACKEND_URL}/api/spots`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ userId, spots: spotsToSave }),
+                                        });
+                                    } catch (e) { console.warn('Save spots failed:', e); }
+                                    setIsSavingSpots(false);
+                                }}
+                                disabled={isSavingSpots}
+                            >
+                                {isSavingSpots ? (
+                                    <View style={styles.planningRow}>
+                                        <ActivityIndicator size="small" color="#FFFFFF" />
+                                        <Text style={styles.addSpotsText}>  Saving spots...</Text>
+                                    </View>
+                                ) : (
+                                    <Text style={styles.addSpotsText}>💾 Save {selectedSpots.length} spots</Text>
+                                )}
+                            </TouchableOpacity>
+                        )}
                         <TouchableOpacity
                             style={[styles.addSpotsButton, (isPlanning || isLoadingPlaces) && { opacity: 0.7 }]}
                             onPress={handlePlanTrip}
@@ -826,7 +997,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                                     <Text style={styles.addSpotsText}>  Discovering spots...</Text>
                                 </View>
                             ) : (
-                                <Text style={styles.addSpotsText}>Add {selectedSpots.length} spots</Text>
+                                <Text style={styles.addSpotsText}>Plan Trip</Text>
                             )}
                         </TouchableOpacity>
                     </View>
