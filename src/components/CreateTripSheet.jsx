@@ -6,6 +6,14 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import Animated, {
     FadeIn,
     FadeOut,
+    FadeInUp,
+    FadeOutUp,
+    FadeInDown,
+    FadeOutDown,
+    SlideInDown,
+    SlideOutDown,
+    SlideOutUp,
+    LinearTransition,
     useSharedValue,
     useAnimatedStyle,
     withRepeat,
@@ -25,7 +33,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FULL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.92;
 
 const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated }, ref) => {
-    const [step, setStep] = useState('home'); // 'home', 'searching', 'preferences', 'howManyDays', 'discoverSpots'
+    const [step, setStep] = useState('home'); // 'home', 'preferences', 'howManyDays', 'discoverSpots'
+    const [searchActive, setSearchActive] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedLocation, setSelectedLocation] = useState(null);
     const [numDays, setNumDays] = useState(4);
@@ -197,82 +206,136 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
         []
     );
 
+    // Shared value for search animation (0 = default, 1 = search active)
+    const searchProgress = useSharedValue(0);
+
+    useEffect(() => {
+        searchProgress.value = withTiming(searchActive ? 1 : 0, {
+            duration: 500,
+            easing: Easing.bezier(0.33, 1, 0.68, 1),
+        });
+    }, [searchActive]);
+
+    // Slide the entire footer (title + search bar) up/down
+    const SLIDE_DISTANCE = FULL_SHEET_HEIGHT - 170;
+    const footerSlideStyle = useAnimatedStyle(() => ({
+        transform: [{ translateY: interpolate(searchProgress.value, [0, 1], [0, -SLIDE_DISTANCE], 'clamp') }],
+    }));
+
+    // Staggered fade for each title word
+    const word1Style = useAnimatedStyle(() => ({
+        opacity: interpolate(searchProgress.value, [0, 0.25], [1, 0], 'clamp'),
+    }));
+    const word2Style = useAnimatedStyle(() => ({
+        opacity: interpolate(searchProgress.value, [0.05, 0.35], [1, 0], 'clamp'),
+    }));
+    const word3Style = useAnimatedStyle(() => ({
+        opacity: interpolate(searchProgress.value, [0.1, 0.45], [1, 0], 'clamp'),
+    }));
+    const word4Style = useAnimatedStyle(() => ({
+        opacity: interpolate(searchProgress.value, [0.15, 0.55], [1, 0], 'clamp'),
+    }));
+    const subtitleFadeStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(searchProgress.value, [0.2, 0.6], [1, 0], 'clamp'),
+    }));
+
+    // Fade in search results after slide
+    const resultsStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(searchProgress.value, [0.6, 1], [0, 1], 'clamp'),
+    }));
+
     const renderHome = () => (
-        <Animated.View exiting={FadeOut} style={[styles.content, { justifyContent: 'flex-end', paddingTop: 0 }]}>
-            <View style={{ flex: 1 }} />
+        <View style={styles.content}>
+            {/* Everything slides together as one unit */}
+            <Animated.View style={[{ flex: 1, justifyContent: 'flex-end' }, footerSlideStyle]}>
+                {/* Title — each word fades out in a stagger */}
+                <View style={styles.footer}>
+                    <Animated.Text style={[styles.footerTitle, word1Style]}>Where</Animated.Text>
+                    <Animated.Text style={[styles.footerTitle, { marginBottom: 0 }, word2Style]}>are</Animated.Text>
+                    <Animated.Text style={[styles.footerTitle, { marginBottom: 0 }, word3Style]}>you</Animated.Text>
+                    <Animated.Text style={[styles.footerTitle, word4Style]}>going?</Animated.Text>
+                    <Animated.Text style={[styles.footerSubtitle, subtitleFadeStyle]}>Search for your destination</Animated.Text>
+                </View>
 
-            <View style={styles.footer}>
-                <Text style={styles.footerTitle}>Where are we going?</Text>
-                <Text style={styles.footerSubtitle}>Search for your destination</Text>
-
-                <TouchableOpacity
-                    style={styles.searchBar}
-                    onPress={() => {
-                        setStep('searching');
-                        setTimeout(() => inputRef.current?.focus(), 100);
-                    }}
-                >
-                    <View style={styles.searchIconContainer}>
-                        <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M21 21l-6-6" />
-                            <Circle cx="11" cy="11" r="8" />
-                        </Svg>
-                    </View>
-                    <Text style={styles.searchText}>Search</Text>
-                </TouchableOpacity>
-            </View>
-        </Animated.View>
-    );
-
-    const renderSearching = () => (
-        <Animated.View entering={FadeIn} exiting={FadeOut} style={[styles.content, { justifyContent: 'flex-start', paddingTop: 20 }]}>
-            <View style={styles.searchHeader}>
-                <View style={styles.searchInputContainer}>
-                    <TouchableOpacity onPress={() => setStep('home')} style={styles.backButton}>
-                        <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M19 12H5M12 19l-7-7 7-7" />
-                        </Svg>
-                    </TouchableOpacity>
-                    <TextInput
-                        ref={inputRef}
-                        style={styles.searchInput}
-                        placeholder="Search destination"
-                        placeholderTextColor="#94A3B8"
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                        autoCorrect={false}
-                    />
-                    {searchQuery.length > 0 && (
-                        <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-                            <Svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                                <Circle cx="12" cy="12" r="10" fill="#94A3B8" opacity={0.6} />
-                                <Path d="m15 9-6 6M9 9l6 6" stroke="#FFF" strokeWidth="2" strokeLinecap="round" />
-                            </Svg>
+                {/* Search bar — whole bar is a button when inactive */}
+                <View style={{ paddingHorizontal: 22 }}>
+                    {searchActive ? (
+                        <View style={[styles.searchBar, { justifyContent: 'flex-start', paddingHorizontal: 16 }]}>
+                            <TouchableOpacity onPress={() => { setSearchActive(false); setSearchQuery(''); }} style={{ marginRight: 10 }}>
+                                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M19 12H5M12 19l-7-7 7-7" />
+                                </Svg>
+                            </TouchableOpacity>
+                            <View style={styles.searchIconContainer}>
+                                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M21 21l-6-6" />
+                                    <Circle cx="11" cy="11" r="8" />
+                                </Svg>
+                            </View>
+                            <TextInput
+                                ref={inputRef}
+                                style={{ flex: 1, fontSize: 16, fontWeight: '600', color: '#0F172A', paddingVertical: 0 }}
+                                placeholder="Search destination"
+                                placeholderTextColor="#94A3B8"
+                                value={searchQuery}
+                                onChangeText={setSearchQuery}
+                                autoCorrect={false}
+                                autoFocus={true}
+                            />
+                            {searchQuery.length > 0 && (
+                                <TouchableOpacity onPress={() => setSearchQuery('')} style={{ marginLeft: 8 }}>
+                                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                                        <Circle cx="12" cy="12" r="10" fill="#94A3B8" opacity={0.6} />
+                                        <Path d="m15 9-6 6M9 9l6 6" stroke="#FFF" strokeWidth="2" strokeLinecap="round" />
+                                    </Svg>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    ) : (
+                        <TouchableOpacity
+                            style={styles.searchBar}
+                            activeOpacity={0.8}
+                            onPress={() => setSearchActive(true)}
+                        >
+                            <View style={styles.searchIconContainer}>
+                                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M21 21l-6-6" />
+                                    <Circle cx="11" cy="11" r="8" />
+                                </Svg>
+                            </View>
+                            <Text style={styles.searchText}>Search</Text>
                         </TouchableOpacity>
                     )}
                 </View>
+            </Animated.View>
 
-                <FlatList
-                    data={searchResults}
-                    keyExtractor={(item) => item.id}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                    contentContainerStyle={styles.resultsList}
-                    renderItem={({ item }) => (
-                        <TouchableOpacity
-                            style={styles.resultItem}
-                            onPress={() => {
-                                setSelectedLocation(item);
-                                setStep('preferences');
-                            }}
-                        >
-                            <Text style={styles.resultName}>{item.name}</Text>
-                            <Text style={styles.resultCountry}>{item.country}</Text>
-                        </TouchableOpacity>
-                    )}
-                />
-            </View>
-        </Animated.View>
+            {/* Search results — positioned below search bar, fades in after slide */}
+            {searchActive && (
+                <Animated.View style={[{ position: 'absolute', top: 80, left: 22, right: 22, bottom: 80 }, resultsStyle]}>
+                    <FlatList
+                        data={searchResults}
+                        keyExtractor={(item) => item.id}
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                        contentContainerStyle={styles.resultsList}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity
+                                style={styles.resultItem}
+                                onPress={() => {
+                                    setSelectedLocation(item);
+                                    setSearchActive(false);
+                                    setSearchQuery('');
+                                    setStep('preferences');
+                                }}
+                            >
+                                <Text style={styles.resultName}>{item.name}</Text>
+                                <Text style={styles.resultCountry}>{item.country}</Text>
+                            </TouchableOpacity>
+                        )}
+                    />
+                </Animated.View>
+            )}
+        </View>
     );
 
     const renderPreferences = () => (
@@ -884,12 +947,13 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
             enablePanDownToClose={true}
             backdropComponent={renderBackdrop}
             backgroundStyle={step === 'home' ? styles.sheetBackgroundTransparent : styles.sheetBackground}
-            handleIndicatorStyle={step === 'home' ? { height: 0 } : styles.handleIndicator}
-            handleStyle={step === 'home' ? { height: 0, padding: 0 } : undefined}
+            handleIndicatorStyle={(step === 'home' && !searchActive) ? { height: 0 } : styles.handleIndicator}
+            handleStyle={(step === 'home' && !searchActive) ? { height: 0, padding: 0 } : undefined}
             onChange={(index) => {
                 onChange(index);
                 if (index === -1) {
                     setStep('home');
+                    setSearchActive(false);
                     setSearchQuery('');
                     setSelectedLocation(null);
                     setNumDays(4);
@@ -910,7 +974,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
         >
             <BottomSheetView style={[styles.container, { height: FULL_SHEET_HEIGHT }]}>
 
-                {/* Background image — only on home step */}
+                {/* Background image — visible on home step */}
                 {step === 'home' && (
                     <Image
                         source={require('../assets/abcd.png')}
@@ -924,7 +988,6 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                     </View>
                 )}
                 {step === 'home' && renderHome()}
-                {step === 'searching' && renderSearching()}
                 {step === 'preferences' && renderPreferences()}
                 {step === 'howManyDays' && renderHowManyDays()}
                 {step === 'discoverSpots' && renderDiscoverSpots()}
@@ -1030,6 +1093,12 @@ const styles = StyleSheet.create({
         borderRadius: 3,
         backgroundColor: 'rgba(255,255,255,0.6)',
     },
+    searchOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(255,255,255,0.85)',
+        borderTopLeftRadius: 36,
+        borderTopRightRadius: 36,
+    },
     handleIndicator: {
         width: 40,
         height: 5,
@@ -1086,16 +1155,17 @@ const styles = StyleSheet.create({
         paddingHorizontal: 22,
     },
     footerTitle: {
-        fontSize: 26,
-        fontWeight: '600',
+        fontSize: 72,
+        fontWeight: '800',
         color: '#0F172A',
         marginBottom: 16,
-        letterSpacing: -0.5,
+        letterSpacing: -2,
+        lineHeight: 82,
     },
     footerSubtitle: {
-        fontSize: 14,
+        fontSize: 20,
         fontWeight: '600',
-        color: 'rgba(15, 23, 42, 0.6)',
+        color: 'rgba(12, 23, 46, 0.6)',
         marginBottom: 16,
     },
     searchBar: {
