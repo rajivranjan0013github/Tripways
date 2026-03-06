@@ -1,19 +1,12 @@
 import React, { forwardRef, useMemo, useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, Image, ScrollView, ActivityIndicator } from 'react-native';
-import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, Image, ScrollView, ActivityIndicator, Keyboard } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
     FadeIn,
-    FadeOut,
-    FadeInUp,
-    FadeOutUp,
-    FadeInDown,
-    FadeOutDown,
-    SlideInDown,
-    SlideOutDown,
-    SlideOutUp,
-    LinearTransition,
     useSharedValue,
     useAnimatedStyle,
     withRepeat,
@@ -32,7 +25,8 @@ const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FULL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.92;
 
-const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated }, ref) => {
+const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated, onPlanningStarted }, ref) => {
+    const insets = useSafeAreaInsets();
     const [step, setStep] = useState('home'); // 'home', 'preferences', 'howManyDays', 'discoverSpots'
     const [searchActive, setSearchActive] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -217,7 +211,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
     }, [searchActive]);
 
     // Slide the entire footer (title + search bar) up/down
-    const SLIDE_DISTANCE = FULL_SHEET_HEIGHT - 170;
+    const SLIDE_DISTANCE = FULL_SHEET_HEIGHT - 150;
     const footerSlideStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: interpolate(searchProgress.value, [0, 1], [0, -SLIDE_DISTANCE], 'clamp') }],
     }));
@@ -244,16 +238,22 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
         opacity: interpolate(searchProgress.value, [0.6, 1], [0, 1], 'clamp'),
     }));
 
+    const dynamicContentStyle = {
+        paddingBottom: Platform.OS === 'android' ? Math.max(80, 20 + insets.bottom) : 80,
+    };
+
     const renderHome = () => (
-        <View style={styles.content}>
+        <View style={[styles.content, dynamicContentStyle]}>
             {/* Everything slides together as one unit */}
             <Animated.View style={[{ flex: 1, justifyContent: 'flex-end' }, footerSlideStyle]}>
                 {/* Title — each word fades out in a stagger */}
                 <View style={styles.footer}>
-                    <Animated.Text style={[styles.footerTitle, word1Style]}>Where</Animated.Text>
-                    <Animated.Text style={[styles.footerTitle, { marginBottom: 0 }, word2Style]}>are</Animated.Text>
-                    <Animated.Text style={[styles.footerTitle, { marginBottom: 0 }, word3Style]}>you</Animated.Text>
-                    <Animated.Text style={[styles.footerTitle, word4Style]}>going?</Animated.Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 10 }}>
+                        <Animated.Text style={[styles.footerTitle, { marginBottom: 0 }, word1Style]}>Where</Animated.Text>
+                        <Animated.Text style={[styles.footerTitle, { marginBottom: 0 }, word2Style]}>are</Animated.Text>
+                        <Animated.Text style={[styles.footerTitle, { marginBottom: 0 }, word3Style]}>you</Animated.Text>
+                        <Animated.Text style={[styles.footerTitle, { marginBottom: 0 }, word4Style]}>going?</Animated.Text>
+                    </View>
                     <Animated.Text style={[styles.footerSubtitle, subtitleFadeStyle]}>Search for your destination</Animated.Text>
                 </View>
 
@@ -261,11 +261,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                 <View style={{ paddingHorizontal: 22 }}>
                     {searchActive ? (
                         <View style={[styles.searchBar, { justifyContent: 'flex-start', paddingHorizontal: 16 }]}>
-                            <TouchableOpacity onPress={() => { setSearchActive(false); setSearchQuery(''); }} style={{ marginRight: 10 }}>
-                                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <Path d="M19 12H5M12 19l-7-7 7-7" />
-                                </Svg>
-                            </TouchableOpacity>
+
                             <View style={styles.searchIconContainer}>
                                 <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <Path d="M21 21l-6-6" />
@@ -311,8 +307,8 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
 
             {/* Search results — positioned below search bar, fades in after slide */}
             {searchActive && (
-                <Animated.View style={[{ position: 'absolute', top: 80, left: 22, right: 22, bottom: 80 }, resultsStyle]}>
-                    <FlatList
+                <Animated.View style={[{ position: 'absolute', top: 90, left: 22, right: 22, bottom: 80 }, resultsStyle]}>
+                    <BottomSheetFlatList
                         data={searchResults}
                         keyExtractor={(item) => item.id}
                         showsVerticalScrollIndicator={false}
@@ -322,10 +318,16 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                             <TouchableOpacity
                                 style={styles.resultItem}
                                 onPress={() => {
-                                    setSelectedLocation(item);
-                                    setSearchActive(false);
-                                    setSearchQuery('');
-                                    setStep('preferences');
+                                    inputRef.current?.blur();
+                                    Keyboard.dismiss();
+                                    // Delay the state update to ensure the keyboard dismissing animation 
+                                    // has time to start on Android before the TextInput unmounts
+                                    setTimeout(() => {
+                                        setSelectedLocation(item);
+                                        setSearchActive(false);
+                                        setSearchQuery('');
+                                        setStep('preferences');
+                                    }, 100);
                                 }}
                             >
                                 <Text style={styles.resultName}>{item.name}</Text>
@@ -339,14 +341,14 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
     );
 
     const renderPreferences = () => (
-        <Animated.View entering={FadeIn} style={[styles.content, { justifyContent: 'flex-end' }]}>
+        <Animated.View entering={FadeIn} style={[styles.content, dynamicContentStyle, { justifyContent: 'flex-end' }]}>
             {selectedLocation && (
                 <View style={styles.selectedLocationBar}>
                     <View style={styles.selectedLocationInfo}>
                         <Text style={styles.selectedBarFlag}>{selectedLocation.flag}</Text>
                         <Text style={styles.selectedBarName}>{selectedLocation.name}</Text>
                     </View>
-                    <TouchableOpacity onPress={() => setStep('searching')} style={styles.editButton}>
+                    <TouchableOpacity onPress={() => setStep('home')} style={styles.editButton}>
                         <View style={styles.editIconCircle}>
                             <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2.5">
                                 <Path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
@@ -359,8 +361,10 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                 {/* Trip Preferences Section */}
                 <View style={styles.prefSection}>
                     <View style={styles.prefSectionHeader}>
-                        <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />
+                        <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <Path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+                            <Path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z" />
+                            <Path d="M5 17l.6 1.4L7 19l-1.4.6L5 21l-.6-1.4L3 19l1.4-.6L5 17z" />
                         </Svg>
                         <Text style={styles.prefSectionTitle}>Trip Preferences</Text>
                     </View>
@@ -430,13 +434,8 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
     );
 
     const renderHowManyDays = () => (
-        <Animated.View entering={FadeIn} style={[styles.content, { justifyContent: 'space-between' }]}>
-            <LinearGradient
-                colors={['#CCFBF1', '#FFFFFF']}
-                style={[StyleSheet.absoluteFill, { height: '50%' }]}
-                start={{ x: 0.5, y: 0 }}
-                end={{ x: 0.5, y: 1 }}
-            />
+        <Animated.View entering={FadeIn} style={[styles.content, dynamicContentStyle, { justifyContent: 'space-between' }]}>
+
 
             <View style={styles.howManyHeader}>
                 <View style={styles.howManyTopRow}>
@@ -471,16 +470,31 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
 
             {selectionMode === 'days' ? (
                 <View style={styles.pickerContainer}>
-                    <WheelPicker
-                        data={Array.from({ length: 30 }, (_, i) => ({ value: i + 1, label: (i + 1).toString() }))}
-                        value={numDays}
-                        onValueChanged={({ item }) => setNumDays(item.value)}
-                        width={SCREEN_WIDTH}
-                        height={320}
-                        itemHeight={80}
-                        itemTextStyle={[styles.pickerText, styles.pickerTextInactive]}
-                        selectedItemTextStyle={[styles.pickerText, styles.pickerTextActive]}
-                    />
+                    {Platform.OS === 'android' ? (
+                        <GestureHandlerRootView style={{ flex: 1 }}>
+                            <WheelPicker
+                                data={Array.from({ length: 30 }, (_, i) => ({ value: i + 1, label: (i + 1).toString() }))}
+                                value={numDays}
+                                onValueChanged={({ item }) => setNumDays(item.value)}
+                                width={SCREEN_WIDTH}
+                                height={320}
+                                itemHeight={80}
+                                itemTextStyle={[styles.pickerText, styles.pickerTextInactive]}
+                                selectedItemTextStyle={[styles.pickerText, styles.pickerTextActive]}
+                            />
+                        </GestureHandlerRootView>
+                    ) : (
+                        <WheelPicker
+                            data={Array.from({ length: 30 }, (_, i) => ({ value: i + 1, label: (i + 1).toString() }))}
+                            value={numDays}
+                            onValueChanged={({ item }) => setNumDays(item.value)}
+                            width={SCREEN_WIDTH}
+                            height={320}
+                            itemHeight={80}
+                            itemTextStyle={[styles.pickerText, styles.pickerTextInactive]}
+                            selectedItemTextStyle={[styles.pickerText, styles.pickerTextActive]}
+                        />
+                    )}
                 </View>
             ) : (
                 <View style={styles.calendarContainer}>
@@ -560,7 +574,13 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
             )}
 
             <View style={styles.footer}>
-                <TouchableOpacity style={styles.blackConfirmButton} onPress={() => { setDaysSelected(true); setStep('preferences'); }}>
+                <TouchableOpacity
+                    style={[styles.blackConfirmButton, { marginTop: 24 }]}
+                    onPress={() => { setDaysSelected(true); setStep('preferences'); }}
+                >
+                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <Path d="M5 12h14M12 5l7 7-7 7" />
+                    </Svg>
                     <Text style={styles.blackConfirmText}>Confirm</Text>
                 </TouchableOpacity>
             </View>
@@ -635,6 +655,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
 
     const handlePlanTrip = async () => {
         setIsPlanning(true);
+        onPlanningStarted?.();
         try {
             const backendUrl = Config.BACKEND_URL || 'http://localhost:3000';
             const interests = selectedPrefs.length > 0
@@ -769,12 +790,6 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
             <View style={styles.discoverHeader}>
                 <View style={styles.discoverTitleRow}>
                     <Text style={styles.discoverTitle}>Discover spots</Text>
-                    {isLoadingPlaces && (
-                        <View style={styles.discoverLoadingBadge}>
-                            <ActivityIndicator size="small" color="#FFFFFF" />
-                            <Text style={styles.discoverLoadingBadgeText}>Loading</Text>
-                        </View>
-                    )}
                 </View>
 
                 {isLoadingPlaces ? (
@@ -800,7 +815,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
 
             <View style={{ flex: 1 }}>
                 {isLoadingPlaces ? (
-                    <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
+                    <BottomSheetScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
                         {/* Skeleton City Header */}
                         <View style={styles.cityHeader}>
                             <View style={styles.cityHeaderLeft}>
@@ -812,10 +827,10 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
 
                         {/* Skeleton Spot Rows */}
                         {[0, 1, 2, 3, 4, 5].map(renderSkeletonSpot)}
-                    </ScrollView>
+                    </BottomSheetScrollView>
                 ) : isFromVideo ? (
                     /* ── Grouped by Country → City for video places ── */
-                    <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
+                    <BottomSheetScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 160 }}>
                         {(() => {
                             // Group filteredSpots by country → city
                             const grouped = {};
@@ -865,7 +880,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                                                             </View>
                                                         )}
                                                         <View style={styles.spotInfo}>
-                                                            <Text style={styles.spotName} numberOfLines={1}>✨ {spot.name}</Text>
+                                                            <Text style={styles.spotName} numberOfLines={1}>{spot.name}</Text>
                                                             {spot.address ? <Text style={styles.spotDesc} numberOfLines={2}>{spot.address}</Text> : null}
                                                         </View>
                                                         <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
@@ -883,9 +898,9 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                                 </View>
                             ));
                         })()}
-                    </ScrollView>
+                    </BottomSheetScrollView>
                 ) : (
-                    <ScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 100 }}>
+                    <BottomSheetScrollView style={styles.spotsList} contentContainerStyle={{ paddingBottom: 160 }}>
                         {/* City Section */}
                         <View style={styles.cityHeader}>
                             <View style={styles.cityHeaderLeft}>
@@ -918,7 +933,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                                         </View>
                                     )}
                                     <View style={styles.spotInfo}>
-                                        <Text style={styles.spotName} numberOfLines={1}>✨ {spot.name}</Text>
+                                        <Text style={styles.spotName} numberOfLines={1}>{spot.name}</Text>
                                         {shortDesc ? <Text style={styles.spotDesc} numberOfLines={2}>{shortDesc}</Text> : null}
                                     </View>
                                     <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
@@ -931,7 +946,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
                                 </TouchableOpacity>
                             );
                         })}
-                    </ScrollView>
+                    </BottomSheetScrollView>
                 )}
 
             </View>
@@ -945,10 +960,13 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
             snapPoints={snapPoints}
             enableDynamicSizing={false}
             enablePanDownToClose={true}
+            enableContentPanningGesture={step !== 'howManyDays'}
+            keyboardBehavior="interactive"
+            keyboardBlurBehavior="restore"
             backdropComponent={renderBackdrop}
-            backgroundStyle={step === 'home' ? styles.sheetBackgroundTransparent : styles.sheetBackground}
-            handleIndicatorStyle={(step === 'home' && !searchActive) ? { height: 0 } : styles.handleIndicator}
-            handleStyle={(step === 'home' && !searchActive) ? { height: 0, padding: 0 } : undefined}
+            backgroundStyle={step === 'discoverSpots' ? styles.sheetBackgroundWhite : styles.sheetBackground}
+            handleIndicatorStyle={styles.handleIndicator}
+            containerStyle={{ zIndex: 100 }}
             onChange={(index) => {
                 onChange(index);
                 if (index === -1) {
@@ -972,127 +990,132 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated 
             }}
             animationConfigs={animationConfigs}
         >
-            <BottomSheetView style={[styles.container, { height: FULL_SHEET_HEIGHT }]}>
+            <View style={[styles.container, { height: FULL_SHEET_HEIGHT }]}>
 
-                {/* Background image — visible on home step */}
-                {step === 'home' && (
-                    <Image
-                        source={require('../assets/abcd.png')}
-                        style={styles.sheetBgImage}
+                {/* Gradient background — visible on all steps except discovery */}
+                {step !== 'discoverSpots' && (
+                    <LinearGradient
+                        colors={['#F5F3FF', '#E0E7FF', '#BAE6FD', '#A7F3D0']}
+                        locations={[0, 0.3, 0.65, 1]}
+                        start={{ x: 0.5, y: 0 }}
+                        end={{ x: 0.5, y: 1 }}
+                        style={styles.homeGradient}
+                        pointerEvents="none"
                     />
                 )}
-                {/* Custom handle indicator on top of image */}
-                {step === 'home' && (
-                    <View style={styles.customHandleWrap}>
-                        <View style={styles.customHandle} />
-                    </View>
-                )}
+
                 {step === 'home' && renderHome()}
                 {step === 'preferences' && renderPreferences()}
                 {step === 'howManyDays' && renderHowManyDays()}
                 {step === 'discoverSpots' && renderDiscoverSpots()}
 
-                {/* Floating Plan Trip Button — rendered at BottomSheetView level */}
+                {/* Bottom fade gradient + Floating Plan Trip Button */}
                 {step === 'discoverSpots' && (
-                    <View style={styles.addSpotsBar} pointerEvents="box-none">
-                        {/* Save Spots button for video places */}
-                        {isFromVideo && !isFromSavedSpots && selectedSpots.length > 0 && !isPlanning && !isLoadingPlaces && (
+                    <>
+                        {/* Fade gradient: transparent → white */}
+                        <LinearGradient
+                            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.6)', 'rgba(255,255,255,0.9)', 'rgba(255,255,255,1)']}
+                            locations={[0, 0.25, 0.5, 0.75]}
+                            style={styles.addSpotsGradient}
+                            pointerEvents="none"
+                        />
+                        <View style={[styles.addSpotsBar, { bottom: Platform.OS === 'android' ? Math.max(80, 20 + insets.bottom) : 80 }]} pointerEvents="box-none">
+                            {/* Save Spots button for video places */}
+                            {isFromVideo && !isFromSavedSpots && selectedSpots.length > 0 && !isPlanning && !isLoadingPlaces && (
+                                <TouchableOpacity
+                                    style={[styles.addSpotsButton, { backgroundColor: '#10B981', marginBottom: 8 }]}
+                                    onPress={async () => {
+                                        const storedUser = (() => { try { const u = storage.getString('user'); return u ? JSON.parse(u) : null; } catch { return null; } })();
+                                        const userId = storedUser?.id || storedUser?._id;
+                                        if (!userId) return;
+                                        setIsSavingSpots(true);
+                                        try {
+                                            const spotsToSave = discoveredPlaces.filter(p => selectedSpots.includes(p.id)).map(p => ({
+                                                country: p.country || 'Unknown',
+                                                city: p.city || 'Unknown',
+                                                name: p.name,
+                                                placeId: p.id,
+                                                address: p.address,
+                                                rating: p.rating,
+                                                userRatingCount: p.userRatingCount,
+                                                photoUrl: p.photoUrl,
+                                                coordinates: p.coordinates,
+                                                source: 'video',
+                                            }));
+                                            await fetch(`${BACKEND_URL}/api/spots`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ userId, spots: spotsToSave }),
+                                            });
+                                        } catch (e) { console.warn('Save spots failed:', e); }
+                                        setIsSavingSpots(false);
+                                    }}
+                                    disabled={isSavingSpots}
+                                >
+                                    {isSavingSpots ? (
+                                        <View style={styles.planningRow}>
+                                            <ActivityIndicator size="small" color="#FFFFFF" />
+                                            <Text style={styles.addSpotsText}>  Saving spots...</Text>
+                                        </View>
+                                    ) : (
+                                        <Text style={styles.addSpotsText}>💾 Save {selectedSpots.length} spots</Text>
+                                    )}
+                                </TouchableOpacity>
+                            )}
                             <TouchableOpacity
-                                style={[styles.addSpotsButton, { backgroundColor: '#10B981', marginBottom: 8 }]}
-                                onPress={async () => {
-                                    const storedUser = (() => { try { const u = storage.getString('user'); return u ? JSON.parse(u) : null; } catch { return null; } })();
-                                    const userId = storedUser?.id || storedUser?._id;
-                                    if (!userId) return;
-                                    setIsSavingSpots(true);
-                                    try {
-                                        const spotsToSave = discoveredPlaces.filter(p => selectedSpots.includes(p.id)).map(p => ({
-                                            country: p.country || 'Unknown',
-                                            city: p.city || 'Unknown',
-                                            name: p.name,
-                                            placeId: p.id,
-                                            address: p.address,
-                                            rating: p.rating,
-                                            userRatingCount: p.userRatingCount,
-                                            photoUrl: p.photoUrl,
-                                            coordinates: p.coordinates,
-                                            source: 'video',
-                                        }));
-                                        await fetch(`${BACKEND_URL}/api/spots`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify({ userId, spots: spotsToSave }),
-                                        });
-                                    } catch (e) { console.warn('Save spots failed:', e); }
-                                    setIsSavingSpots(false);
-                                }}
-                                disabled={isSavingSpots}
+                                style={[styles.addSpotsButton, (isPlanning || isLoadingPlaces) && { opacity: 0.7 }]}
+                                onPress={handlePlanTrip}
+                                disabled={isPlanning || isLoadingPlaces || selectedSpots.length === 0}
                             >
-                                {isSavingSpots ? (
+                                {isPlanning ? (
                                     <View style={styles.planningRow}>
                                         <ActivityIndicator size="small" color="#FFFFFF" />
-                                        <Text style={styles.addSpotsText}>  Saving spots...</Text>
+                                        <Text style={styles.addSpotsText}>  Planning your trip...</Text>
+                                    </View>
+                                ) : isLoadingPlaces ? (
+                                    <View style={styles.planningRow}>
+                                        <ActivityIndicator size="small" color="#FFFFFF" />
+                                        <Text style={styles.addSpotsText}>  Discovering spots...</Text>
                                     </View>
                                 ) : (
-                                    <Text style={styles.addSpotsText}>💾 Save {selectedSpots.length} spots</Text>
+                                    <>
+                                        <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                            <Path d="M5 12h14M12 5l7 7-7 7" />
+                                        </Svg>
+                                        <Text style={styles.addSpotsText}>Plan Trip</Text>
+                                    </>
                                 )}
                             </TouchableOpacity>
-                        )}
-                        <TouchableOpacity
-                            style={[styles.addSpotsButton, (isPlanning || isLoadingPlaces) && { opacity: 0.7 }]}
-                            onPress={handlePlanTrip}
-                            disabled={isPlanning || isLoadingPlaces || selectedSpots.length === 0}
-                        >
-                            {isPlanning ? (
-                                <View style={styles.planningRow}>
-                                    <ActivityIndicator size="small" color="#FFFFFF" />
-                                    <Text style={styles.addSpotsText}>  Planning your trip...</Text>
-                                </View>
-                            ) : isLoadingPlaces ? (
-                                <View style={styles.planningRow}>
-                                    <ActivityIndicator size="small" color="#FFFFFF" />
-                                    <Text style={styles.addSpotsText}>  Discovering spots...</Text>
-                                </View>
-                            ) : (
-                                <Text style={styles.addSpotsText}>Plan Trip</Text>
-                            )}
-                        </TouchableOpacity>
-                    </View>
+                        </View>
+                    </>
                 )}
-            </BottomSheetView>
+            </View>
         </BottomSheet>
     );
 });
 
 const styles = StyleSheet.create({
     sheetBackground: {
+        backgroundColor: '#F5F3FF',
+        borderTopLeftRadius: 36,
+        borderTopRightRadius: 36,
+    },
+    sheetBackgroundWhite: {
         backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 36,
         borderTopRightRadius: 36,
     },
-    sheetBackgroundTransparent: {
+    sheetBackgroundGradient: {
         backgroundColor: 'transparent',
         borderTopLeftRadius: 36,
         borderTopRightRadius: 36,
     },
-    sheetBgImage: {
+    homeGradient: {
         ...StyleSheet.absoluteFillObject,
-        width: '100%',
-        height: '100%',
-        resizeMode: 'cover',
         borderTopLeftRadius: 36,
         borderTopRightRadius: 36,
     },
-    customHandleWrap: {
-        alignItems: 'center',
-        paddingTop: 12,
-        paddingBottom: 4,
-    },
-    customHandle: {
-        width: 40,
-        height: 5,
-        borderRadius: 3,
-        backgroundColor: 'rgba(255,255,255,0.6)',
-    },
+
     searchOverlay: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(255,255,255,0.85)',
@@ -1100,9 +1123,21 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 36,
     },
     handleIndicator: {
+        width: 48,
+        height: 5,
+        backgroundColor: 'rgba(109, 40, 217, 0.22)',
+        borderRadius: 100,
+        alignSelf: 'center',
+        marginTop: 12,
+        shadowColor: '#7C3AED',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3,
+    },
+    handleIndicatorGradient: {
         width: 40,
         height: 5,
-        backgroundColor: '#E2E8F0',
+        backgroundColor: 'rgba(99, 102, 241, 0.35)',
         borderRadius: 3,
         alignSelf: 'center',
         marginTop: 12,
@@ -1124,7 +1159,7 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
-        paddingBottom: Platform.select({ ios: 80, android: 80 }),
+        paddingBottom: 80,
     },
     locationContainer: {
         paddingHorizontal: 32,
@@ -1155,12 +1190,12 @@ const styles = StyleSheet.create({
         paddingHorizontal: 22,
     },
     footerTitle: {
-        fontSize: 72,
+        fontSize: 52,
         fontWeight: '800',
         color: '#0F172A',
-        marginBottom: 16,
-        letterSpacing: -2,
-        lineHeight: 82,
+        marginBottom: 10,
+        letterSpacing: -1.5,
+        lineHeight: 60,
     },
     footerSubtitle: {
         fontSize: 20,
@@ -1245,8 +1280,8 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: 24,
         paddingVertical: 14,
-        marginHorizontal: 24,
-        marginBottom: 20,
+        marginHorizontal: 20,
+        marginBottom: 40,
         marginTop: 20,
         backgroundColor: 'rgba(15, 23, 42, 0.04)',
         borderRadius: 16,
@@ -1302,13 +1337,13 @@ const styles = StyleSheet.create({
         marginBottom: 32,
     },
     tagChip: {
-        backgroundColor: '#FFFFFF',
-        paddingHorizontal: 10,
-        paddingVertical: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        paddingHorizontal: 12,
+        paddingVertical: 14,
         borderRadius: 24,
         flexDirection: 'row',
         alignItems: 'center',
-        borderWidth: 2,
+        borderWidth: 0,
         borderColor: 'transparent',
         elevation: 2,
         shadowColor: '#000',
@@ -1321,7 +1356,7 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     tagIcon: {
-        fontSize: 16,
+        fontSize: 15,
         marginRight: 8,
     },
     tagText: {
@@ -1332,9 +1367,12 @@ const styles = StyleSheet.create({
     tagChipSelected: {
         borderColor: '#0F172A',
         backgroundColor: '#FFFFFF',
+        borderWidth: 2,
+        paddingHorizontal: 10,
+        paddingVertical: 12,
     },
     tagTextSelected: {
-        fontWeight: '700',
+        fontWeight: '600',
     },
 
     blackContinueButton: {
@@ -1401,7 +1439,8 @@ const styles = StyleSheet.create({
     // How Many Days Styles
     howManyHeader: {
         paddingHorizontal: 24,
-        paddingTop: 20,
+        paddingTop: 40,
+        zIndex: 10,
     },
     howManyTopRow: {
         flexDirection: 'row',
@@ -1410,7 +1449,7 @@ const styles = StyleSheet.create({
         marginBottom: 40,
     },
     backButtonLarge: {
-        padding: 4,
+        padding: 12,
     },
     segmentContainer: {
         flexDirection: 'row',
@@ -1456,14 +1495,14 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     pickerText: {
-        fontSize: 48,
-        fontWeight: '700',
+        fontSize: 54,
+        fontWeight: '800',
     },
     pickerTextActive: {
-        color: '#0F172A',
+        color: '#000000',
     },
     pickerTextInactive: {
-        color: 'rgba(15, 23, 42, 0.2)',
+        color: 'rgba(15, 23, 42, 0.4)',
     },
     calendarContainer: {
         height: 380,
@@ -1473,9 +1512,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#000000',
         height: 56,
         borderRadius: 28,
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 20,
+        gap: 10,
     },
     blackConfirmText: {
         fontSize: 17,
@@ -1497,32 +1537,37 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     categoryContainer: {
-        gap: 10,
+        gap: 8,
         paddingRight: 24,
     },
     categoryChip: {
-        paddingHorizontal: 18,
-        paddingVertical: 10,
-        borderRadius: 20,
-        borderWidth: 1.5,
-        borderColor: '#E2E8F0',
+        paddingHorizontal: 14,
+        paddingVertical: 7,
+        borderRadius: 16,
+        borderWidth: 0,
+        borderColor: 'transparent',
         backgroundColor: '#FFFFFF',
     },
     categoryChipActive: {
         backgroundColor: '#0F172A',
         borderColor: '#0F172A',
+        borderWidth: 1.5,
+        paddingHorizontal: 12.5,
+        paddingVertical: 5.5,
     },
     categoryText: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '600',
         color: '#64748B',
     },
     categoryTextActive: {
         color: '#FFFFFF',
+        fontWeight: '600',
     },
     spotsList: {
         flex: 1,
         paddingHorizontal: 24,
+        paddingBottom: 110,
     },
     cityHeader: {
         flexDirection: 'row',
@@ -1598,18 +1643,27 @@ const styles = StyleSheet.create({
         backgroundColor: '#0F172A',
         borderColor: '#0F172A',
     },
+    addSpotsGradient: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 160,
+    },
     addSpotsBar: {
         position: 'absolute',
-        bottom: Platform.OS === 'ios' ? 28 : 16,
-        left: 24,
-        right: 24,
+        bottom: 80,
+        left: 22,
+        right: 22,
     },
     addSpotsButton: {
-        backgroundColor: '#0F172A',
+        backgroundColor: '#000000',
         height: 56,
         borderRadius: 28,
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
+        gap: 10,
     },
     addSpotsText: {
         fontSize: 17,
@@ -1656,20 +1710,6 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         marginBottom: 16,
-    },
-    discoverLoadingBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#0F172A',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
-        gap: 6,
-    },
-    discoverLoadingBadgeText: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#FFFFFF',
     },
     // Skeleton Placeholder Styles
     skeletonCategoryChip: {

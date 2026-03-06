@@ -1,8 +1,8 @@
-import React, { forwardRef, useMemo, useState } from 'react';
+import React, { forwardRef, useMemo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image, ActivityIndicator } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Svg, { Path, Circle } from 'react-native-svg';
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, LinearTransition, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from 'react-native-reanimated';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -26,11 +26,29 @@ const TRAVEL_MODES = {
     driving: { icon: '🚗', label: 'Driving' },
 };
 
-const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, ref) => {
+const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, isLoading }, ref) => {
     const [mode, setMode] = useState('overview'); // 'overview' or 'itinerary'
     const [selectedDay, setSelectedDay] = useState(1);
     const [expandedDays, setExpandedDays] = useState({});
-    const snapPoints = useMemo(() => ['60%'], []);
+    const snapPoints = useMemo(() => ['50%'], []);
+
+    // Skeleton pulse animation
+    const pulseAnim = useSharedValue(0);
+    useEffect(() => {
+        if (isLoading) {
+            pulseAnim.value = withRepeat(
+                withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+                -1,
+                true
+            );
+        } else {
+            pulseAnim.value = 0;
+        }
+    }, [isLoading]);
+
+    const skeletonStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(pulseAnim.value, [0, 1], [0.3, 0.7]),
+    }));
 
     const numDays = tripData?.numDays || 4;
     const locationName = tripData?.locationName || 'Trip';
@@ -122,9 +140,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
         setExpandedDays(prev => ({ ...prev, [day]: !prev[day] }));
     };
 
-    const renderBackdrop = (props) => (
-        <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
-    );
+    const renderBackdrop = () => null;
 
     // Determine which day to show
     const getActiveDayData = () => {
@@ -249,12 +265,28 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
         return lines.map(l => '• ' + l).join('\n');
     };
 
+    const renderSkeletonItems = () => {
+        return [1, 2, 3].map((i) => (
+            <View key={`skel-${i}`} style={styles.overviewDayCard}>
+                <Animated.View style={[styles.overviewDayImage, styles.skeletonBox, skeletonStyle]} />
+                <View style={styles.overviewDayInfo}>
+                    <Animated.View style={[styles.skeletonTextTitle, skeletonStyle]} />
+                    <Animated.View style={[styles.skeletonTextLine, skeletonStyle]} />
+                    <Animated.View style={[styles.skeletonTextLine, { width: '60%' }, skeletonStyle]} />
+                </View>
+            </View>
+        ));
+    };
+
     const renderOverviewItems = () => {
-        if (itineraryDays.length === 0) {
+        if (isLoading || itineraryDays.length === 0) {
             return (
-                <View style={styles.emptyStateContainer}>
-                    <ActivityIndicator size="large" color="#0F172A" />
-                    <Text style={styles.emptyStateText}>Generating your itinerary...</Text>
+                <View>
+                    <View style={styles.generatingBadge}>
+                        <ActivityIndicator size="small" color="#6366F1" />
+                        <Text style={styles.generatingText}>Generating adventure...</Text>
+                    </View>
+                    {renderSkeletonItems()}
                 </View>
             );
         }
@@ -304,6 +336,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData }, 
             backdropComponent={renderBackdrop}
             backgroundStyle={styles.sheetBackground}
             handleIndicatorStyle={styles.handleIndicator}
+            containerStyle={{ zIndex: 100 }}
             onChange={onChange}
             animationConfigs={animationConfigs}
         >
@@ -735,6 +768,40 @@ const styles = StyleSheet.create({
         backgroundColor: '#E2E8F0',
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    // Skeleton Styles
+    skeletonBox: {
+        backgroundColor: '#E2E8F0',
+    },
+    skeletonTextTitle: {
+        height: 20,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 4,
+        marginBottom: 10,
+        width: '40%',
+    },
+    skeletonTextLine: {
+        height: 12,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 4,
+        marginBottom: 6,
+        width: '90%',
+    },
+    generatingBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: '#EEF2FF',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 12,
+        marginBottom: 16,
+        alignSelf: 'center',
+    },
+    generatingText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#6366F1',
     },
 });
 

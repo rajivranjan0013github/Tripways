@@ -58,7 +58,7 @@ function decodePolyline(encoded) {
 const HomeScreen = () => {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation();
-    const tabBarHeight = 52 + insets.bottom;
+    const tabBarHeight = 52 + insets.bottom + (Platform.OS === 'android' ? 120 : 40); // Increased buffer to fully hide on both platforms
     const bottomSheetRef = useRef(null);
 
     const createTripSheetRef = useRef(null); // Ref for Create Trip BottomSheet
@@ -80,6 +80,7 @@ const HomeScreen = () => {
     const [socialMode, setSocialMode] = useState(null); // null | 'instagram' | 'tiktok'
     const [videoProcessing, setVideoProcessing] = useState(false);
     const [videoProgress, setVideoProgress] = useState('');
+    const [isTripLoading, setIsTripLoading] = useState(false);
 
     // Load user data from MMKV
     const storedUser = useMemo(() => {
@@ -425,6 +426,8 @@ const HomeScreen = () => {
     const handleTripOverviewSheetChange = useCallback((index) => {
         secondarySheetOpen.current = index > -1;
         if (index > -1) {
+            // Close My Spots sheet when TripOverview opens
+            bottomSheetRef.current?.close();
             tabBarTranslateY.value = withTiming(tabBarHeight, {
                 duration: 400,
                 easing: Easing.bezier(0.33, 1, 0.68, 1)
@@ -622,7 +625,7 @@ const HomeScreen = () => {
                         <View style={styles.searchButtonWrap}>
                             <Animated.View style={[styles.searchButtonLayer, avatarAnimatedStyle]}>
                                 <TouchableOpacity style={styles.sheetSearchAvatar} onPress={() => setShowProfile(true)}>
-                                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                                         <Circle cx="12" cy="7" r="4" />
                                     </Svg>
@@ -639,7 +642,7 @@ const HomeScreen = () => {
                                         bottomSheetRef.current?.snapToIndex(1);
                                     }}
                                 >
-                                    <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                         <Path d="M18 6 6 18M6 6l12 12" />
                                     </Svg>
                                 </TouchableOpacity>
@@ -982,7 +985,7 @@ const HomeScreen = () => {
             {/* Create Options Menu */}
             {showCreateOptions && (
                 <TouchableOpacity
-                    style={[styles.createMenuBackdrop, { paddingBottom: 52 + insets.bottom + 12 }]}
+                    style={[styles.createMenuBackdrop, { paddingBottom: 52 + insets.bottom + (Platform.OS === 'android' ? 27 : 12) }]}
                     activeOpacity={1}
                     onPress={() => setShowCreateOptions(false)}
                 >
@@ -1017,7 +1020,7 @@ const HomeScreen = () => {
                             }}
                         >
                             <View style={styles.optionIconContainer}>
-                                <Svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#EC4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#EC4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <Rect x="2" y="7" width="20" height="14" rx="2" />
                                     <Path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
                                     <Path d="M12 11v6M9 14h6" />
@@ -1036,20 +1039,28 @@ const HomeScreen = () => {
 
 
 
+
             {/* Create Trip Bottom Sheet */}
             <CreateTripSheet
                 ref={createTripSheetRef}
                 onChange={handleCreateTripSheetChange}
                 animationConfigs={sheetAnimationConfig}
+                onPlanningStarted={() => {
+                    setIsTripLoading(true);
+                    setTripData(null); // Clear previous data
+                    secondarySheetOpen.current = true;
+                    createTripSheetRef.current?.close();
+                    setTimeout(() => {
+                        tripOverviewSheetRef.current?.expand();
+                    }, 300);
+                }}
                 onTripCreated={(data) => {
+                    setIsTripLoading(false);
                     setTripData(data);
                     // Fetch trips after delay to ensure backend has saved
                     setTimeout(() => {
                         fetchTrips();
                     }, 2000);
-                    setTimeout(() => {
-                        tripOverviewSheetRef.current?.expand();
-                    }, 500);
                 }}
             />
 
@@ -1059,6 +1070,7 @@ const HomeScreen = () => {
                 onChange={handleTripOverviewSheetChange}
                 animationConfigs={sheetAnimationConfig}
                 tripData={tripData}
+                isLoading={isTripLoading}
             />
 
             {/* Custom Bottom Tab Bar — floating pill */}
@@ -1146,28 +1158,28 @@ const styles = StyleSheet.create({
         paddingVertical: 0,
     },
     searchButtonWrap: {
-        width: 38,
-        height: 38,
+        width: 44,
+        height: 44,
     },
     searchButtonLayer: {
         position: 'absolute',
         top: 0,
         left: 0,
-        width: 38,
-        height: 38,
+        width: 44,
+        height: 44,
     },
     sheetSearchClose: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         backgroundColor: '#F1F5F9',
         alignItems: 'center',
         justifyContent: 'center',
     },
     sheetSearchAvatar: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         backgroundColor: '#F1F5F9',
         alignItems: 'center',
         justifyContent: 'center',
@@ -1435,8 +1447,8 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.10,
         shadowRadius: 16,
+        zIndex: 10,
         elevation: 10,
-        zIndex: 1000,
         borderWidth: 1,
         borderColor: 'rgba(0,0,0,0.06)',
     },
@@ -1570,47 +1582,47 @@ const styles = StyleSheet.create({
     createMenuBackdrop: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0,0,0,0.1)',
-        zIndex: 15, // Sit between overlay and tab bar
+        zIndex: 30, // Sit above tab bar and other overlays
         justifyContent: 'flex-end',
         alignItems: 'center',
     },
     createMenuContainer: {
-        width: SCREEN_WIDTH - 20,
+        width: SCREEN_WIDTH - 80,
         backgroundColor: '#FFFFFF',
-        borderRadius: 24,
-        padding: 8,
+        borderRadius: 18,
+        padding: 4,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.15,
-        shadowRadius: 20,
-        elevation: 10,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.12,
+        shadowRadius: 14,
+        elevation: 8,
         borderWidth: 1,
         borderColor: '#F1F5F9',
     },
     createOptionItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 12,
+        padding: 10,
     },
     optionIconContainer: {
-        width: 48,
-        height: 48,
-        borderRadius: 14,
+        width: 40,
+        height: 40,
+        borderRadius: 12,
         backgroundColor: '#F8FAFC',
         alignItems: 'center',
         justifyContent: 'center',
     },
     optionTextContainer: {
-        marginLeft: 12,
+        marginLeft: 10,
         flex: 1,
     },
     optionTitle: {
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: '700',
         color: '#1E293B',
     },
     optionSubtitle: {
-        fontSize: 12,
+        fontSize: 11,
         color: '#94A3B8',
         marginTop: 1,
         fontWeight: '500',
