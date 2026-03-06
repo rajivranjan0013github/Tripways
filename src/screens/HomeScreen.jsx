@@ -929,56 +929,7 @@ const HomeScreen = () => {
                         )}
                     </View>
 
-                    {/* Saved Spots Section */}
-                    {Object.keys(savedSpots).length > 0 && (
-                        <>
-                            <Text style={styles.sectionTitle}>📍 Saved Spots</Text>
-                            {Object.entries(savedSpots).map(([country, cities]) => (
-                                <View key={country} style={{ marginBottom: 12 }}>
-                                    <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E293B', paddingHorizontal: 20, marginBottom: 8 }}>
-                                        🌍 {country}
-                                    </Text>
-                                    {Object.entries(cities).map(([city, cityData]) => (
-                                        <View key={`${country}-${city}`} style={{ marginBottom: 12 }}>
-                                            {/* City banner with representative photo */}
-                                            {cityData.cityPhoto && (
-                                                <View style={{ marginHorizontal: 20, marginBottom: 8, borderRadius: 12, overflow: 'hidden' }}>
-                                                    <Image source={{ uri: cityData.cityPhoto }} style={{ width: '100%', height: 100, borderRadius: 12 }} />
-                                                    <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 8, backgroundColor: 'rgba(0,0,0,0.4)' }}>
-                                                        <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '700' }}>{city}</Text>
-                                                        <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11 }}>{cityData.spots.length} saved spots</Text>
-                                                    </View>
-                                                </View>
-                                            )}
-                                            {!cityData.cityPhoto && (
-                                                <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 28, marginBottom: 6 }}>
-                                                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#475569', flex: 1 }}>{city}</Text>
-                                                    <Text style={{ fontSize: 11, color: '#94A3B8' }}>{cityData.spots.length} spots</Text>
-                                                </View>
-                                            )}
-                                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: 20, paddingRight: 12 }}>
-                                                {cityData.spots.map((spot) => (
-                                                    <View key={spot._id} style={{ width: 120, marginRight: 10 }}>
-                                                        {spot.photoUrl ? (
-                                                            <Image source={{ uri: spot.photoUrl }} style={{ width: 120, height: 80, borderRadius: 10 }} />
-                                                        ) : (
-                                                            <View style={{ width: 120, height: 80, borderRadius: 10, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }}>
-                                                                <Text style={{ fontSize: 24 }}>📍</Text>
-                                                            </View>
-                                                        )}
-                                                        <Text numberOfLines={1} style={{ fontSize: 12, fontWeight: '600', color: '#334155', marginTop: 4 }}>{spot.name}</Text>
-                                                        {spot.rating && (
-                                                            <Text style={{ fontSize: 10, color: '#94A3B8' }}>⭐ {spot.rating}</Text>
-                                                        )}
-                                                    </View>
-                                                ))}
-                                            </ScrollView>
-                                        </View>
-                                    ))}
-                                </View>
-                            ))}
-                        </>
-                    )}
+                   
                 </ScrollView>
             </Animated.View>
 
