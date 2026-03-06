@@ -8,6 +8,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MMKV } from 'react-native-mmkv';
 
+import OnboardingScreen from '../screens/OnboardingScreen';
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
 import DetailsScreen from '../screens/DetailsScreen';
@@ -19,9 +20,9 @@ const storage = new MMKV();
 const getInitialRoute = () => {
     try {
         const user = storage.getString('user');
-        return user ? 'Home' : 'Login';
+        return user ? 'Home' : 'Onboarding';
     } catch {
-        return 'Login';
+        return 'Onboarding';
     }
 };
 
@@ -36,6 +37,13 @@ const AppNavigator = () => {
                     headerShown: false,
                     animation: 'slide_from_right',
                 }}>
+                <Stack.Screen
+                    name="Onboarding"
+                    component={OnboardingScreen}
+                    options={{
+                        contentStyle: { backgroundColor: '#f6f7f8' },
+                    }}
+                />
                 <Stack.Screen
                     name="Home"
                     component={HomeScreen}
