@@ -162,30 +162,51 @@ const HomeScreen = () => {
                     body: JSON.stringify({ videoUrl: trimmed }),
                 });
 
-                const text = await response.text();
-                // Parse SSE events
+                // Stream SSE events as they arrive using body reader
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
                 let placesData = null;
-                const events = text.split('\n\n').filter(Boolean);
-                for (const eventBlock of events) {
-                    const lines = eventBlock.split('\n');
-                    let eventType = '';
-                    let eventData = '';
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) eventType = line.slice(7);
-                        if (line.startsWith('data: ')) eventData = line.slice(6);
-                    }
-                    if (!eventType || !eventData) continue;
-                    try {
-                        const parsed = JSON.parse(eventData);
-                        if (eventType === 'progress') {
-                            setVideoProgress(parsed.message || 'Processing...');
-                        } else if (eventType === 'places') {
-                            placesData = parsed;
-                        } else if (eventType === 'error') {
-                            throw new Error(parsed.message || 'Unknown error');
+                const accumulatedPlaces = [];
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // Process complete SSE events (separated by double newline)
+                    const parts = buffer.split('\n\n');
+                    buffer = parts.pop(); // keep incomplete last chunk
+
+                    for (const eventBlock of parts) {
+                        if (!eventBlock.trim()) continue;
+                        const lines = eventBlock.split('\n');
+                        let eventType = '';
+                        let eventData = '';
+                        for (const line of lines) {
+                            if (line.startsWith('event: ')) eventType = line.slice(7);
+                            if (line.startsWith('data: ')) eventData = line.slice(6);
                         }
-                    } catch (e) {
-                        if (e.message && !e.message.includes('JSON')) throw e;
+                        if (!eventType || !eventData) continue;
+                        try {
+                            const parsed = JSON.parse(eventData);
+                            if (eventType === 'progress') {
+                                setVideoProgress(parsed.message || 'Processing...');
+                            } else if (eventType === 'place_batch') {
+                                // Accumulate places from each batch as they arrive
+                                if (parsed.places) {
+                                    accumulatedPlaces.push(...parsed.places);
+                                    setVideoProgress(`Found ${parsed.totalFound} of ~${parsed.totalExpected} places...`);
+                                }
+                            } else if (eventType === 'places') {
+                                placesData = parsed;
+                            } else if (eventType === 'error') {
+                                throw new Error(parsed.message || 'Unknown error');
+                            }
+                        } catch (e) {
+                            if (e.message && !e.message.includes('JSON')) throw e;
+                        }
                     }
                 }
 
@@ -997,6 +1018,7 @@ const HomeScreen = () => {
                 ref={createTripSheetRef}
                 onChange={handleCreateTripSheetChange}
                 animationConfigs={sheetAnimationConfig}
+                savedSpotsData={savedSpots}
                 onPlanningStarted={() => {
                     setIsTripLoading(true);
                     setTripData(null); // Clear previous data

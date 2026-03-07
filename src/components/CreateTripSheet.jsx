@@ -25,7 +25,7 @@ const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FULL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.92;
 
-const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated, onPlanningStarted }, ref) => {
+const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated, onPlanningStarted, savedSpotsData }, ref) => {
     const insets = useSafeAreaInsets();
     const [step, setStep] = useState('home'); // 'home', 'preferences', 'howManyDays', 'discoverSpots'
     const [searchActive, setSearchActive] = useState(false);
@@ -46,6 +46,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     const [isFromVideo, setIsFromVideo] = useState(false);
     const [isFromSavedSpots, setIsFromSavedSpots] = useState(false);
     const [isSavingSpots, setIsSavingSpots] = useState(false);
+    const [matchedSavedSpots, setMatchedSavedSpots] = useState([]);
     const inputRef = useRef(null);
     const bottomSheetInternalRef = useRef(null);
 
@@ -83,23 +84,28 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
         },
         // Open Discover Spots with saved spots from a country, pre-selecting a specific city
         openWithSavedSpots: (country, selectedCity, cities) => {
-            // Flatten all spots from all cities, mapping _id → id for compatibility
-            const allSpots = [];
+            // Flatten all spots, placing the tapped city's spots FIRST
+            const selectedCitySpots = [];
+            const otherCitySpots = [];
             Object.entries(cities).forEach(([city, cityData]) => {
                 (cityData.spots || []).forEach(spot => {
-                    allSpots.push({
+                    const mapped = {
                         ...spot,
                         id: spot._id || spot.id,
                         city: city,
                         country: country,
                         interest: spot.category || 'sightseeing',
-                    });
+                    };
+                    if (city === selectedCity) {
+                        selectedCitySpots.push(mapped);
+                    } else {
+                        otherCitySpots.push(mapped);
+                    }
                 });
             });
+            const allSpots = [...selectedCitySpots, ...otherCitySpots];
             // Pre-select only the tapped city's spots
-            const preSelected = allSpots
-                .filter(s => s.city === selectedCity)
-                .map(s => s.id);
+            const preSelected = selectedCitySpots.map(s => s.id);
 
             setSelectedLocation({ name: country });
             setNumDays(4);
@@ -320,6 +326,12 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                 onPress={() => {
                                     inputRef.current?.blur();
                                     Keyboard.dismiss();
+                                    // Fire viewport bounds lookup in parallel (non-blocking)
+                                    if (savedSpotsData && Object.keys(savedSpotsData).length > 0) {
+                                        findSpotsInViewport(item.id, savedSpotsData);
+                                    } else {
+                                        setMatchedSavedSpots([]);
+                                    }
                                     // Delay the state update to ensure the keyboard dismissing animation 
                                     // has time to start on Android before the TextInput unmounts
                                     setTimeout(() => {
@@ -597,6 +609,53 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
         'Shopping': 'shopping',
     };
 
+    /**
+     * Given a place_id from autocomplete, fetch its viewport bounds via Geocoding API,
+     * then filter saved spots whose coordinates fall inside those bounds.
+     */
+    const findSpotsInViewport = async (placeId, spotsData) => {
+        try {
+            const apiKey = Config.GOOGLE_MAPS_API_KEY;
+            if (!apiKey || !placeId) return;
+            const url = `https://maps.googleapis.com/maps/api/geocode/json?place_id=${placeId}&key=${apiKey}`;
+            const res = await fetch(url);
+            const data = await res.json();
+            const viewport = data.results?.[0]?.geometry?.viewport;
+            if (!viewport) {
+                setMatchedSavedSpots([]);
+                return;
+            }
+            const { northeast: ne, southwest: sw } = viewport;
+            const matches = [];
+            for (const [country, cities] of Object.entries(spotsData)) {
+                for (const [city, cityData] of Object.entries(cities)) {
+                    const cityMatches = (cityData.spots || []).filter(spot => {
+                        const lat = spot.coordinates?.lat;
+                        const lng = spot.coordinates?.lng;
+                        return lat != null && lng != null &&
+                            lat >= sw.lat && lat <= ne.lat &&
+                            lng >= sw.lng && lng <= ne.lng;
+                    });
+                    if (cityMatches.length > 0) {
+                        matches.push(...cityMatches.map(spot => ({
+                            ...spot,
+                            id: spot._id || spot.id || spot.placeId,
+                            city,
+                            country,
+                            interest: 'saved',
+                            _isSavedSpot: true,
+                        })));
+                    }
+                }
+            }
+            console.log(`📌 Found ${matches.length} saved spot(s) within viewport bounds`);
+            setMatchedSavedSpots(matches);
+        } catch (err) {
+            console.warn('Viewport bounds lookup failed:', err.message);
+            setMatchedSavedSpots([]);
+        }
+    };
+
     const fetchDiscoverPlaces = async () => {
         if (!selectedLocation) return;
         setIsLoadingPlaces(true);
@@ -618,9 +677,13 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             });
             const data = await response.json();
             if (data.success && data.places) {
-                setDiscoveredPlaces(data.places);
+                // Merge: saved spots first, then API-discovered places (deduped)
+                const savedIds = new Set(matchedSavedSpots.map(s => s.placeId || s.id));
+                const apiPlaces = data.places.filter(p => !savedIds.has(p.id));
+                const merged = [...matchedSavedSpots, ...apiPlaces];
+                setDiscoveredPlaces(merged);
                 // Auto-select all places
-                setSelectedSpots(data.places.map(p => p.id));
+                setSelectedSpots(merged.map(p => p.id));
             }
         } catch (error) {
             console.error('Failed to discover places:', error);
@@ -851,50 +914,67 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                             <Text style={[styles.cityName, { fontWeight: '700', fontSize: 15, color: '#1E293B' }]}>{country}</Text>
                                         </View>
                                     </View>
-                                    {Object.entries(cities).map(([city, spots]) => (
-                                        <View key={`${country}-${city}`}>
-                                            {/* City Sub-header */}
-                                            <View style={[styles.cityHeader, { paddingLeft: 28 }]}>
-                                                <View style={styles.cityHeaderLeft}>
-                                                    <View style={styles.cityCheck}>
-                                                        <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                                            <Path d="M20 6L9 17l-5-5" />
-                                                        </Svg>
-                                                    </View>
-                                                    <Text style={styles.cityName}>{city}</Text>
-                                                </View>
-                                                <Text style={{ fontSize: 12, color: '#94A3B8' }}>{spots.length} spots</Text>
-                                            </View>
-                                            {/* Spots */}
-                                            {spots.map((spot) => {
-                                                globalIdx++;
-                                                const isChecked = selectedSpots.includes(spot.id);
-                                                return (
-                                                    <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)} activeOpacity={0.7} delayPressIn={100}>
-                                                        <Text style={styles.spotNumber}>{globalIdx}.</Text>
-                                                        {spot.photoUrl ? (
-                                                            <Image source={{ uri: spot.photoUrl }} style={styles.spotImage} />
-                                                        ) : (
-                                                            <View style={[styles.spotImage, styles.spotImagePlaceholder]}>
-                                                                <Text style={styles.spotImagePlaceholderText}>📍</Text>
-                                                            </View>
-                                                        )}
-                                                        <View style={styles.spotInfo}>
-                                                            <Text style={styles.spotName} numberOfLines={1}>{spot.name}</Text>
-                                                            {spot.address ? <Text style={styles.spotDesc} numberOfLines={2}>{spot.address}</Text> : null}
-                                                        </View>
-                                                        <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
-                                                            {isChecked && (
-                                                                <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                    {Object.entries(cities).map(([city, spots]) => {
+                                        const citySpotIds = spots.map(s => s.id);
+                                        const anyCitySelected = citySpotIds.some(id => selectedSpots.includes(id));
+                                        const allCitySelected = citySpotIds.every(id => selectedSpots.includes(id));
+                                        return (
+                                            <View key={`${country}-${city}`}>
+                                                {/* City Sub-header */}
+                                                <TouchableOpacity
+                                                    style={[styles.cityHeader, { paddingLeft: 28 }]}
+                                                    activeOpacity={0.7}
+                                                    onPress={() => {
+                                                        if (allCitySelected) {
+                                                            setSelectedSpots(prev => prev.filter(id => !citySpotIds.includes(id)));
+                                                        } else {
+                                                            setSelectedSpots(prev => [...new Set([...prev, ...citySpotIds])]);
+                                                        }
+                                                    }}
+                                                >
+                                                    <View style={styles.cityHeaderLeft}>
+                                                        <View style={[styles.cityCheck, !anyCitySelected && styles.cityCheckInactive]}>
+                                                            {anyCitySelected && (
+                                                                <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                                                                     <Path d="M20 6L9 17l-5-5" />
                                                                 </Svg>
                                                             )}
                                                         </View>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </View>
-                                    ))}
+                                                        <Text style={styles.cityName}>{city}</Text>
+                                                    </View>
+                                                    <Text style={{ fontSize: 12, color: '#94A3B8' }}>{spots.length} spots</Text>
+                                                </TouchableOpacity>
+                                                {/* Spots */}
+                                                {spots.map((spot) => {
+                                                    globalIdx++;
+                                                    const isChecked = selectedSpots.includes(spot.id);
+                                                    return (
+                                                        <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)} activeOpacity={0.7} delayPressIn={100}>
+                                                            <Text style={styles.spotNumber}>{globalIdx}.</Text>
+                                                            {spot.photoUrl ? (
+                                                                <Image source={{ uri: spot.photoUrl }} style={styles.spotImage} />
+                                                            ) : (
+                                                                <View style={[styles.spotImage, styles.spotImagePlaceholder]}>
+                                                                    <Text style={styles.spotImagePlaceholderText}>📍</Text>
+                                                                </View>
+                                                            )}
+                                                            <View style={styles.spotInfo}>
+                                                                <Text style={styles.spotName} numberOfLines={1}>{spot.name}</Text>
+                                                                {spot.address ? <Text style={styles.spotDesc} numberOfLines={2}>{spot.address}</Text> : null}
+                                                            </View>
+                                                            <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
+                                                                {isChecked && (
+                                                                    <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <Path d="M20 6L9 17l-5-5" />
+                                                                    </Svg>
+                                                                )}
+                                                            </View>
+                                                        </TouchableOpacity>
+                                                    );
+                                                })}
+                                            </View>
+                                        );
+                                    })}
                                 </View>
                             ));
                         })()}
@@ -919,9 +999,11 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                         {/* Spots List */}
                         {filteredSpots.map((spot, idx) => {
                             const isChecked = selectedSpots.includes(spot.id);
-                            const shortDesc = spot.interest
-                                ? spot.interest.charAt(0).toUpperCase() + spot.interest.slice(1)
-                                : spot.address || '';
+                            const shortDesc = spot._isSavedSpot
+                                ? '📌 From your saved spots'
+                                : spot.interest
+                                    ? spot.interest.charAt(0).toUpperCase() + spot.interest.slice(1)
+                                    : spot.address || '';
                             return (
                                 <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)} activeOpacity={0.7} delayPressIn={100}>
                                     <Text style={styles.spotNumber}>{idx + 1}.</Text>
@@ -933,7 +1015,14 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                         </View>
                                     )}
                                     <View style={styles.spotInfo}>
-                                        <Text style={styles.spotName} numberOfLines={1}>{spot.name}</Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                            <Text style={styles.spotName} numberOfLines={1}>{spot.name}</Text>
+                                            {spot._isSavedSpot && (
+                                                <View style={styles.savedTag}>
+                                                    <Text style={styles.savedTagText}>Saved</Text>
+                                                </View>
+                                            )}
+                                        </View>
                                         {shortDesc ? <Text style={styles.spotDesc} numberOfLines={2}>{shortDesc}</Text> : null}
                                     </View>
                                     <View style={[styles.spotCheck, isChecked && styles.spotCheckActive]}>
@@ -1590,6 +1679,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
+    cityCheckInactive: {
+        backgroundColor: 'transparent',
+        borderWidth: 2,
+        borderColor: '#CBD5E1',
+    },
     cityName: {
         fontSize: 20,
         fontWeight: '800',
@@ -1629,6 +1723,20 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         color: '#94A3B8',
         lineHeight: 18,
+    },
+    savedTag: {
+        backgroundColor: '#ECFDF5',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#A7F3D0',
+    },
+    savedTagText: {
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#059669',
+        letterSpacing: 0.3,
     },
     spotCheck: {
         width: 22,
