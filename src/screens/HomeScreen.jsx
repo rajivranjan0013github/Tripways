@@ -474,6 +474,7 @@ const HomeScreen = () => {
                 ref={mapRef}
                 provider={PROVIDER_GOOGLE}
                 style={styles.map}
+                userInterfaceStyle="light"
                 initialRegion={{
                     latitude: 28.6139,
                     longitude: 77.2090,
@@ -929,7 +930,7 @@ const HomeScreen = () => {
                         )}
                     </View>
 
-                   
+
                 </ScrollView>
             </Animated.View>
 
