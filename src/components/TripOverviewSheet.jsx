@@ -30,7 +30,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
     const [mode, setMode] = useState('overview'); // 'overview' or 'itinerary'
     const [selectedDay, setSelectedDay] = useState(1);
     const [expandedDays, setExpandedDays] = useState({});
-    const snapPoints = useMemo(() => ['50%'], []);
+    const snapPoints = useMemo(() => ['45%'], []);
 
     // Skeleton pulse animation
     const pulseAnim = useSharedValue(0);
