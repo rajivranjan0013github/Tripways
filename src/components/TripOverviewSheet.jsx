@@ -30,7 +30,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
     const [mode, setMode] = useState('overview'); // 'overview' or 'itinerary'
     const [selectedDay, setSelectedDay] = useState(1);
     const [expandedDays, setExpandedDays] = useState({});
-    const snapPoints = useMemo(() => ['50%'], []);
+    const snapPoints = useMemo(() => ['60%'], []);
     const scrollViewRef = useRef(null);
 
     // Scroll to top when mode or selected day changes

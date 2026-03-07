@@ -11,6 +11,7 @@ import Animated, {
     useAnimatedStyle,
     withRepeat,
     withTiming,
+    withSequence,
     Easing,
     interpolate,
 } from 'react-native-reanimated';
@@ -211,7 +212,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     }, [searchActive]);
 
     // Slide the entire footer (title + search bar) up/down
-    const SLIDE_DISTANCE = FULL_SHEET_HEIGHT - 150;
+    const SLIDE_DISTANCE = FULL_SHEET_HEIGHT - 180;
     const footerSlideStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: interpolate(searchProgress.value, [0, 1], [0, -SLIDE_DISTANCE], 'clamp') }],
     }));
@@ -236,6 +237,12 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     // Fade in search results after slide
     const resultsStyle = useAnimatedStyle(() => ({
         opacity: interpolate(searchProgress.value, [0.6, 1], [0, 1], 'clamp'),
+    }));
+
+    // Shake animation for trip duration card
+    const durationShake = useSharedValue(0);
+    const durationShakeStyle = useAnimatedStyle(() => ({
+        transform: [{ translateX: durationShake.value }],
     }));
 
     const dynamicContentStyle = {
@@ -307,7 +314,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
 
             {/* Search results — positioned below search bar, fades in after slide */}
             {searchActive && (
-                <Animated.View style={[{ position: 'absolute', top: 90, left: 22, right: 22, bottom: 80 }, resultsStyle]}>
+                <Animated.View style={[{ position: 'absolute', top: 80, left: 22, right: 22, bottom: 80 }, resultsStyle]}>
                     <BottomSheetFlatList
                         data={searchResults}
                         keyExtractor={(item) => item.id}
@@ -399,27 +406,42 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                 </View>
 
                 {/* Trip Duration Section */}
-                <TouchableOpacity style={styles.durationRow} onPress={() => setStep('howManyDays')}>
-                    <View style={styles.durationRowLeft}>
-                        <View style={styles.durationRowIcon}>
-                            <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM16 2v4M8 2v4M3 10h18" />
-                            </Svg>
+                <Animated.View style={durationShakeStyle}>
+                    <TouchableOpacity style={styles.durationRow} onPress={() => setStep('howManyDays')}>
+                        <View style={styles.durationRowLeft}>
+                            <View style={styles.durationRowIcon}>
+                                <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM16 2v4M8 2v4M3 10h18" />
+                                </Svg>
+                            </View>
+                            <View>
+                                <Text style={styles.durationRowTitle}>Trip Duration</Text>
+                                <Text style={styles.durationRowValue}>{daysSelected ? `${numDays} days` : 'Choose trip duration'}</Text>
+                            </View>
                         </View>
-                        <View>
-                            <Text style={styles.durationRowTitle}>Trip Duration</Text>
-                            <Text style={styles.durationRowValue}>{daysSelected ? `${numDays} days` : 'Choose trip duration'}</Text>
-                        </View>
-                    </View>
-                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M9 18l6-6-6-6" />
-                    </Svg>
-                </TouchableOpacity>
+                        <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <Path d="M9 18l6-6-6-6" />
+                        </Svg>
+                    </TouchableOpacity>
+                </Animated.View>
 
                 {/* Continue Button */}
                 <TouchableOpacity
                     style={[styles.blackContinueButton, { marginTop: 24 }]}
                     onPress={() => {
+                        if (!daysSelected) {
+                            // Shake the duration card to draw attention
+                            durationShake.value = withSequence(
+                                withTiming(-10, { duration: 50 }),
+                                withTiming(10, { duration: 50 }),
+                                withTiming(-10, { duration: 50 }),
+                                withTiming(10, { duration: 50 }),
+                                withTiming(-5, { duration: 50 }),
+                                withTiming(5, { duration: 50 }),
+                                withTiming(0, { duration: 50 }),
+                            );
+                            return;
+                        }
                         setStep('discoverSpots');
                         fetchDiscoverPlaces();
                     }}
@@ -1019,7 +1041,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                             style={styles.addSpotsGradient}
                             pointerEvents="none"
                         />
-                        <View style={[styles.addSpotsBar, { bottom: Platform.OS === 'android' ? Math.max(80, 20 + insets.bottom) : 80 }]} pointerEvents="box-none">
+                        <View style={[styles.addSpotsBar, { bottom: Platform.OS === 'android' ? Math.max(60, 10 + insets.bottom) : 40 }]} pointerEvents="box-none">
                             {/* Save Spots button for video places */}
                             {isFromVideo && !isFromSavedSpots && selectedSpots.length > 0 && !isPlanning && !isLoadingPlaces && (
                                 <TouchableOpacity
@@ -1528,7 +1550,7 @@ const styles = StyleSheet.create({
         paddingTop: 8,
     },
     discoverTitle: {
-        fontSize: 28,
+        fontSize: 25,
         fontWeight: '800',
         color: '#0F172A',
         letterSpacing: -0.5,
@@ -1648,17 +1670,17 @@ const styles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        height: 160,
+        height: 80,
     },
     addSpotsBar: {
         position: 'absolute',
-        bottom: 80,
+        bottom: 60,
         left: 22,
         right: 22,
     },
     addSpotsButton: {
         backgroundColor: '#000000',
-        height: 56,
+        height: 48,
         borderRadius: 28,
         flexDirection: 'row',
         alignItems: 'center',
@@ -1709,7 +1731,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 16,
+        marginBottom: 10,
+        marginTop: -10
     },
     // Skeleton Placeholder Styles
     skeletonCategoryChip: {
