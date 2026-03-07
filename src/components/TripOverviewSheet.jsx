@@ -1,4 +1,4 @@
-import React, { forwardRef, useMemo, useState, useEffect } from 'react';
+import React, { forwardRef, useMemo, useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image, ActivityIndicator } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -31,6 +31,12 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
     const [selectedDay, setSelectedDay] = useState(1);
     const [expandedDays, setExpandedDays] = useState({});
     const snapPoints = useMemo(() => ['50%'], []);
+    const scrollViewRef = useRef(null);
+
+    // Scroll to top when mode or selected day changes
+    useEffect(() => {
+        scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+    }, [mode, selectedDay]);
 
     // Skeleton pulse animation
     const pulseAnim = useSharedValue(0);
@@ -293,7 +299,15 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
         return (
             <>
                 {itineraryDays.map((dayData) => (
-                    <View key={dayData.day} style={styles.overviewDayCard}>
+                    <TouchableOpacity
+                        key={dayData.day}
+                        style={styles.overviewDayCard}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                            setMode('itinerary');
+                            setSelectedDay(dayData.day);
+                        }}
+                    >
                         <View style={styles.overviewImageWrapper}>
                             {getDayImage(dayData) ? (
                                 <Image
@@ -315,7 +329,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
                                 {formatSpots(dayData.spots)}
                             </Text>
                         </View>
-                    </View>
+                    </TouchableOpacity>
                 ))}
             </>
         );
@@ -406,6 +420,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
 
             {/* Scrollable Content */}
             <BottomSheetScrollView
+                ref={scrollViewRef}
                 style={styles.scrollContent}
                 contentContainerStyle={{ paddingBottom: 40 }}
             >
@@ -435,7 +450,8 @@ const styles = StyleSheet.create({
     },
     header: {
         paddingHorizontal: 24,
-        paddingTop: 8,
+        paddingTop: 0,
+        marginTop: 0
     },
     titleRow: {
         flexDirection: 'row',
