@@ -1,4 +1,4 @@
-import React, { forwardRef, useMemo, useState, useEffect, useRef } from 'react';
+import React, { forwardRef, useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image, ActivityIndicator } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -32,11 +32,12 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
     const [expandedDays, setExpandedDays] = useState({});
     const snapPoints = useMemo(() => ['60%'], []);
     const scrollViewRef = useRef(null);
+    const dayLayoutRefs = useRef({});
 
-    // Scroll to top when mode or selected day changes
+    // Scroll to top when mode changes
     useEffect(() => {
         scrollViewRef.current?.scrollTo({ y: 0, animated: false });
-    }, [mode, selectedDay]);
+    }, [mode]);
 
     // Skeleton pulse animation
     const pulseAnim = useSharedValue(0);
@@ -153,11 +154,11 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
         return itineraryDays.find(d => d.day === selectedDay) || itineraryDays[0];
     };
 
-    const renderSpotCard = (spot, index, travelInfo, isLast) => {
+    const renderSpotCard = (spot, index) => {
         const config = CATEGORY_CONFIG[spot.category] || CATEGORY_CONFIG['Attractions'];
         return (
             <View style={styles.spotCard}>
-                {/* Left Column: Image + dots below */}
+                {/* Left Column: Image */}
                 <View style={styles.leftColumn}>
                     <View style={styles.imageWrapper}>
                         <View style={styles.spotNumberBadge}>
@@ -174,17 +175,9 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
                             </View>
                         )}
                     </View>
-                    {/* Dots below image (inside card) */}
-                    {travelInfo && (
-                        <View style={styles.dotsColumn}>
-                            <View style={styles.dot} />
-                            <View style={styles.dot} />
-                            <View style={[styles.dot, { marginBottom: -5 }]} />
-                        </View>
-                    )}
                 </View>
 
-                {/* Right Column: Info + Travel */}
+                {/* Right Column: Info */}
                 <View style={styles.spotInfo}>
                     <Text style={styles.spotName} numberOfLines={1}>{spot.name}</Text>
                     <View style={styles.spotMeta}>
@@ -193,31 +186,50 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
                         </View>
                         <Text style={styles.spotRating}>⭐ {spot.rating || '4.5'}</Text>
                     </View>
-
-                    {/* Travel info + Directions */}
-                    {travelInfo && (
-                        <View style={styles.cardTravelRow}>
-                            <View>
-                                <Text style={styles.travelText}>
-                                    {travelInfo.mode === 'walking' ? '🚶' : travelInfo.mode === 'transit' ? '🚌' : '🚗'}{' '}
-                                    {travelInfo.time} • {travelInfo.distance}
-                                </Text>
-                            </View>
-                            <TouchableOpacity style={styles.directionsButton}>
-                                <Text style={styles.directionsText}>Directions</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
                 </View>
             </View>
         );
     };
 
-    const renderDottedConnector = (index) => (
-        <View key={`connector-${index}`} style={styles.dottedConnectorContainer}>
-            <View style={styles.dot} />
-            <View style={styles.dot} />
-            <View style={styles.dot} />
+    const renderTravelConnector = (index, travelInfo) => (
+        <View key={`connector-${index}`} style={styles.travelConnectorContainer}>
+            <View style={styles.dotsColumn}>
+                <View style={styles.dot} />
+                <View style={styles.dot} />
+                <View style={styles.dot} />
+            </View>
+            {travelInfo && (
+                <View style={styles.travelInfoRow}>
+                    <View style={styles.travelModeBadge}>
+                        {travelInfo.mode !== 'walking' ? (
+                            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                               <Path
+                                     d="M14 22V16.9612C14 16.3537 13.7238 15.7791 13.2494 15.3995L11.5 14M11.5 14L13 7.5M11.5 14L10 13M13 7.5L11 7M13 7.5L15.0426 10.7681C15.3345 11.2352 15.8062 11.5612 16.3463 11.6693L18 12M10 13L11 7M10 13L8 22M11 7L8.10557 8.44721C7.428 8.786 7 9.47852 7 10.2361V12M14.5 3.5C14.5 4.05228 14.0523 4.5 13.5 4.5C12.9477 4.5 12.5 4.05228 12.5 3.5C12.5 2.94772 12.9477 2.5 13.5 2.5C14.0523 2.5 14.5 2.94772 14.5 3.5Z"
+                                     stroke="#000000"
+                                     strokeWidth={2}
+                                     strokeLinecap="round"
+                                     strokeLinejoin="round"
+                                   />
+                            </Svg>
+                        ) : travelInfo.mode === 'transit' ? (
+                            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M8 6v6M16 6v6M2 12h20M6 18h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2zM6 18l-2 2M18 18l2 2" />
+                            </Svg>
+                        ) : (
+                            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M5 17a2 2 0 1 0 4 0 2 2 0 1 0-4 0M15 17a2 2 0 1 0 4 0 2 2 0 1 0-4 0" />
+                                <Path d="M5 17H3V6l9-4 9 4v11h-2M9 17h6" />
+                            </Svg>
+                        )}
+                    </View>
+                    <Text style={styles.travelText}>
+                        {travelInfo.time} • {travelInfo.distance}
+                    </Text>
+                    <TouchableOpacity style={styles.directionsButton}>
+                        <Text style={styles.directionsText}>Directions</Text>
+                    </TouchableOpacity>
+                </View>
+            )}
         </View>
     );
 
@@ -238,8 +250,8 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
                 {/* Spots List */}
                 {dayData.spots.map((spot, idx) => (
                     <View key={`item-${idx}`}>
-                        {renderSpotCard(spot, idx, dayData.travelInfo[idx], idx === dayData.spots.length - 1)}
-                        {idx < dayData.spots.length - 1 && renderDottedConnector(idx)}
+                        {renderSpotCard(spot, idx)}
+                        {idx < dayData.spots.length - 1 && renderTravelConnector(idx, dayData.travelInfo[idx])}
                     </View>
                 ))}
             </View>
@@ -254,21 +266,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
 
     // Format spots as bullet points
     const formatSpots = (spots) => {
-        const names = spots.map(s => s.fullName || s.name);
-        const lines = [];
-        let current = '';
-        for (let i = 0; i < names.length; i++) {
-            if (current === '') {
-                current = names[i];
-            } else {
-                current += ' → ' + names[i];
-            }
-            if (current.length > 30 || i === names.length - 1) {
-                lines.push(current);
-                current = '';
-            }
-        }
-        return lines.map(l => '• ' + l).join('\n');
+        return spots.map(s => s.fullName || s.name).join(' → ');
     };
 
     const renderSkeletonItems = () => {
@@ -308,23 +306,8 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
                             setSelectedDay(dayData.day);
                         }}
                     >
-                        <View style={styles.overviewImageWrapper}>
-                            {getDayImage(dayData) ? (
-                                <Image
-                                    source={{ uri: getDayImage(dayData) }}
-                                    style={styles.overviewDayImage}
-                                />
-                            ) : (
-                                <View style={[styles.overviewDayImage, styles.overviewDayImageFallback]}>
-                                    <Text style={{ fontSize: 28 }}>📍</Text>
-                                </View>
-                            )}
-                            <View style={styles.overviewDayBadge}>
-                                <Text style={styles.overviewDayBadgeText}>Day {dayData.day}</Text>
-                            </View>
-                        </View>
                         <View style={styles.overviewDayInfo}>
-                            {dayData.theme && <Text style={styles.overviewDayTheme}>{dayData.theme}</Text>}
+                            <Text style={styles.overviewDayLabel}>Day {dayData.day}</Text>
                             <Text style={styles.overviewDayCardSpots}>
                                 {formatSpots(dayData.spots)}
                             </Text>
@@ -336,9 +319,41 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
     };
 
     const renderItineraryItems = () => {
-        const activeDayData = getActiveDayData();
-        return renderDayItinerary(activeDayData);
+        return itineraryDays.map((dayData) => (
+            <View
+                key={`day-${dayData.day}`}
+                onLayout={(e) => {
+                    dayLayoutRefs.current[dayData.day] = e.nativeEvent.layout.y;
+                }}
+            >
+                {renderDayItinerary(dayData)}
+            </View>
+        ));
     };
+
+    const scrollToDay = (day) => {
+        setSelectedDay(day);
+        const y = dayLayoutRefs.current[day];
+        if (y != null) {
+            scrollViewRef.current?.scrollTo({ y, animated: true });
+        }
+    };
+
+    const handleItineraryScroll = useCallback((event) => {
+        const scrollY = event.nativeEvent.contentOffset.y;
+        const days = Object.keys(dayLayoutRefs.current)
+            .map(Number)
+            .sort((a, b) => a - b);
+        let currentDay = days[0] || 1;
+        for (const day of days) {
+            if (scrollY >= dayLayoutRefs.current[day] - 50) {
+                currentDay = day;
+            }
+        }
+        if (currentDay !== selectedDay) {
+            setSelectedDay(currentDay);
+        }
+    }, [selectedDay]);
 
     return (
         <BottomSheet
@@ -407,7 +422,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
                             <TouchableOpacity
                                 key={d.day}
                                 style={[styles.tab, selectedDay === d.day && styles.tabActive]}
-                                onPress={() => setSelectedDay(d.day)}
+                                onPress={() => scrollToDay(d.day)}
                             >
                                 <Text style={[styles.tabText, selectedDay === d.day && styles.tabTextActive]}>
                                     Day {d.day}
@@ -423,6 +438,8 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
                 ref={scrollViewRef}
                 style={styles.scrollContent}
                 contentContainerStyle={{ paddingBottom: 40 }}
+                onScroll={mode === 'itinerary' ? handleItineraryScroll : undefined}
+                scrollEventThrottle={16}
             >
                 {mode === 'overview' ? renderOverviewItems() : renderItineraryItems()}
             </BottomSheetScrollView>
@@ -545,14 +562,19 @@ const styles = StyleSheet.create({
 
     // Overview styles
     overviewDayCard: {
-        flexDirection: 'row',
-        backgroundColor: '#F8FAFC',
-        borderRadius: 20,
-        marginBottom: 14,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 16,
+        marginBottom: 16,
+        padding: 16,
+        paddingTop: 18,
+        // Elevation/Shadow
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        elevation: 4,
         borderWidth: 1,
-        borderColor: '#F1F5F9',
-        overflow: 'hidden',
-        marginTop: 4,
+        borderColor: 'rgba(241, 245, 249, 0.8)',
     },
     overviewImageWrapper: {
         position: 'relative',
@@ -578,8 +600,12 @@ const styles = StyleSheet.create({
     },
     overviewDayInfo: {
         flex: 1,
-        padding: 16,
-        justifyContent: 'center',
+    },
+    overviewDayLabel: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#0F172A',
+        marginBottom: 2,
     },
     overviewDayCardTitle: {
         fontSize: 22,
@@ -588,10 +614,11 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     overviewDayCardSpots: {
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: '500',
-        color: '#64748B',
-        lineHeight: 20,
+        color: '#334155',
+        lineHeight: 22,
+        letterSpacing: 0.1,
     },
 
     // Day itinerary styles
@@ -669,9 +696,9 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     spotImage: {
-        width: 64,
-        height: 64,
-        borderRadius: 12,
+        width: 48,
+        height: 48,
+        borderRadius: 10,
         backgroundColor: '#F1F5F9',
     },
     spotInfo: {
@@ -740,13 +767,27 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
     },
 
-    // Dotted connector between cards (aligned with image center)
-    dottedConnectorContainer: {
+    // Travel connector between cards
+    travelConnectorContainer: {
+        flexDirection: 'row',
         alignItems: 'center',
-        paddingLeft: 12,   // matches card padding
-        width: 12 + 64,    // card padding + image width (centers dots under image)
-        paddingVertical: 2,
-        gap: 2,
+        paddingVertical: 6,
+        paddingLeft: 12,
+        gap: 12,
+    },
+    travelInfoRow: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    travelModeBadge: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: '#F1F5F9',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     dot: {
         width: 2,

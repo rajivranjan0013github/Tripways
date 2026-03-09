@@ -234,7 +234,10 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     }, [searchActive]);
 
     // Slide the entire footer (title + search bar) up/down
-    const SLIDE_DISTANCE = FULL_SHEET_HEIGHT - 180;
+    const footerPaddingBottom = Platform.OS === 'android' ? Math.max(80, 20 + insets.bottom) : 80;
+    const SEARCH_TOP = 10; // Fixed distance from top of sheet for active search
+    const SEARCH_BAR_HEIGHT = 52;
+    const SLIDE_DISTANCE = FULL_SHEET_HEIGHT - footerPaddingBottom - SEARCH_BAR_HEIGHT - SEARCH_TOP;
     const footerSlideStyle = useAnimatedStyle(() => ({
         transform: [{ translateY: interpolate(searchProgress.value, [0, 1], [0, -SLIDE_DISTANCE], 'clamp') }],
     }));
@@ -336,7 +339,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
 
             {/* Search results — positioned below search bar, fades in after slide */}
             {searchActive && (
-                <Animated.View style={[{ position: 'absolute', top: 80, left: 22, right: 22, bottom: 80 }, resultsStyle]}>
+                <Animated.View style={[{ position: 'absolute', top: 20 + 52 + 10, left: 22, right: 22, bottom: 80 }, resultsStyle]}>
                     <BottomSheetFlatList
                         data={searchResults}
                         keyExtractor={(item) => item.id}
