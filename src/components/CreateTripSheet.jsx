@@ -156,7 +156,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
 
     const [searchResults, setSearchResults] = useState([]);
 
-    // Fetch Google Places Autocomplete when searchQuery changes
+    // Fetch Google Places Autocomplete (v1) when searchQuery changes
     React.useEffect(() => {
         if (searchQuery.length < 2) {
             setSearchResults([]);
@@ -170,21 +170,37 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                     console.warn("Google Maps API Key missing in react-native-config");
                     return;
                 }
-                const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(searchQuery)}&types=(regions)&key=${apiKey}`;
-
-                const response = await fetch(url);
+                const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Goog-Api-Key': apiKey,
+                    },
+                    body: JSON.stringify({
+                        input: searchQuery,
+                        includedPrimaryTypes: [
+                            'locality',
+                            'administrative_area_level_1',
+                            'administrative_area_level_2',
+                            'country',
+                            'sublocality',
+                        ],
+                    }),
+                });
                 const data = await response.json();
 
-                if (data.status === 'OK') {
-                    const mappedResults = data.predictions.map(prediction => ({
-                        id: prediction.place_id,
-                        name: prediction.structured_formatting.main_text,
-                        country: prediction.structured_formatting.secondary_text,
-                        flag: '📍'
-                    }));
+                if (data.suggestions && data.suggestions.length > 0) {
+                    const mappedResults = data.suggestions
+                        .filter(s => s.placePrediction)
+                        .map(s => ({
+                            id: s.placePrediction.placeId,
+                            name: s.placePrediction.structuredFormat?.mainText?.text || s.placePrediction.text?.text || '',
+                            country: s.placePrediction.structuredFormat?.secondaryText?.text || '',
+                            flag: '📍'
+                        }));
                     setSearchResults(mappedResults);
                 } else {
-                    console.warn("Places API Error:", data.status, data.error_message);
+                    setSearchResults([]);
                 }
             } catch (error) {
                 console.error("Failed to fetch places", error);

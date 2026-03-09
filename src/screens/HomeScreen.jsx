@@ -4,7 +4,7 @@
  */
 
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, ScrollView, TextInput, Keyboard, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, ScrollView, TextInput, Keyboard, Image, ActivityIndicator, FlatList, Modal } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easing, interpolate } from 'react-native-reanimated';
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
@@ -25,6 +25,25 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Day colors matching the frontendweb reference
 const DAY_COLORS = ['#6366F1', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
+
+// Custom map style — natural map, hide clutter labels, muted roads, smaller city names
+const customMapStyle = [
+    // Hide POI labels (restaurants, shops, etc.)
+    { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    // Hide road name labels
+    { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    // Mute road geometry — lighter, desaturated
+    { featureType: 'road', elementType: 'geometry', stylers: [{ saturation: -80 }, { lightness: 30 }] },
+    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ saturation: -70 }, { lightness: 25 }] },
+    // Hide transit labels
+    { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    // City / locality labels — lighter color, thin stroke
+    { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#aaaaaa' }] },
+    { featureType: 'administrative.locality', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
+    // Neighborhood labels — very light
+    { featureType: 'administrative.neighborhood', elementType: 'labels.text.fill', stylers: [{ color: '#cccccc' }] },
+    { featureType: 'administrative.neighborhood', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
+];
 
 /**
  * Decode an encoded polyline string into an array of {latitude, longitude} coordinates.
@@ -81,6 +100,14 @@ const HomeScreen = () => {
     const [videoProcessing, setVideoProcessing] = useState(false);
     const [videoProgress, setVideoProgress] = useState('');
     const [isTripLoading, setIsTripLoading] = useState(false);
+
+    // Spot search state
+    const [spotSearchResults, setSpotSearchResults] = useState([]);
+    const [spotSearchLoading, setSpotSearchLoading] = useState(false);
+    const [selectedSpotDetail, setSelectedSpotDetail] = useState(null);
+    const [spotDetailLoading, setSpotDetailLoading] = useState(false);
+    const [savingSpotId, setSavingSpotId] = useState(null); // placeId currently being saved
+    const [savedPlaceIds, setSavedPlaceIds] = useState(new Set()); // already-saved placeIds
 
     // Load user data from MMKV
     const storedUser = useMemo(() => {
@@ -144,6 +171,170 @@ const HomeScreen = () => {
             fetchSpots();
         }
     }, [activeTab, fetchTrips, fetchSpots]);
+
+    // Build a Set of already-saved placeIds so we can show the filled bookmark
+    useEffect(() => {
+        const ids = new Set();
+        Object.values(savedSpots).forEach(cities => {
+            Object.values(cities).forEach(cityData => {
+                (cityData.spots || []).forEach(spot => {
+                    if (spot.placeId) ids.add(spot.placeId);
+                });
+            });
+        });
+        setSavedPlaceIds(ids);
+    }, [savedSpots]);
+
+    // Google Places Autocomplete (v1) for spot search
+    useEffect(() => {
+        if (socialMode || searchText.length < 2) {
+            setSpotSearchResults([]);
+            return;
+        }
+        setSpotSearchLoading(true);
+
+        const fetchSpotSearch = async () => {
+            try {
+                const apiKey = Config.GOOGLE_MAPS_API_KEY;
+                if (!apiKey) return;
+                const response = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Goog-Api-Key': apiKey,
+                    },
+                    body: JSON.stringify({ input: searchText }),
+                });
+                const data = await response.json();
+                if (data.suggestions && data.suggestions.length > 0) {
+                    const mapped = data.suggestions
+                        .filter(s => s.placePrediction)
+                        .map(s => ({
+                            placeId: s.placePrediction.placeId,
+                            name: s.placePrediction.structuredFormat?.mainText?.text || s.placePrediction.text?.text || '',
+                            secondary: s.placePrediction.structuredFormat?.secondaryText?.text || '',
+                        }));
+                    setSpotSearchResults(mapped);
+                } else {
+                    setSpotSearchResults([]);
+                }
+            } catch (e) {
+                console.warn('Spot search failed:', e);
+            } finally {
+                setSpotSearchLoading(false);
+            }
+        };
+
+        const timeout = setTimeout(fetchSpotSearch, 300);
+        return () => clearTimeout(timeout);
+    }, [searchText, socialMode]);
+
+    // Fetch full place details (v1) when a search result is tapped
+    const fetchSpotDetail = useCallback(async (placeId) => {
+        setSpotDetailLoading(true);
+        setSelectedSpotDetail(null);
+        try {
+            const apiKey = Config.GOOGLE_MAPS_API_KEY;
+            if (!apiKey) return;
+            const fieldMask = [
+                'displayName', 'formattedAddress', 'rating', 'userRatingCount',
+                'photos', 'location', 'editorialSummary', 'generativeSummary',
+                'types', 'primaryType', 'primaryTypeDisplayName',
+                'currentOpeningHours', 'regularOpeningHours',
+            ].join(',');
+            const url = `https://places.googleapis.com/v1/places/${placeId}`;
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'X-Goog-Api-Key': apiKey,
+                    'X-Goog-FieldMask': fieldMask,
+                },
+            });
+            const r = await response.json();
+            if (r.displayName) {
+                let photoUrl = null;
+                if (r.photos && r.photos.length > 0) {
+                    photoUrl = `https://places.googleapis.com/v1/${r.photos[0].name}/media?maxWidthPx=600&key=${apiKey}`;
+                }
+                // Try to parse city/country from address parts
+                const addressParts = (r.formattedAddress || '').split(', ');
+                const country = addressParts.length > 1 ? addressParts[addressParts.length - 1] : 'Unknown';
+                const city = addressParts.length > 2 ? addressParts[addressParts.length - 3] || addressParts[0] : addressParts[0] || 'Unknown';
+
+                // Format types into readable labels
+                const HIDDEN_TYPES = ['point_of_interest', 'establishment', 'political', 'geocode'];
+                const readableTypes = (r.types || [])
+                    .filter(t => !HIDDEN_TYPES.includes(t))
+                    .slice(0, 3)
+                    .map(t => t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+                console.log(r)
+                // Pick best summary: generativeSummary > editorialSummary
+                const summary = r.generativeSummary?.overview?.text
+                    || r.editorialSummary?.text
+                    || null;
+
+                setSelectedSpotDetail({
+                    placeId,
+                    name: r.displayName?.text || '',
+                    address: r.formattedAddress || '',
+                    rating: r.rating || null,
+                    userRatingCount: r.userRatingCount || 0,
+                    photoUrl,
+                    coordinates: {
+                        lat: r.location?.latitude || null,
+                        lng: r.location?.longitude || null,
+                    },
+                    summary,
+                    types: readableTypes,
+                    primaryType: r.primaryTypeDisplayName?.text || null,
+                    openNow: r.currentOpeningHours?.openNow ?? null,
+                    country,
+                    city,
+                });
+            }
+        } catch (e) {
+            console.warn('Place details fetch failed:', e);
+        } finally {
+            setSpotDetailLoading(false);
+        }
+    }, []);
+
+    // Save a spot to bucket list
+    const saveSpotToBucketList = useCallback(async (spot) => {
+        const userId = storedUser?.id || storedUser?._id;
+        if (!userId || !spot) return;
+        setSavingSpotId(spot.placeId);
+        try {
+            const response = await fetch(`${BACKEND_URL}/api/spots`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId,
+                    spots: [{
+                        country: spot.country || 'Unknown',
+                        city: spot.city || 'Unknown',
+                        name: spot.name,
+                        placeId: spot.placeId,
+                        address: spot.address || '',
+                        rating: spot.rating || null,
+                        userRatingCount: spot.userRatingCount || 0,
+                        photoUrl: spot.photoUrl || null,
+                        coordinates: spot.coordinates || { lat: null, lng: null },
+                        source: 'manual',
+                    }],
+                }),
+            });
+            const data = await response.json();
+            if (data.success) {
+                setSavedPlaceIds(prev => new Set([...prev, spot.placeId]));
+                fetchSpots(); // refresh My Spots
+            }
+        } catch (e) {
+            console.warn('Failed to save spot:', e);
+        } finally {
+            setSavingSpotId(null);
+        }
+    }, [storedUser, fetchSpots]);
 
     // Detect when user pastes a video URL in social mode and process it
     useEffect(() => {
@@ -496,6 +687,7 @@ const HomeScreen = () => {
                 provider={PROVIDER_GOOGLE}
                 style={styles.map}
                 userInterfaceStyle="light"
+                customMapStyle={customMapStyle}
                 initialRegion={{
                     latitude: 28.6139,
                     longitude: 77.2090,
@@ -526,31 +718,64 @@ const HomeScreen = () => {
                                 }}
                                 title={place.name}
                                 description={`Day ${day.day} • ${place.category || 'sightseeing'}`}
-                                anchor={{ x: 0.5, y: 0.5 }}
+                                anchor={{ x: 0.5, y: 0.85 }}
                             >
-                                <View style={{
-                                    width: 28,
-                                    height: 28,
-                                    borderRadius: 14,
-                                    backgroundColor: dayColor,
-                                    borderWidth: 2,
-                                    borderColor: '#FFFFFF',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.3,
-                                    shadowRadius: 3,
-                                    elevation: 4,
-                                }}>
-                                    <Text style={{
-                                        color: '#FFFFFF',
-                                        fontSize: 12,
-                                        fontWeight: '700',
-                                    }}>{placeIndex + 1}</Text>
+                                <View style={{ alignItems: 'center', width: 100 }}>
+                                    <View style={{
+                                        width: 28,
+                                        height: 28,
+                                        borderRadius: 14,
+                                        backgroundColor: dayColor,
+                                        borderWidth: 2,
+                                        borderColor: '#FFFFFF',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        shadowColor: '#000',
+                                        shadowOffset: { width: 0, height: 2 },
+                                        shadowOpacity: 0.3,
+                                        shadowRadius: 3,
+                                        elevation: 4,
+                                    }}>
+                                        <Text style={{
+                                            color: '#FFFFFF',
+                                            fontSize: 12,
+                                            fontWeight: '700',
+                                        }}>{placeIndex + 1}</Text>
+                                    </View>
+                                    <Text
+                                        numberOfLines={1}
+                                        style={{
+                                            marginTop: 3,
+                                            fontSize: 10,
+                                            fontWeight: '700',
+                                            color: '#1E293B',
+                                            textAlign: 'center',
+                                            backgroundColor: 'rgba(255,255,255,0.85)',
+                                            paddingHorizontal: 5,
+                                            paddingVertical: 1,
+                                            borderRadius: 4,
+                                            overflow: 'hidden',
+                                            textShadowColor: 'rgba(255,255,255,0.9)',
+                                            textShadowOffset: { width: 0, height: 0 },
+                                            textShadowRadius: 3,
+                                        }}
+                                    >{place.name}</Text>
                                 </View>
                             </Marker>
                         ));
+                })}
+
+                {/* Route outline polylines — shadow behind the coloured route */}
+                {tripData?.itinerary?.map((day, dayIndex) => {
+                    if (!day.route?.polyline) return null;
+                    return (
+                        <Polyline
+                            key={`route-outline-${day.day}`}
+                            coordinates={decodePolyline(day.route.polyline)}
+                            strokeColor="rgba(0,0,0,0.12)"
+                            strokeWidth={8}
+                        />
+                    );
                 })}
 
                 {/* Route polylines — decoded from backend route data */}
@@ -561,7 +786,7 @@ const HomeScreen = () => {
                             key={`route-${day.day}`}
                             coordinates={decodePolyline(day.route.polyline)}
                             strokeColor={DAY_COLORS[dayIndex % DAY_COLORS.length]}
-                            strokeWidth={4}
+                            strokeWidth={5}
                         />
                     );
                 })}
@@ -578,7 +803,7 @@ const HomeScreen = () => {
                             key={`fallback-${day.day}`}
                             coordinates={coords}
                             strokeColor={DAY_COLORS[dayIndex % DAY_COLORS.length]}
-                            strokeWidth={3}
+                            strokeWidth={4}
                             lineDashPattern={[6, 4]}
                         />
                     );
@@ -758,14 +983,74 @@ const HomeScreen = () => {
                             ) : (
                                 <>
                                     <Text style={styles.sheetSectionLabel}>Results for "{searchText}"</Text>
-                                    <View style={styles.emptySpots}>
-                                        <Svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                            <Circle cx="11" cy="11" r="8" />
-                                            <Path d="m21 21-4.3-4.3" />
-                                        </Svg>
-                                        <Text style={[styles.emptySpotsText, { marginTop: 12 }]}>Searching places…</Text>
-                                        <Text style={styles.emptySpotsHint}>Results will appear here</Text>
-                                    </View>
+                                    {spotSearchLoading && spotSearchResults.length === 0 ? (
+                                        <View style={styles.emptySpots}>
+                                            <ActivityIndicator size="small" color="#94A3B8" />
+                                            <Text style={[styles.emptySpotsText, { marginTop: 12 }]}>Searching places…</Text>
+                                        </View>
+                                    ) : spotSearchResults.length > 0 ? (
+                                        <FlatList
+                                            data={spotSearchResults}
+                                            keyExtractor={(item) => item.placeId}
+                                            keyboardShouldPersistTaps="handled"
+                                            showsVerticalScrollIndicator={false}
+                                            style={{ maxHeight: SCREEN_HEIGHT * 0.55 }}
+                                            renderItem={({ item }) => {
+                                                const isSaved = savedPlaceIds.has(item.placeId);
+                                                const isSaving = savingSpotId === item.placeId;
+                                                return (
+                                                    <TouchableOpacity
+                                                        style={styles.spotSearchRow}
+                                                        activeOpacity={0.7}
+                                                        onPress={() => fetchSpotDetail(item.placeId)}
+                                                    >
+                                                        <View style={styles.spotSearchIcon}>
+                                                            <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <Path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                                                                <Circle cx="12" cy="10" r="3" />
+                                                            </Svg>
+                                                        </View>
+                                                        <View style={styles.spotSearchTextWrap}>
+                                                            <Text style={styles.spotSearchName} numberOfLines={1}>{item.name}</Text>
+                                                            <Text style={styles.spotSearchSub} numberOfLines={1}>{item.secondary}</Text>
+                                                        </View>
+                                                        <TouchableOpacity
+                                                            style={styles.spotBookmarkBtn}
+                                                            onPress={(e) => {
+                                                                e.stopPropagation?.();
+                                                                if (isSaved || isSaving) return;
+                                                                saveSpotToBucketList({
+                                                                    placeId: item.placeId,
+                                                                    name: item.name,
+                                                                    address: item.secondary,
+                                                                    city: item.secondary?.split(', ')?.[0] || 'Unknown',
+                                                                    country: item.secondary?.split(', ')?.pop() || 'Unknown',
+                                                                });
+                                                            }}
+                                                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                                        >
+                                                            {isSaving ? (
+                                                                <ActivityIndicator size="small" color="#3B82F6" />
+                                                            ) : (
+                                                                <Svg width="20" height="20" viewBox="0 0 24 24" fill={isSaved ? '#3B82F6' : 'none'} stroke={isSaved ? '#3B82F6' : '#94A3B8'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                    <Path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                                                </Svg>
+                                                            )}
+                                                        </TouchableOpacity>
+                                                    </TouchableOpacity>
+                                                );
+                                            }}
+                                        />
+                                    ) : (
+                                        <View style={styles.emptySpots}>
+                                            <Svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                                <Circle cx="11" cy="11" r="8" />
+                                                <Path d="m21 21-4.3-4.3" />
+                                            </Svg>
+                                            <Text style={[styles.emptySpotsText, { marginTop: 12 }]}>No results found</Text>
+                                            <Text style={styles.emptySpotsHint}>Try a different search term</Text>
+                                        </View>
+                                    )}
                                 </>
                             )}
                         </View>
@@ -850,6 +1135,128 @@ const HomeScreen = () => {
                     )}
                 </BottomSheetView>
             </BottomSheet>
+
+            {/* Spot Detail Card Modal */}
+            <Modal
+                visible={selectedSpotDetail !== null || spotDetailLoading}
+                transparent
+                animationType="slide"
+                onRequestClose={() => { setSelectedSpotDetail(null); setSpotDetailLoading(false); }}
+            >
+                <TouchableOpacity
+                    style={styles.detailOverlay}
+                    activeOpacity={1}
+                    onPress={() => { setSelectedSpotDetail(null); setSpotDetailLoading(false); }}
+                >
+                    <View style={styles.detailCard} onStartShouldSetResponder={() => true}>
+                        {spotDetailLoading ? (
+                            <View style={styles.detailLoading}>
+                                <ActivityIndicator size="large" color="#3B82F6" />
+                                <Text style={{ color: '#94A3B8', marginTop: 12, fontSize: 14, fontWeight: '500' }}>Loading place details…</Text>
+                            </View>
+                        ) : selectedSpotDetail ? (
+                            <>
+                                {/* Close button */}
+                                <TouchableOpacity
+                                    style={styles.detailCloseBtn}
+                                    onPress={() => setSelectedSpotDetail(null)}
+                                >
+                                    <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M18 6 6 18M6 6l12 12" />
+                                    </Svg>
+                                </TouchableOpacity>
+
+                                {/* Photo */}
+                                {selectedSpotDetail.photoUrl ? (
+                                    <Image
+                                        source={{ uri: selectedSpotDetail.photoUrl }}
+                                        style={styles.detailImage}
+                                    />
+                                ) : (
+                                    <View style={[styles.detailImage, { backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }]}>
+                                        <Svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="1.5">
+                                            <Path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                                            <Circle cx="12" cy="10" r="3" />
+                                        </Svg>
+                                    </View>
+                                )}
+
+                                {/* Info */}
+                                <View style={styles.detailInfo}>
+                                    <Text style={styles.detailName}>{selectedSpotDetail.name}</Text>
+                                    <Text style={styles.detailAddress} numberOfLines={2}>{selectedSpotDetail.address}</Text>
+
+                                    {/* Type tags + open/closed */}
+                                    {(selectedSpotDetail.types.length > 0 || selectedSpotDetail.openNow !== null) && (
+                                        <View style={styles.detailTagsRow}>
+                                            {selectedSpotDetail.openNow !== null && (
+                                                <View style={[styles.detailOpenBadge, { backgroundColor: selectedSpotDetail.openNow ? '#ECFDF5' : '#FEF2F2' }]}>
+                                                    <View style={[styles.detailOpenDot, { backgroundColor: selectedSpotDetail.openNow ? '#10B981' : '#EF4444' }]} />
+                                                    <Text style={[styles.detailOpenText, { color: selectedSpotDetail.openNow ? '#059669' : '#DC2626' }]}>
+                                                        {selectedSpotDetail.openNow ? 'Open Now' : 'Closed'}
+                                                    </Text>
+                                                </View>
+                                            )}
+                                            {selectedSpotDetail.types.map((type, i) => (
+                                                <View key={i} style={styles.detailTypeTag}>
+                                                    <Text style={styles.detailTypeText}>{type}</Text>
+                                                </View>
+                                            ))}
+                                        </View>
+                                    )}
+
+                                    {/* Rating row */}
+                                    {selectedSpotDetail.rating && (
+                                        <View style={styles.detailRatingRow}>
+                                            <Svg width="16" height="16" viewBox="0 0 24 24" fill="#FBBF24" stroke="#FBBF24" strokeWidth="1">
+                                                <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                                            </Svg>
+                                            <Text style={styles.detailRating}>{selectedSpotDetail.rating}</Text>
+                                            {selectedSpotDetail.userRatingCount > 0 && (
+                                                <Text style={styles.detailReviews}>({selectedSpotDetail.userRatingCount.toLocaleString()} reviews)</Text>
+                                            )}
+                                        </View>
+                                    )}
+
+                                    {/* Summary / brief info */}
+                                    {selectedSpotDetail.summary && (
+                                        <Text style={styles.detailSummary} numberOfLines={3}>{selectedSpotDetail.summary}</Text>
+                                    )}
+
+                                    {/* Add to Bucket List button */}
+                                    {(() => {
+                                        const isSaved = savedPlaceIds.has(selectedSpotDetail.placeId);
+                                        const isSaving = savingSpotId === selectedSpotDetail.placeId;
+                                        return (
+                                            <TouchableOpacity
+                                                style={[styles.detailAddBtn, isSaved && styles.detailAddBtnSaved]}
+                                                onPress={() => {
+                                                    if (isSaved || isSaving) return;
+                                                    saveSpotToBucketList(selectedSpotDetail);
+                                                }}
+                                                activeOpacity={0.8}
+                                            >
+                                                {isSaving ? (
+                                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                                ) : (
+                                                    <>
+                                                        <Svg width="18" height="18" viewBox="0 0 24 24" fill={isSaved ? '#FFFFFF' : 'none'} stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <Path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                                        </Svg>
+                                                        <Text style={styles.detailAddBtnText}>
+                                                            {isSaved ? 'Saved to Bucket List' : 'Add to Bucket List'}
+                                                        </Text>
+                                                    </>
+                                                )}
+                                            </TouchableOpacity>
+                                        );
+                                    })()}
+                                </View>
+                            </>
+                        ) : null}
+                    </View>
+                </TouchableOpacity>
+            </Modal>
 
             {/* Trips Overlay */}
             <Animated.View
@@ -1613,6 +2020,174 @@ const styles = StyleSheet.create({
         borderRadius: 3,
         alignSelf: 'center',
         marginBottom: 20,
+    },
+    // Spot search result row
+    spotSearchRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 4,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9',
+    },
+    spotSearchIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: '#F8FAFC',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    spotSearchTextWrap: {
+        flex: 1,
+        marginRight: 8,
+    },
+    spotSearchName: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#1E293B',
+    },
+    spotSearchSub: {
+        fontSize: 12,
+        color: '#94A3B8',
+        marginTop: 2,
+    },
+    spotBookmarkBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    // Detail card modal
+    detailOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'flex-end',
+    },
+    detailCard: {
+        backgroundColor: '#FFFFFF',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        minHeight: 300,
+        maxHeight: SCREEN_HEIGHT * 0.7,
+        overflow: 'hidden',
+    },
+    detailCloseBtn: {
+        position: 'absolute',
+        top: 12,
+        right: 12,
+        zIndex: 10,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    detailImage: {
+        width: '100%',
+        height: 200,
+    },
+    detailLoading: {
+        padding: 60,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    detailInfo: {
+        padding: 20,
+    },
+    detailName: {
+        fontSize: 22,
+        fontWeight: '800',
+        color: '#0F172A',
+        letterSpacing: -0.5,
+    },
+    detailAddress: {
+        fontSize: 13,
+        color: '#64748B',
+        marginTop: 4,
+        lineHeight: 18,
+    },
+    detailRatingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 10,
+    },
+    detailRating: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1E293B',
+    },
+    detailReviews: {
+        fontSize: 13,
+        color: '#94A3B8',
+        marginLeft: 2,
+    },
+    detailSummary: {
+        fontSize: 14,
+        color: '#475569',
+        lineHeight: 20,
+        marginTop: 12,
+    },
+    detailAddBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: '#3B82F6',
+        paddingVertical: 14,
+        borderRadius: 16,
+        marginTop: 20,
+    },
+    detailAddBtnSaved: {
+        backgroundColor: '#10B981',
+    },
+    detailTagsRow: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+        marginTop: 10,
+    },
+    detailTypeTag: {
+        backgroundColor: '#F1F5F9',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 8,
+    },
+    detailTypeText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748B',
+    },
+    detailOpenBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 8,
+    },
+    detailOpenDot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+    },
+    detailOpenText: {
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    detailAddBtnText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#FFFFFF',
     },
 });
 
