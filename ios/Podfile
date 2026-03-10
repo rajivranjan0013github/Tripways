@@ -40,3 +40,7 @@ target 'TripWays' do
     )
   end
 end
+
+target 'ShareExtension' do
+  # No React Native modules needed here to avoid extension-safe errors
+end

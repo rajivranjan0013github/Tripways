@@ -9,7 +9,7 @@ import Animated, { useSharedValue, useAnimatedStyle, withTiming, withDelay, Easi
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { MMKV } from 'react-native-mmkv';
 import Config from 'react-native-config';
@@ -17,6 +17,7 @@ import Config from 'react-native-config';
 import CreateTripSheet from '../components/CreateTripSheet';
 import TripOverviewSheet from '../components/TripOverviewSheet';
 import ProfileOverlay from '../components/ProfileOverlay';
+import { detectPlatformFromUrl, getSharedUrl, setAppGroupData } from '../services/ShareIntent';
 import MySpotIcon from '../assets/My-spot';
 
 const storage = new MMKV();
@@ -77,6 +78,8 @@ function decodePolyline(encoded) {
 const HomeScreen = () => {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation();
+    const route = useRoute();
+    const sharedUrlProcessed = useRef(false);
     const tabBarHeight = 52 + insets.bottom + (Platform.OS === 'android' ? 120 : 40); // Increased buffer to fully hide on both platforms
     const bottomSheetRef = useRef(null);
 
@@ -161,7 +164,66 @@ const HomeScreen = () => {
     useEffect(() => {
         fetchTrips();
         fetchSpots();
+
+        // Sync userId & backendUrl to App Group UserDefaults for the Share Extension
+        const userId = storedUser?.id || storedUser?._id;
+        if (userId) {
+            setAppGroupData(userId, BACKEND_URL);
+        }
     }, [fetchTrips, fetchSpots]);
+
+    // ── Handle shared URL from share intent (Instagram/TikTok share) ──
+    useEffect(() => {
+        const handleSharedUrl = (url) => {
+            if (!url || sharedUrlProcessed.current) return;
+            sharedUrlProcessed.current = true;
+            const platform = detectPlatformFromUrl(url) || 'instagram';
+            // Activate social mode and set the URL — this triggers the existing
+            // processVideoUrl useEffect automatically
+            setSocialMode(platform);
+            setSearchText(url);
+            setSearchFocused(true);
+            // Expand the bottom sheet so user sees the processing state
+            setTimeout(() => {
+                bottomSheetRef.current?.snapToIndex(2);
+            }, 300);
+        };
+
+        // Cold launch: check route params
+        if (route.params?.sharedUrl) {
+            handleSharedUrl(route.params.sharedUrl);
+            // Clear the param so it doesn't re-trigger
+            navigation.setParams({ sharedUrl: null });
+            return;
+        }
+
+        // Also check native module directly (in case param wasn't set yet)
+        if (!sharedUrlProcessed.current) {
+            getSharedUrl().then(url => {
+                if (url) handleSharedUrl(url);
+            });
+        }
+    }, [route.params?.sharedUrl]);
+
+    // Listen for new share intents when app comes back to foreground
+    useEffect(() => {
+        const listener = require('react-native').AppState.addEventListener('change', async (state) => {
+            if (state === 'active') {
+                const url = await getSharedUrl();
+                if (url) {
+                    sharedUrlProcessed.current = false; // reset for new share
+                    const platform = detectPlatformFromUrl(url) || 'instagram';
+                    setSocialMode(platform);
+                    setSearchText(url);
+                    setSearchFocused(true);
+                    setTimeout(() => {
+                        bottomSheetRef.current?.snapToIndex(2);
+                    }, 300);
+                }
+            }
+        });
+        return () => listener.remove();
+    }, []);
 
     useEffect(() => {
         if (activeTab === 'trips') {

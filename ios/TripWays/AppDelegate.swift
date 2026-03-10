@@ -46,11 +46,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     return true
   }
 
-  // Handle Google Sign-In URL callback
+  // Handle URL callbacks (Google Sign-In + tripways:// share URL scheme)
   func application(_ app: UIApplication,
                    open url: URL,
                    options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
-    return GIDSignIn.sharedInstance.handle(url)
+    // Try Google Sign-In first
+    if GIDSignIn.sharedInstance.handle(url) { return true }
+    // Forward to React Native Linking (handles standard scheme)
+    return RCTLinkingManager.application(app, open: url, options: options)
   }
 
   /// Reads a value from the .env file in the project root

@@ -34,6 +34,16 @@
 				<string>com.googleusercontent.apps.600831714498-3e2apuej7ojgf568elvibrifo4qn05lu</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.thousandways.travel</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>tripways</string>
+			</array>
+		</dict>
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>

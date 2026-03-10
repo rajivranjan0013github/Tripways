@@ -3,7 +3,8 @@
  * @format
  */
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Linking } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { MMKV } from 'react-native-mmkv';
@@ -12,6 +13,7 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
 import DetailsScreen from '../screens/DetailsScreen';
+import { getSharedUrl, onShareIntent, detectPlatformFromUrl } from '../services/ShareIntent';
 
 const Stack = createNativeStackNavigator();
 const storage = new MMKV();
@@ -26,11 +28,71 @@ const getInitialRoute = () => {
     }
 };
 
+// Deep linking config — tells React Navigation how to handle tripways:// URLs
+// Deep linking config — tells React Navigation how to handle tripways:// URLs
+const linking = {
+    prefixes: ['tripways://'],
+    config: {
+        screens: {
+            Home: {
+                path: 'share',
+                parse: {
+                    sharedUrl: (url) => decodeURIComponent(url),
+                },
+            },
+        },
+    },
+    // Custom getInitialURL to check for shared URLs from both platforms
+    async getInitialURL() {
+        console.log('AppNavigator: Checking getInitialURL...');
+        // Check native share intent first (Android Intent / iOS App Group)
+        const sharedUrl = await getSharedUrl();
+        console.log('AppNavigator: getSharedUrl returned', sharedUrl);
+        if (sharedUrl) {
+            const deepLink = `tripways://share?sharedUrl=${encodeURIComponent(sharedUrl)}`;
+            console.log('AppNavigator: Resolving to deep link:', deepLink);
+            return deepLink;
+        }
+        // Then check normal deep link
+        const url = await Linking.getInitialURL();
+        console.log('AppNavigator: Linking.getInitialURL returned', url);
+        return url;
+    },
+    // Subscribe to incoming URLs (iOS URL scheme + Android Linking)
+    subscribe(listener) {
+        // Listen for tripways:// links from iOS Share Extension
+        const linkingSub = Linking.addEventListener('url', ({ url }) => {
+            listener(url);
+        });
+
+        // Listen for share intents (Android foreground & App Group check on active)
+        const shareUnsub = onShareIntent((sharedUrl) => {
+            // Convert to a deep link URL so React Navigation can parse it
+            const deepLink = `tripways://share?sharedUrl=${encodeURIComponent(sharedUrl)}`;
+            listener(deepLink);
+        });
+
+        return () => {
+            linkingSub.remove();
+            shareUnsub();
+        };
+    },
+};
+
 const AppNavigator = () => {
-    const initialRoute = getInitialRoute();
+    const [initialRoute, setInitialRoute] = useState('Onboarding');
+    const [isReady, setIsReady] = useState(false);
+
+    // Initial setup
+    useEffect(() => {
+        setInitialRoute(getInitialRoute());
+        setIsReady(true);
+    }, []);
+
+    if (!isReady) return null;
 
     return (
-        <NavigationContainer>
+        <NavigationContainer linking={linking}>
             <Stack.Navigator
                 initialRouteName={initialRoute}
                 screenOptions={{
