@@ -7,6 +7,10 @@ import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollVie
 import Svg, { Path, Circle } from 'react-native-svg';
 import LinearGradient from 'react-native-linear-gradient';
 
+// Zustand stores
+import { useUIStore } from '../store/uiStore';
+import { useTripStore } from '../store/tripStore';
+
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Stable ID generator for places without explicit IDs
@@ -46,7 +50,11 @@ const TRAVEL_MODES = {
     driving: { icon: '🚗', label: 'Driving' },
 };
 
-const TripOverviewSheet = forwardRef(({ onChange, onSpotPress, animationConfigs, tripData, isLoading, isEditMode, isSavingTrip, onSpotsRemove, onSpotsMove, onSpotsReorder }, ref) => {
+const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
+    // Read from Zustand stores instead of props
+    const { tripData, isTripLoading: isLoading, isSavingTrip, reorderSpots, removeSpots, moveSpots } = useTripStore();
+    const { isEditMode, setSelectedSpot } = useUIStore();
+    const onSpotPress = setSelectedSpot;
     const [mode, setMode] = useState('overview'); // 'overview' or 'itinerary'
     const [selectedDay, setSelectedDay] = useState(1);
     const [expandedDays, setExpandedDays] = useState({});
@@ -459,7 +467,7 @@ const TripOverviewSheet = forwardRef(({ onChange, onSpotPress, animationConfigs,
                                     onDragEnd={({ data }) => {
                                         dragJustHappened.current = true;
                                         setLocalSpotsMap(prev => ({ ...prev, [dayData.day]: data }));
-                                        onSpotsReorder?.(dayData.day, data);
+                                        reorderSpots(dayData.day, data);
                                     }}
                                     onDragBegin={() => setIsItemDragging(true)}
                                     onRelease={() => setIsItemDragging(false)}
@@ -752,7 +760,7 @@ const TripOverviewSheet = forwardRef(({ onChange, onSpotPress, animationConfigs,
                             <TouchableOpacity
                                 style={[styles.editActionBtn, styles.editActionBtnRemove]}
                                 onPress={() => {
-                                    onSpotsRemove?.(Array.from(selectedSpots));
+                                    removeSpots(Array.from(selectedSpots));
                                     setSelectedSpots(new Set());
                                 }}
                                 activeOpacity={0.7}
@@ -802,7 +810,7 @@ const TripOverviewSheet = forwardRef(({ onChange, onSpotPress, animationConfigs,
                             style={styles.overviewDayCard}
                             activeOpacity={0.7}
                             onPress={() => {
-                                onSpotsMove?.(Array.from(selectedSpots), d.day);
+                                moveSpots(Array.from(selectedSpots), d.day);
                                 setSelectedSpots(new Set());
                                 movePickerSheetRef.current?.close();
                             }}

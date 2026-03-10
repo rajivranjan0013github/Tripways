@@ -23,6 +23,8 @@ import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { MMKV } from 'react-native-mmkv';
 import Config from 'react-native-config';
 
+import { useUserProfile } from '../hooks/useUserProfile';
+
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 
@@ -105,37 +107,27 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
     const insets = useSafeAreaInsets();
     const [showContent, setShowContent] = React.useState(false);
     const [userData, setUserData] = React.useState(null);
-    const [tripCount, setTripCount] = React.useState(0);
     const opacity = useSharedValue(0);
     const translateY = useSharedValue(30);
 
-    // Load user data from MMKV and fetch trip count from backend
+    // Load user data from MMKV
     React.useEffect(() => {
         if (visible) {
             try {
                 const userStr = storage.getString('user');
                 if (userStr) {
-                    const user = JSON.parse(userStr);
-                    setUserData(user);
-
-                    // Fetch latest data from backend
-                    const userId = user?.id || user?._id;
-                    if (userId) {
-                        fetch(`${BACKEND_URL}/api/users/${userId}`)
-                            .then(res => res.json())
-                            .then(data => {
-                                if (data && !data.error) {
-                                    setTripCount(data.tripCount || 0);
-                                }
-                            })
-                            .catch(err => console.warn('Failed to fetch user data:', err));
-                    }
+                    setUserData(JSON.parse(userStr));
                 }
             } catch (e) {
                 console.warn('Failed to load user data:', e);
             }
         }
     }, [visible]);
+
+    // Fetch user profile from backend via TanStack Query
+    const userId = userData?.id || userData?._id;
+    const { data: userProfileData } = useUserProfile(userId);
+    const tripCount = userProfileData?.tripCount || 0;
 
     React.useEffect(() => {
         if (visible) {

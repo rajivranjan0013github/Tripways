@@ -20,14 +20,30 @@ import { Calendar } from 'react-native-calendars';
 import Config from 'react-native-config';
 import { MMKV } from 'react-native-mmkv';
 
+import { useTripStore } from '../store/tripStore';
+import { useSavedSpots } from '../hooks/useSpots';
+
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FULL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.92;
 
-const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated, onPlanningStarted, savedSpotsData }, ref) => {
+const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated, onPlanningStarted }, ref) => {
     const insets = useSafeAreaInsets();
+
+    // Read saved spots from TanStack Query instead of prop
+    const storedUser = useMemo(() => {
+        try {
+            const userStr = storage.getString('user');
+            return userStr ? JSON.parse(userStr) : null;
+        } catch (e) {
+            return null;
+        }
+    }, []);
+    const csUserId = storedUser?.id || storedUser?._id;
+    const { data: spotsQueryData } = useSavedSpots(csUserId);
+    const savedSpotsData = spotsQueryData?.grouped || {};
     const [step, setStep] = useState('home'); // 'home', 'preferences', 'howManyDays', 'discoverSpots'
     const [searchActive, setSearchActive] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
