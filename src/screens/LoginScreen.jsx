@@ -1,4 +1,5 @@
 import { signUpWithGoogle, signUpWithApple } from 'react-native-credentials-manager';
+import { NativeModules, Platform as RNPlatform } from 'react-native';
 
 import React, { useState, useMemo } from 'react';
 import {
@@ -23,6 +24,7 @@ import Svg, {
 import { MMKV } from 'react-native-mmkv';
 import Config from 'react-native-config';
 import googleAuth from '../services/googleAuth';
+import { setAppGroupData } from '../services/ShareIntent';
 
 const storage = new MMKV();
 const { width, height } = Dimensions.get('window');
@@ -242,6 +244,13 @@ const LoginScreen = ({ navigation }) => {
             if (data.isNewUser !== undefined) {
                 storage.set('isNewUser', data.isNewUser);
             }
+
+            // Share userId & backendUrl with the Share Extension via App Group UserDefaults
+            const userId = data.user.id || data.user._id;
+            if (userId) {
+                setAppGroupData(userId, BACKEND_URL);
+            }
+
             navigation.reset({
                 index: 0,
                 routes: [{ name: 'Home' }],

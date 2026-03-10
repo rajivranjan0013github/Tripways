@@ -33,7 +33,11 @@ import { useSavedSpots, useSaveSpot } from '../hooks/useSpots';
 import { useSpotSearch } from '../hooks/useSpotSearch';
 import { useSpotDetail } from '../hooks/useSpotDetail';
 import { getUserId } from '../services/api';
+import { detectPlatformFromUrl, getSharedUrl } from '../services/ShareIntent';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import Config from 'react-native-config';
 
+const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 /**
@@ -74,8 +78,11 @@ const SpotsBottomSheet = ({
 
     // Refs
     const searchInputRef = useRef(null);
+    const sharedUrlProcessed = useRef(false);
 
     // Hooks
+    const route = useRoute();
+    const navigation = useNavigation();
     const { data: spotSearchResults = [], isLoading: spotSearchLoading } = useSpotSearch(searchText);
     const { data: selectedSpotDetail = null, isLoading: spotDetailLoading } = useSpotDetail(selectedSpotPlaceId);
 
@@ -92,6 +99,148 @@ const SpotsBottomSheet = ({
             Keyboard.dismiss();
         }
     }, [setSheetIndex]);
+
+    // ── Handle shared URL from share intent (Instagram/TikTok share) ──
+    useEffect(() => {
+        const handleSharedUrl = (url) => {
+            if (!url || sharedUrlProcessed.current) return;
+            sharedUrlProcessed.current = true;
+            const platform = detectPlatformFromUrl(url) || 'instagram';
+            setSocialMode(platform);
+            setSearchText(url);
+            setSearchFocused(true);
+            setTimeout(() => {
+                bottomSheetRef.current?.snapToIndex(2);
+            }, 300);
+        };
+
+        if (route.params?.sharedUrl) {
+            handleSharedUrl(route.params.sharedUrl);
+            navigation.setParams({ sharedUrl: null });
+            return;
+        }
+
+        if (!sharedUrlProcessed.current) {
+            getSharedUrl().then(url => {
+                if (url) handleSharedUrl(url);
+            });
+        }
+    }, [route.params?.sharedUrl]);
+
+    // Listen for new share intents when app comes back to foreground
+    useEffect(() => {
+        const listener = require('react-native').AppState.addEventListener('change', async (state) => {
+            if (state === 'active') {
+                const url = await getSharedUrl();
+                if (url) {
+                    sharedUrlProcessed.current = false;
+                    const platform = detectPlatformFromUrl(url) || 'instagram';
+                    setSocialMode(platform);
+                    setSearchText(url);
+                    setSearchFocused(true);
+                    setTimeout(() => {
+                        bottomSheetRef.current?.snapToIndex(2);
+                    }, 300);
+                }
+            }
+        });
+        return () => listener.remove();
+    }, []);
+
+    // Process video URL for places extraction
+    useEffect(() => {
+        if (!socialMode || !searchText || videoProcessing) return;
+        const trimmed = searchText.trim();
+        if (!trimmed.startsWith('http')) return;
+
+        const processVideoUrl = async () => {
+            setVideoProcessing(true);
+            setVideoProgress('Starting...');
+            try {
+                const response = await fetch(`${BACKEND_URL}/api/extract-video-places`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ videoUrl: trimmed }),
+                });
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let placesData = null;
+                const accumulatedPlaces = [];
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+                    const parts = buffer.split('\n\n');
+                    buffer = parts.pop();
+
+                    for (const eventBlock of parts) {
+                        if (!eventBlock.trim()) continue;
+                        const lines = eventBlock.split('\n');
+                        let eventType = '';
+                        let eventData = '';
+                        for (const line of lines) {
+                            if (line.startsWith('event: ')) eventType = line.slice(7);
+                            if (line.startsWith('data: ')) eventData = line.slice(6);
+                        }
+                        if (!eventType || !eventData) continue;
+                        try {
+                            const parsed = JSON.parse(eventData);
+                            if (eventType === 'progress') {
+                                setVideoProgress(parsed.message || 'Processing...');
+                            } else if (eventType === 'place_batch') {
+                                if (parsed.places) {
+                                    accumulatedPlaces.push(...parsed.places);
+                                    setVideoProgress(`Found ${parsed.totalFound} of ~${parsed.totalExpected} places...`);
+                                }
+                            } else if (eventType === 'places') {
+                                placesData = parsed;
+                            } else if (eventType === 'error') {
+                                throw new Error(parsed.message || 'Unknown error');
+                            }
+                        } catch (e) {
+                            if (e.message && !e.message.includes('JSON')) throw e;
+                        }
+                    }
+                }
+
+                if (placesData && placesData.places && placesData.places.length > 0) {
+                    setSearchText('');
+                    setSocialMode(null);
+                    searchInputRef.current?.blur();
+                    Keyboard.dismiss();
+                    bottomSheetRef.current?.close();
+
+                    setTimeout(() => {
+                        tabBarTranslateY.value = withTiming(tabBarHeight, {
+                            duration: 400,
+                            easing: Easing.bezier(0.33, 1, 0.68, 1),
+                        });
+                    }, 150);
+                    setTimeout(() => {
+                        createTripSheetRef.current?.openWithVideoPlaces(
+                            placesData.destination,
+                            placesData.places
+                        );
+                    }, 400);
+                } else {
+                    setVideoProgress('No places found in this video');
+                    setTimeout(() => setVideoProgress(''), 3000);
+                }
+            } catch (error) {
+                console.error('Video processing failed:', error);
+                setVideoProgress(`Error: ${error.message}`);
+                setTimeout(() => setVideoProgress(''), 4000);
+            } finally {
+                setVideoProcessing(false);
+            }
+        };
+
+        processVideoUrl();
+    }, [searchText, socialMode]);
 
     // Animations (driven by parent's sheetAnimatedPosition)
     const thresholdY = SCREEN_HEIGHT * 0.4;
@@ -355,7 +504,7 @@ const SpotsBottomSheet = ({
                 ) : (
                     /* ── My Spots: default view ── */
                     <View style={{ marginLeft: 0 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',  marginBottom: 4 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                             <View>
                                 <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', letterSpacing: -0.5 }}>My Spots</Text>
                                 {totalSpotsCount > 0 && (

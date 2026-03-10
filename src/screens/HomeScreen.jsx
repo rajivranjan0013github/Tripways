@@ -21,6 +21,7 @@ import SpotDetailSheet from '../components/SpotDetailSheet';
 import ProfileOverlay from '../components/ProfileOverlay';
 import TripsOverlay from '../components/TripsOverlay';
 import SpotsBottomSheet from '../components/SpotsBottomSheet';
+import { setAppGroupData } from '../services/ShareIntent';
 import MySpotIcon from '../assets/My-spot';
 
 // Zustand stores
@@ -89,6 +90,7 @@ function decodePolyline(encoded) {
 const HomeScreen = () => {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation();
+    const sharedUrlProcessed = useRef(false);
     const tabBarHeight = 52 + insets.bottom + (Platform.OS === 'android' ? 120 : 40); // Increased buffer to fully hide on both platforms
     const bottomSheetRef = useRef(null);
 
@@ -138,6 +140,13 @@ const HomeScreen = () => {
     const { data: spotsData } = useSavedSpots(userId);
     const savedSpots = spotsData?.grouped || {};
     const totalSpotsCount = spotsData?.totalSpots || 0;
+
+    // Sync userId & backendUrl to App Group UserDefaults for the Share Extension
+    useEffect(() => {
+        if (userId) {
+            setAppGroupData(userId, BACKEND_URL);
+        }
+    }, [userId]);
 
     // Animation values
     const overlayOpacity = useSharedValue(0);
