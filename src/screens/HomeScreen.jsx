@@ -16,6 +16,7 @@ import Config from 'react-native-config';
 
 import CreateTripSheet from '../components/CreateTripSheet';
 import TripOverviewSheet from '../components/TripOverviewSheet';
+import SpotDetailSheet from '../components/SpotDetailSheet';
 import ProfileOverlay from '../components/ProfileOverlay';
 import MySpotIcon from '../assets/My-spot';
 
@@ -82,6 +83,7 @@ const HomeScreen = () => {
 
     const createTripSheetRef = useRef(null); // Ref for Create Trip BottomSheet
     const tripOverviewSheetRef = useRef(null);
+    const spotDetailSheetRef = useRef(null);
     const mapRef = useRef(null);
     const searchInputRef = useRef(null);
     const secondarySheetOpen = useRef(false); // Track if any overlay sheet is open
@@ -100,6 +102,10 @@ const HomeScreen = () => {
     const [videoProcessing, setVideoProcessing] = useState(false);
     const [videoProgress, setVideoProgress] = useState('');
     const [isTripLoading, setIsTripLoading] = useState(false);
+    const [isTripOverviewOpen, setIsTripOverviewOpen] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false);
+    const [isSavingTrip, setIsSavingTrip] = useState(false);
+    const [selectedItinerarySpot, setSelectedItinerarySpot] = useState(null);
 
     // Spot search state
     const [spotSearchResults, setSpotSearchResults] = useState([]);
@@ -637,6 +643,7 @@ const HomeScreen = () => {
 
     const handleTripOverviewSheetChange = useCallback((index) => {
         secondarySheetOpen.current = index > -1;
+        setIsTripOverviewOpen(index > -1);
         if (index > -1) {
             // Close My Spots sheet when TripOverview opens
             bottomSheetRef.current?.close();
@@ -645,6 +652,7 @@ const HomeScreen = () => {
                 easing: Easing.bezier(0.33, 1, 0.68, 1)
             });
         } else {
+            setIsEditMode(false);
             tabBarTranslateY.value = withTiming(0, {
                 duration: 400,
                 easing: Easing.bezier(0.33, 1, 0.68, 1)
@@ -656,6 +664,13 @@ const HomeScreen = () => {
             }
         }
     }, [tabBarHeight, activeTab]);
+
+    const handleSpotPress = useCallback((spot) => {
+        setSelectedItinerarySpot(spot);
+        setTimeout(() => {
+            spotDetailSheetRef.current?.expand();
+        }, 100);
+    }, []);
 
     const handleCreateTripSheetChange = useCallback((index) => {
         secondarySheetOpen.current = index > -1;
@@ -1312,6 +1327,7 @@ const HomeScreen = () => {
                                                     if (data?.success && data?.trip) {
                                                         const fullTrip = data.trip;
                                                         setTripData({
+                                                            _id: fullTrip._id,
                                                             numDays: fullTrip.days,
                                                             locationName: fullTrip.destination,
                                                             itinerary: fullTrip.itinerary,
@@ -1445,13 +1461,158 @@ const HomeScreen = () => {
                 }}
             />
 
+            {/* Floating Trip Overview Buttons - Top of Screen */}
+            {isTripOverviewOpen && (
+                <>
+                    {/* Close Button - Top Left */}
+                    <TouchableOpacity
+                        style={[styles.tripOverviewFloatingBtn, { left: 16, top: insets.top + 12 }]}
+                        onPress={() => {
+                            setIsEditMode(false);
+                            tripOverviewSheetRef.current?.close();
+                        }}
+                        activeOpacity={0.7}
+                    >
+                        <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E293B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <Path d="M18 6 6 18M6 6l12 12" />
+                        </Svg>
+                    </TouchableOpacity>
+
+                    {/* Edit / Done Button - Top Right */}
+                    <TouchableOpacity
+                        style={[
+                            styles.tripOverviewFloatingBtn,
+                            {
+                                right: 16,
+                                top: insets.top + 12,
+                                width: 'auto',
+                                paddingHorizontal: 14,
+                                backgroundColor: '#0F172A',
+                                opacity: isSavingTrip ? 0.7 : 1
+                            }
+                        ]}
+                        disabled={isSavingTrip}
+                        onPress={async () => {
+                            if (isEditMode) {
+                                console.log('[Done Button] Clicked in Edit Mode');
+                                console.log('[Done Button] tripData._id:', tripData?._id);
+                                if (tripData?._id) {
+                                    // Save changes to backend when clicking Done
+                                    setIsSavingTrip(true);
+                                    try {
+                                        const url = `${BACKEND_URL}/api/trips/${tripData._id}`;
+                                        console.log(`[Done Button] Sending PATCH to: ${url}`);
+
+                                        const response = await fetch(url, {
+                                            method: 'PATCH',
+                                            headers: {
+                                                'Content-Type': 'application/json',
+                                            },
+                                            body: JSON.stringify({
+                                                itinerary: tripData.itinerary,
+                                                discoveredPlaces: tripData.discoveredPlaces
+                                            })
+                                        });
+
+                                        console.log(`[Done Button] Response status: ${response.status}`);
+                                        if (response.ok) {
+                                            const result = await response.json();
+                                            console.log('[Done Button] Save success:', result.success);
+                                            if (result.success && result.trip) {
+                                                setTripData(result.trip);
+                                                fetchTrips();
+                                            }
+                                        } else {
+                                            console.error(`[Done Button] Failed to save trip changes. Status: ${response.status}`);
+                                        }
+                                    } catch (error) {
+                                        console.error("[Done Button] Error saving trip:", error);
+                                    } finally {
+                                        setIsSavingTrip(false);
+                                    }
+                                }
+                                // Only exit edit mode AFTER the save is complete
+                                setIsEditMode(false);
+                            } else {
+                                // Entering edit mode
+                                setIsEditMode(true);
+                            }
+                        }}
+                        activeOpacity={0.7}
+                    >
+                        {isSavingTrip ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{isEditMode ? 'Done' : 'Edit'}</Text>
+                        )}
+                    </TouchableOpacity>
+                </>
+            )}
+
             {/* Trip Overview Bottom Sheet */}
             <TripOverviewSheet
                 ref={tripOverviewSheetRef}
+                onSpotPress={handleSpotPress}
                 onChange={handleTripOverviewSheetChange}
                 animationConfigs={sheetAnimationConfig}
                 tripData={tripData}
                 isLoading={isTripLoading}
+                isEditMode={isEditMode}
+                isSavingTrip={isSavingTrip}
+                onSpotsReorder={(dayNum, reorderedPlaces) => {
+                    setTripData(prev => {
+                        if (!prev?.itinerary) return prev;
+                        const newItinerary = prev.itinerary.map(d => {
+                            if (d.day !== dayNum) return d;
+                            // Map the custom UI objects back to their original backend objects
+                            const restoredPlaces = reorderedPlaces.map(s => s.originalPlace);
+                            return { ...d, places: restoredPlaces };
+                        });
+                        return { ...prev, itinerary: newItinerary };
+                    });
+                }}
+                onSpotsRemove={(selectedPlaces) => {
+                    // selectedPlaces is an array of the original place objects
+                    const placesToRemove = new Set(selectedPlaces);
+                    setTripData(prev => {
+                        if (!prev?.itinerary) return prev;
+                        const newItinerary = prev.itinerary.map(dayData => {
+                            const filteredPlaces = dayData.places.filter(place => !placesToRemove.has(place));
+                            if (filteredPlaces.length === dayData.places.length) return dayData;
+                            return { ...dayData, places: filteredPlaces };
+                        });
+                        return { ...prev, itinerary: newItinerary };
+                    });
+                }}
+                onSpotsMove={(selectedPlaces, targetDay) => {
+                    const placesToMove = new Set(selectedPlaces);
+                    setTripData(prev => {
+                        if (!prev?.itinerary) return prev;
+                        const movedPlaces = [];
+                        // First pass: collect places to move and remove them from source days
+                        const newItinerary = prev.itinerary.map(dayData => {
+                            const kept = [];
+                            dayData.places.forEach(place => {
+                                if (placesToMove.has(place)) {
+                                    movedPlaces.push(place);
+                                } else {
+                                    kept.push(place);
+                                }
+                            });
+                            return { ...dayData, places: kept };
+                        });
+
+                        // Second pass: append collected places to the target day
+                        const finalItinerary = newItinerary.map(dayData => {
+                            if (dayData.day === targetDay) {
+                                return { ...dayData, places: [...dayData.places, ...movedPlaces] };
+                            }
+                            return dayData;
+                        });
+
+                        return { ...prev, itinerary: finalItinerary };
+                    });
+                }}
             />
 
             {/* Custom Bottom Tab Bar — floating pill */}
@@ -1499,6 +1660,12 @@ const HomeScreen = () => {
                 visible={showProfile}
                 onClose={() => setShowProfile(false)}
                 navigation={navigation}
+            />
+
+            <SpotDetailSheet
+                ref={spotDetailSheetRef}
+                spot={selectedItinerarySpot}
+                onClose={() => setSelectedItinerarySpot(null)}
             />
         </View>
     );
@@ -2188,6 +2355,21 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '700',
         color: '#FFFFFF',
+    },
+    tripOverviewFloatingBtn: {
+        position: 'absolute',
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        backgroundColor: 'rgba(255,255,255,0.55)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 200,
+        elevation: 200,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
     },
 });
 

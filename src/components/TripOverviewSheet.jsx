@@ -1,10 +1,30 @@
 import React, { forwardRef, useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image, ActivityIndicator } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from 'react-native-reanimated';
+import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
+import { GestureHandlerRootView, TouchableOpacity as RNGHTouchableOpacity } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Svg, { Path, Circle } from 'react-native-svg';
-import Animated, { FadeIn, FadeOut, LinearTransition, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from 'react-native-reanimated';
+import LinearGradient from 'react-native-linear-gradient';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+// Stable ID generator for places without explicit IDs
+const PLACE_ID_MAP = new WeakMap();
+let stablePlaceIdCounter = 0;
+const getStablePlaceId = (place) => {
+    if (!place || typeof place !== 'object') return `fallback-${Math.random()}`;
+    if (place.placeId) return `pid-${place.placeId}`;
+    if (place._id) return `_id-${place._id}`;
+    if (place.id) return `id-${place.id}`;
+    if (place.fsq_id) return `fsq-${place.fsq_id}`;
+
+    if (!PLACE_ID_MAP.has(place)) {
+        stablePlaceIdCounter += 1;
+        PLACE_ID_MAP.set(place, `stable-${stablePlaceIdCounter}`);
+    }
+    return PLACE_ID_MAP.get(place);
+};
 
 // Category colors & emoji mapping
 const CATEGORY_CONFIG = {
@@ -26,13 +46,108 @@ const TRAVEL_MODES = {
     driving: { icon: '🚗', label: 'Driving' },
 };
 
-const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, isLoading }, ref) => {
+const TripOverviewSheet = forwardRef(({ onChange, onSpotPress, animationConfigs, tripData, isLoading, isEditMode, isSavingTrip, onSpotsRemove, onSpotsMove, onSpotsReorder }, ref) => {
     const [mode, setMode] = useState('overview'); // 'overview' or 'itinerary'
     const [selectedDay, setSelectedDay] = useState(1);
     const [expandedDays, setExpandedDays] = useState({});
     const snapPoints = useMemo(() => ['60%'], []);
     const scrollViewRef = useRef(null);
     const dayLayoutRefs = useRef({});
+
+    // Edit mode state
+    const [selectedSpots, setSelectedSpots] = useState(new Set()); // stores spot.originalPlace objects
+    const [isItemDragging, setIsItemDragging] = useState(false);
+    const movePickerSheetRef = useRef(null);
+    const movePickerSnapPoints = useMemo(() => ['40%'], []);
+
+    // Local state for draggable list data (avoids blink from useMemo round-trip)
+    const [localSpotsMap, setLocalSpotsMap] = useState({});
+    const dragJustHappened = useRef(false);
+
+    // Clear selections when edit mode is turned off
+    useEffect(() => {
+        if (!isEditMode) {
+            setSelectedSpots(new Set());
+        }
+    }, [isEditMode]);
+
+    // Switch to itinerary mode when edit mode is activated
+    useEffect(() => {
+        if (isEditMode && mode !== 'itinerary') {
+            setMode('itinerary');
+            setSelectedDay(1);
+        }
+    }, [isEditMode]);
+
+    // Sync draggable data from itineraryDays (skip after our own drags to prevent blink)
+    useEffect(() => {
+        setLocalSpotsMap(prev => {
+            const nextMap = { ...prev };
+            let hasTrueChanges = false;
+
+            itineraryDays.forEach(d => {
+                const prevSpots = prev[d.day];
+                const nextSpots = d.spots;
+
+                if (!prevSpots || prevSpots.length !== nextSpots.length) {
+                    nextMap[d.day] = nextSpots;
+                    hasTrueChanges = true;
+                    return;
+                }
+
+                // Compare stable IDs to see if the order or items changed
+                const prevIds = prevSpots.map(s => s.id).join(',');
+                const nextIds = nextSpots.map(s => s.id).join(',');
+
+                if (prevIds !== nextIds) {
+                    if (dragJustHappened.current) {
+                        // We just dragged, so `prevSpots` (local map) already has the correct order!
+                        // The parent might be lagging behind or sending us out-of-date order.
+                        // We do NOT update the map to avoid reverting the user's drag visually.
+                    } else {
+                        // A legitimate change (not from our drag) has arrived
+                        nextMap[d.day] = nextSpots;
+                        hasTrueChanges = true;
+                    }
+                } else {
+                    // Order and IDs match exactly. 
+                    // To prevent `DraggableFlatList` from unmounting (blinking) due to new array/object references,
+                    // we preserve the exact `prevSpots` object references!
+                    // (Any changed internal values like times/descriptions won't be reflected without new references, 
+                    // but during an active drag-state, preserving references is more important).
+                }
+            });
+
+            if (dragJustHappened.current) {
+                dragJustHappened.current = false;
+            }
+
+            return hasTrueChanges ? nextMap : prev;
+        });
+    }, [itineraryDays]);
+
+    // Initialize expandedDays to all true by default
+    useEffect(() => {
+        if (itineraryDays.length > 0 && Object.keys(expandedDays).length === 0) {
+            const initialMap = {};
+            itineraryDays.forEach(d => {
+                initialMap[d.day] = true;
+            });
+            setExpandedDays(initialMap);
+        }
+    }, [itineraryDays]);
+
+    const toggleSpotSelection = (spotOriginalPlace) => {
+        setSelectedSpots(prev => {
+            const next = new Set(prev);
+            if (next.has(spotOriginalPlace)) {
+                next.delete(spotOriginalPlace);
+            } else {
+                next.add(spotOriginalPlace);
+            }
+            return next;
+        });
+    };
 
     // Scroll to top when mode changes
     useEffect(() => {
@@ -95,11 +210,15 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
         }
 
         return backendItinerary.map((dayData) => {
-            const spots = (dayData.places || []).map((place) => {
+            const spots = (dayData.places || []).map((place, placeIdx) => {
                 const nameLower = place.name?.toLowerCase() || '';
+                const stableId = getStablePlaceId(place);
                 return {
+                    id: `${dayData.day}-${stableId}`,
+                    originalPlace: place, // Keep reference to original backend object for state updates
                     name: place.name?.length > 30 ? place.name.slice(0, 28) + '...' : place.name,
                     fullName: place.name,
+                    address: place.address || '',
                     category: mapCategory(place.category),
                     image: photoLookup[nameLower] || null,
                     description: place.description || '',
@@ -154,10 +273,41 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
         return itineraryDays.find(d => d.day === selectedDay) || itineraryDays[0];
     };
 
-    const renderSpotCard = (spot, index) => {
+    const renderSpotCard = (spot, index, dayNum, { drag, isActive } = {}) => {
         const config = CATEGORY_CONFIG[spot.category] || CATEGORY_CONFIG['Attractions'];
+        // Is this spot selected? Check by reference since new spots might lack IDs
+        const isSelected = selectedSpots.has(spot.originalPlace);
+
+        const TouchableComponent = isEditMode ? RNGHTouchableOpacity : TouchableOpacity;
+
         return (
-            <View style={styles.spotCard}>
+            <TouchableComponent
+                activeOpacity={0.7}
+                onPress={() => {
+                    if (isEditMode) {
+                        toggleSpotSelection(spot.originalPlace);
+                    } else {
+                        onSpotPress?.(spot);
+                    }
+                }}
+                onLongPress={isEditMode ? drag : undefined}
+                delayLongPress={200}
+                disabled={isActive}
+                style={[styles.spotCard, isEditMode && isSelected && styles.spotCardSelected, isActive && styles.spotCardDragging]}
+            >
+                {/* Checkbox in edit mode */}
+                {isEditMode && (
+                    <View style={styles.checkboxContainer}>
+                        <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
+                            {isSelected && (
+                                <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M20 6 9 17l-5-5" />
+                                </Svg>
+                            )}
+                        </View>
+                    </View>
+                )}
+
                 {/* Left Column: Image */}
                 <View style={styles.leftColumn}>
                     <View style={styles.imageWrapper}>
@@ -187,7 +337,24 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
                         <Text style={styles.spotRating}>⭐ {spot.rating || '4.5'}</Text>
                     </View>
                 </View>
-            </View>
+
+                {/* Drag handle in edit mode */}
+                {isEditMode && (
+                    <RNGHTouchableOpacity
+                        onPressIn={drag}
+                        style={styles.dragHandle}
+                    >
+                        <Svg width="16" height="16" viewBox="0 0 24 24" fill="#94A3B8">
+                            <Circle cx="9" cy="6" r="1.5" />
+                            <Circle cx="15" cy="6" r="1.5" />
+                            <Circle cx="9" cy="12" r="1.5" />
+                            <Circle cx="15" cy="12" r="1.5" />
+                            <Circle cx="9" cy="18" r="1.5" />
+                            <Circle cx="15" cy="18" r="1.5" />
+                        </Svg>
+                    </RNGHTouchableOpacity>
+                )}
+            </TouchableComponent>
         );
     };
 
@@ -200,31 +367,44 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
             </View>
             {travelInfo && (
                 <View style={styles.travelInfoRow}>
-                    <View style={styles.travelModeBadge}>
-                        {travelInfo.mode !== 'walking' ? (
-                            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                               <Path
-                                     d="M14 22V16.9612C14 16.3537 13.7238 15.7791 13.2494 15.3995L11.5 14M11.5 14L13 7.5M11.5 14L10 13M13 7.5L11 7M13 7.5L15.0426 10.7681C15.3345 11.2352 15.8062 11.5612 16.3463 11.6693L18 12M10 13L11 7M10 13L8 22M11 7L8.10557 8.44721C7.428 8.786 7 9.47852 7 10.2361V12M14.5 3.5C14.5 4.05228 14.0523 4.5 13.5 4.5C12.9477 4.5 12.5 4.05228 12.5 3.5C12.5 2.94772 12.9477 2.5 13.5 2.5C14.0523 2.5 14.5 2.94772 14.5 3.5Z"
-                                     stroke="#000000"
-                                     strokeWidth={2}
-                                     strokeLinecap="round"
-                                     strokeLinejoin="round"
-                                   />
-                            </Svg>
-                        ) : travelInfo.mode === 'transit' ? (
-                            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M8 6v6M16 6v6M2 12h20M6 18h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2zM6 18l-2 2M18 18l2 2" />
-                            </Svg>
-                        ) : (
-                            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M5 17a2 2 0 1 0 4 0 2 2 0 1 0-4 0M15 17a2 2 0 1 0 4 0 2 2 0 1 0-4 0" />
-                                <Path d="M5 17H3V6l9-4 9 4v11h-2M9 17h6" />
-                            </Svg>
-                        )}
+                    <View style={styles.travelInfoGroup}>
+                        <View style={styles.travelModeBadge}>
+                            {travelInfo.mode === 'walking' ? (
+                                <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path
+                                        d="M14 22V16.9612C14 16.3537 13.7238 15.7791 13.2494 15.3995L11.5 14M11.5 14L13 7.5M11.5 14L10 13M13 7.5L11 7M13 7.5L15.0426 10.7681C15.3345 11.2352 15.8062 11.5612 16.3463 11.6693L18 12M10 13L11 7M10 13L8 22M11 7L8.10557 8.44721C7.428 8.786 7 9.47852 7 10.2361V12M14.5 3.5C14.5 4.05228 14.0523 4.5 13.5 4.5C12.9477 4.5 12.5 4.05228 12.5 3.5C12.5 2.94772 12.9477 2.5 13.5 2.5C14.0523 2.5 14.5 2.94772 14.5 3.5Z"
+                                        stroke="#000000"
+                                        strokeWidth={2}
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                    />
+                                </Svg>
+                            ) : travelInfo.mode !== 'transit' ? (
+                                <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path
+                                        d="M19.78 9.44L17.94 4.44C17.8238 4.09604 17.6036 3.79671 17.3097 3.5835C17.0159 3.37029 16.663 3.25374 16.3 3.25H7.7C7.3418 3.2508 6.99248 3.36151 6.6992 3.56716C6.40592 3.77281 6.18281 4.06351 6.06 4.4L4.22 9.4C3.92473 9.54131 3.67473 9.76216 3.49808 10.0377C3.32142 10.3133 3.22512 10.6327 3.22 10.96V15.46C3.21426 15.7525 3.28279 16.0417 3.41921 16.3006C3.55562 16.5594 3.75544 16.7794 4 16.94V17V19C4 19.2652 4.10536 19.5196 4.29289 19.7071C4.48043 19.8946 4.73478 20 5 20H6C6.26522 20 6.51957 19.8946 6.70711 19.7071C6.89464 19.5196 7 19.2652 7 19V17.25H17V19C17 19.2652 17.1054 19.5196 17.2929 19.7071C17.4804 19.8946 17.7348 20 18 20H19C19.2652 20 19.5196 19.8946 19.7071 19.7071C19.8946 19.5196 20 19.2652 20 19V17C20 17 20 17 20 16.94C20.2351 16.7808 20.4275 16.5661 20.56 16.315C20.6925 16.0639 20.7612 15.784 20.76 15.5V11C20.7567 10.6748 20.6634 10.3569 20.4904 10.0815C20.3174 9.80616 20.0715 9.58411 19.78 9.44ZM19.25 15.5C19.25 15.5663 19.2237 15.6299 19.1768 15.6768C19.1299 15.7237 19.0663 15.75 19 15.75H5C4.93369 15.75 4.87011 15.7237 4.82322 15.6768C4.77634 15.6299 4.75 15.5663 4.75 15.5V11C4.75 10.9337 4.77634 10.8701 4.82322 10.8232C4.87011 10.7763 4.93369 10.75 5 10.75H19C19.0663 10.75 19.1299 10.7763 19.1768 10.8232C19.2237 10.8701 19.25 10.9337 19.25 11V15.5ZM7.47 4.91C7.48797 4.86341 7.51949 4.82327 7.56048 4.79475C7.60147 4.76624 7.65007 4.75065 7.7 4.75H16.3C16.3499 4.75065 16.3985 4.76624 16.4395 4.79475C16.4805 4.82327 16.512 4.86341 16.53 4.91L17.93 8.75H6.07L7.47 4.91Z"
+                                        fill="#000000"
+                                    />
+                                    <Path
+                                        d="M8 14.75C8.82843 14.75 9.5 14.0784 9.5 13.25C9.5 12.4216 8.82843 11.75 8 11.75C7.17157 11.75 6.5 12.4216 6.5 13.25C6.5 14.0784 7.17157 14.75 8 14.75Z"
+                                        fill="#000000"
+                                    />
+                                    <Path
+                                        d="M16 14.75C16.8284 14.75 17.5 14.0784 17.5 13.25C17.5 12.4216 16.8284 11.75 16 11.75C15.1716 11.75 14.5 12.4216 14.5 13.25C14.5 14.0784 15.1716 14.75 16 14.75Z"
+                                        fill="#000000"
+                                    />
+                                </Svg>
+                            ) : (
+                                <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M5 17a2 2 0 1 0 4 0 2 2 0 1 0-4 0M15 17a2 2 0 1 0 4 0 2 2 0 1 0-4 0" />
+                                    <Path d="M5 17H3V6l9-4 9 4v11h-2M9 17h6" />
+                                </Svg>
+                            )}
+                        </View>
+                        <Text style={styles.travelText}>
+                            {travelInfo.time} • {travelInfo.distance}
+                        </Text>
                     </View>
-                    <Text style={styles.travelText}>
-                        {travelInfo.time} • {travelInfo.distance}
-                    </Text>
                     <TouchableOpacity style={styles.directionsButton}>
                         <Text style={styles.directionsText}>Directions</Text>
                     </TouchableOpacity>
@@ -234,26 +414,123 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
     );
 
     const renderDayItinerary = (dayData) => {
-        return (
-            <View key={`day-${dayData.day}`}>
-                {/* Day title + Optimize button */}
-                <View style={styles.optimizeRow}>
-                    <Text style={styles.dayTitle}>Day {dayData.day}</Text>
-                    <TouchableOpacity style={styles.optimizeButton}>
-                        <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M2 20h.01M7 20v-4M12 20V10M17 20V4" />
-                        </Svg>
-                        <Text style={styles.optimizeText}>Optimize</Text>
+        const isExpanded = expandedDays[dayData.day] !== false;
+
+        if (isEditMode) {
+            return (
+                <View key={`day-${dayData.day}`} style={styles.daySection}>
+                    <TouchableOpacity
+                        activeOpacity={0.7}
+                        onPress={() => toggleDayExpanded(dayData.day)}
+                        style={styles.optimizeRow}
+                    >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                            <Text style={styles.dayTitle}>Day {dayData.day}</Text>
+                            <TouchableOpacity
+                                style={styles.optimizeButton}
+                                onPress={(e) => {
+                                    e.stopPropagation();
+                                    // Optimize logic here
+                                }}
+                            >
+                                <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M2 20h.01M7 20v-4M12 20V10M17 20V4" />
+                                </Svg>
+                                <Text style={styles.optimizeText}>Optimize</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <Animated.View style={{ transform: [{ rotate: isExpanded ? '0deg' : '-90deg' }] }}>
+                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="m6 9 6 6 6-6" />
+                            </Svg>
+                        </Animated.View>
                     </TouchableOpacity>
+
+                    <Animated.View layout={LinearTransition.springify().damping(15)} style={{ overflow: 'hidden' }}>
+                        {isExpanded && (
+                            <Animated.View
+                                entering={FadeIn.duration(200)}
+                                exiting={FadeOut.duration(200)}
+                            >
+                                <DraggableFlatList
+                                    data={localSpotsMap[dayData.day] || dayData.spots}
+                                    keyExtractor={(item) => item.id}
+                                    onDragEnd={({ data }) => {
+                                        dragJustHappened.current = true;
+                                        setLocalSpotsMap(prev => ({ ...prev, [dayData.day]: data }));
+                                        onSpotsReorder?.(dayData.day, data);
+                                    }}
+                                    onDragBegin={() => setIsItemDragging(true)}
+                                    onRelease={() => setIsItemDragging(false)}
+                                    renderItem={({ item, getIndex, drag, isActive }) => {
+                                        const idx = getIndex();
+                                        return (
+                                            <ScaleDecorator activeScale={0.98}>
+                                                <View style={{ marginBottom: 8 }}>
+                                                    {renderSpotCard(item, idx, dayData.day, { drag, isActive })}
+                                                </View>
+                                            </ScaleDecorator>
+                                        );
+                                    }}
+                                    scrollEnabled={false}
+                                    activationDistance={20}
+                                    containerStyle={{ overflow: 'visible' }}
+                                />
+                            </Animated.View>
+                        )}
+                    </Animated.View>
                 </View>
+            );
+        }
+
+        return (
+            <View key={`day-${dayData.day}`} style={styles.daySection}>
+                {/* Day title + Optimize button */}
+                <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => toggleDayExpanded(dayData.day)}
+                    style={styles.optimizeRow}
+                >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <Text style={styles.dayTitle}>Day {dayData.day}</Text>
+                        <TouchableOpacity
+                            style={styles.optimizeButton}
+                            onPress={(e) => {
+                                e.stopPropagation();
+                                // Optimize logic here
+                            }}
+                        >
+                            <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M2 20h.01M7 20v-4M12 20V10M17 20V4" />
+                            </Svg>
+                            <Text style={styles.optimizeText}>Optimize</Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <Animated.View style={{ transform: [{ rotate: isExpanded ? '0deg' : '-90deg' }] }}>
+                        <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <Path d="m6 9 6 6 6-6" />
+                        </Svg>
+                    </Animated.View>
+                </TouchableOpacity>
 
                 {/* Spots List */}
-                {dayData.spots.map((spot, idx) => (
-                    <View key={`item-${idx}`}>
-                        {renderSpotCard(spot, idx)}
-                        {idx < dayData.spots.length - 1 && renderTravelConnector(idx, dayData.travelInfo[idx])}
-                    </View>
-                ))}
+                <Animated.View layout={LinearTransition.springify().damping(15)} style={{ overflow: 'hidden' }}>
+                    {isExpanded && (
+                        <Animated.View
+                            entering={FadeIn.duration(200)}
+                            exiting={FadeOut.duration(200)}
+                        >
+                            {dayData.spots.map((spot, idx) => (
+                                <View key={`item-${idx}`}>
+                                    {renderSpotCard(spot, idx, dayData.day)}
+                                    {idx < dayData.spots.length - 1 && renderTravelConnector(idx, dayData.travelInfo[idx])}
+                                </View>
+                            ))}
+                        </Animated.View>
+                    )}
+                </Animated.View>
             </View>
         );
     };
@@ -320,14 +597,15 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
 
     const renderItineraryItems = () => {
         return itineraryDays.map((dayData) => (
-            <View
+            <Animated.View
                 key={`day-${dayData.day}`}
+                layout={LinearTransition.springify().damping(15)}
                 onLayout={(e) => {
                     dayLayoutRefs.current[dayData.day] = e.nativeEvent.layout.y;
                 }}
             >
                 {renderDayItinerary(dayData)}
-            </View>
+            </Animated.View>
         ));
     };
 
@@ -338,6 +616,9 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
             scrollViewRef.current?.scrollTo({ y, animated: true });
         }
     };
+
+    const selectedDayRef = useRef(selectedDay);
+    selectedDayRef.current = selectedDay;
 
     const handleItineraryScroll = useCallback((event) => {
         const scrollY = event.nativeEvent.contentOffset.y;
@@ -350,100 +631,196 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs, tripData, is
                 currentDay = day;
             }
         }
-        if (currentDay !== selectedDay) {
+        if (currentDay !== selectedDayRef.current) {
             setSelectedDay(currentDay);
         }
-    }, [selectedDay]);
+    }, []);
 
     return (
-        <BottomSheet
-            ref={ref}
-            index={-1}
-            snapPoints={snapPoints}
-            enableDynamicSizing={false}
-            enablePanDownToClose={true}
-            backdropComponent={renderBackdrop}
-            backgroundStyle={styles.sheetBackground}
-            handleIndicatorStyle={styles.handleIndicator}
-            containerStyle={{ zIndex: 100 }}
-            onChange={onChange}
-            animationConfigs={animationConfigs}
-        >
-            {/* Fixed Header + Tabs */}
-            <View style={styles.header}>
-                {mode === 'overview' && (
-                    <View>
-                        <View style={styles.titleRow}>
-                            <Text style={styles.tripTitle}>{numDays}-Day {locationName} Trip</Text>
-                            <TouchableOpacity style={styles.shareIconButton}>
-                                <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                    <Path d="m17 8-5-5-5 5" />
-                                    <Path d="M12 3v12" />
-                                </Svg>
+        <>
+            <BottomSheet
+                ref={ref}
+                index={-1}
+                snapPoints={snapPoints}
+                enableDynamicSizing={false}
+                enablePanDownToClose={!isEditMode}
+                enableContentPanningGesture={!isEditMode}
+                backdropComponent={renderBackdrop}
+                backgroundStyle={styles.sheetBackground}
+                handleIndicatorStyle={styles.handleIndicator}
+                containerStyle={{ zIndex: 100 }}
+                onChange={onChange}
+                animationConfigs={animationConfigs}
+            >
+                {/* Fixed Header + Tabs */}
+                <View style={styles.header}>
+                    {mode === 'overview' && (
+                        <View>
+                            <View style={styles.titleRow}>
+                                <Text style={styles.tripTitle}>{numDays}-Day {locationName} Trip</Text>
+                                <TouchableOpacity style={styles.shareIconButton}>
+                                    <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <Path d="m17 8-5-5-5 5" />
+                                        <Path d="M12 3v12" />
+                                    </Svg>
+                                </TouchableOpacity>
+                            </View>
+                            <Text style={styles.duration}>📅 {numDays} days {numDays - 1} nights • <Text style={{ color: '#0F172A' }}>Choose dates {'>'}</Text></Text>
+                        </View>
+                    )}
+
+                    {/* Tabs */}
+                    {mode === 'overview' ? (
+                        /* Full-width tabs for overview mode */
+                        <View style={styles.tabsFullWidth}>
+                            <TouchableOpacity
+                                style={[styles.tabFull, styles.tabActive]}
+                                onPress={() => setMode('overview')}
+                            >
+                                <Text style={[styles.tabText, styles.tabTextActive]}>Overview</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.tabFull}
+                                onPress={() => { setMode('itinerary'); setSelectedDay(1); }}
+                            >
+                                <Text style={styles.tabText}>Itinerary</Text>
                             </TouchableOpacity>
                         </View>
-                        <Text style={styles.duration}>📅 {numDays} days {numDays - 1} nights • <Text style={{ color: '#0F172A' }}>Choose dates {'>'}</Text></Text>
-                    </View>
-                )}
-
-                {/* Tabs */}
-                {mode === 'overview' ? (
-                    /* Full-width tabs for overview mode */
-                    <View style={styles.tabsFullWidth}>
-                        <TouchableOpacity
-                            style={[styles.tabFull, styles.tabActive]}
-                            onPress={() => setMode('overview')}
+                    ) : (
+                        /* Scrollable compact tabs for itinerary mode */
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.tabsScrollView}
+                            contentContainerStyle={styles.tabsContainer}
                         >
-                            <Text style={[styles.tabText, styles.tabTextActive]}>Overview</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.tabFull}
-                            onPress={() => { setMode('itinerary'); setSelectedDay(1); }}
-                        >
-                            <Text style={styles.tabText}>Itinerary</Text>
-                        </TouchableOpacity>
-                    </View>
-                ) : (
-                    /* Scrollable compact tabs for itinerary mode */
-                    <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.tabsScrollView}
-                        contentContainerStyle={styles.tabsContainer}
-                    >
-                        <TouchableOpacity
-                            style={styles.tab}
-                            onPress={() => setMode('overview')}
-                        >
-                            <Text style={styles.tabText}>Overview</Text>
-                        </TouchableOpacity>
-                        {itineraryDays.map((d) => (
                             <TouchableOpacity
-                                key={d.day}
-                                style={[styles.tab, selectedDay === d.day && styles.tabActive]}
-                                onPress={() => scrollToDay(d.day)}
+                                style={styles.tab}
+                                onPress={() => setMode('overview')}
                             >
-                                <Text style={[styles.tabText, selectedDay === d.day && styles.tabTextActive]}>
-                                    Day {d.day}
-                                </Text>
+                                <Text style={styles.tabText}>Overview</Text>
                             </TouchableOpacity>
-                        ))}
-                    </ScrollView>
-                )}
-            </View>
+                            {itineraryDays.map((d) => (
+                                <TouchableOpacity
+                                    key={d.day}
+                                    style={[styles.tab, selectedDay === d.day && styles.tabActive]}
+                                    onPress={() => scrollToDay(d.day)}
+                                >
+                                    <Text style={[styles.tabText, selectedDay === d.day && styles.tabTextActive]}>
+                                        Day {d.day}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+                    )}
+                </View>
 
-            {/* Scrollable Content */}
-            <BottomSheetScrollView
-                ref={scrollViewRef}
-                style={styles.scrollContent}
-                contentContainerStyle={{ paddingBottom: 40 }}
-                onScroll={mode === 'itinerary' ? handleItineraryScroll : undefined}
-                scrollEventThrottle={16}
+                {/* Scrollable Content */}
+                <BottomSheetScrollView
+                    ref={scrollViewRef}
+                    style={styles.scrollContent}
+                    contentContainerStyle={{ paddingBottom: isEditMode && selectedSpots.size > 0 ? 180 : 40 }}
+                    onScroll={mode === 'itinerary' ? handleItineraryScroll : undefined}
+                    scrollEventThrottle={32}
+                    scrollEnabled={!isItemDragging}
+                    nestedScrollEnabled={true}
+                >
+                    {mode === 'overview' ? renderOverviewItems() : renderItineraryItems()}
+                </BottomSheetScrollView>
+
+                {/* Edit Mode Bottom Action Bar */}
+                {isEditMode && selectedSpots.size > 0 && (
+                    <View style={styles.editActionBarContainer} pointerEvents="box-none">
+                        <LinearGradient
+                            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.85)', '#FFFFFF']}
+                            locations={[0, 0.45, 1]}
+                            style={StyleSheet.absoluteFillObject}
+                            pointerEvents="none"
+                        />
+                        <View style={styles.editActionBar}>
+                            <TouchableOpacity
+                                style={styles.editActionBtn}
+                                onPress={() => movePickerSheetRef.current?.expand()}
+                                activeOpacity={0.7}
+                            >
+                                <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M5 12h14M12 5l7 7-7 7" />
+                                </Svg>
+                                <Text style={styles.editActionBtnText}>Move</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.editActionBtn, styles.editActionBtnRemove]}
+                                onPress={() => {
+                                    onSpotsRemove?.(Array.from(selectedSpots));
+                                    setSelectedSpots(new Set());
+                                }}
+                                activeOpacity={0.7}
+                            >
+                                <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                                </Svg>
+                                <Text style={[styles.editActionBtnText, { color: '#EF4444' }]}>Remove</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+
+                {/* Saving Overlay */}
+                {isSavingTrip && (
+                    <View style={styles.savingOverlay}>
+                        <ActivityIndicator size="large" color="#3B82F6" />
+                        <Text style={styles.savingOverlayText}>Saving changes...</Text>
+                    </View>
+                )}
+            </BottomSheet>
+
+            {/* Move to Day Picker Bottom Sheet — outside main sheet so it renders on top */}
+            <BottomSheet
+                ref={movePickerSheetRef}
+                index={-1}
+                snapPoints={['60%']}
+                enablePanDownToClose={true}
+                enableDynamicSizing={false}
+                backdropComponent={(props) => (
+                    <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
+                )}
+                backgroundStyle={styles.movePickerSheetBg}
+                handleIndicatorStyle={styles.movePickerHandle}
+                containerStyle={{ zIndex: 200 }}
             >
-                {mode === 'overview' ? renderOverviewItems() : renderItineraryItems()}
-            </BottomSheetScrollView>
-        </BottomSheet>
+                <View style={styles.movePickerHeader}>
+                    <Text style={styles.movePickerTitle}>Move to Day</Text>
+                    <Text style={styles.movePickerSubtitle}>
+                        {selectedSpots.size} {selectedSpots.size === 1 ? 'spot' : 'spots'} selected
+                    </Text>
+                </View>
+                <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={styles.movePickerScrollContent}>
+                    {itineraryDays.map((d) => (
+                        <TouchableOpacity
+                            key={d.day}
+                            style={styles.overviewDayCard}
+                            activeOpacity={0.7}
+                            onPress={() => {
+                                onSpotsMove?.(Array.from(selectedSpots), d.day);
+                                setSelectedSpots(new Set());
+                                movePickerSheetRef.current?.close();
+                            }}
+                        >
+                            <View style={styles.overviewDayInfo}>
+                                <Text style={styles.overviewDayLabel}>Day {d.day}</Text>
+                                <Text style={styles.overviewDayCardSpots}>
+                                    {formatSpots(d.spots)}
+                                </Text>
+                                {d.spots.length === 0 && (
+                                    <Text style={styles.movePickerEmptyText}>No spots yet</Text>
+                                )}
+                            </View>
+                        </TouchableOpacity>
+                    ))}
+                </BottomSheetScrollView>
+            </BottomSheet>
+        </>
     );
 });
 
@@ -622,12 +999,15 @@ const styles = StyleSheet.create({
     },
 
     // Day itinerary styles
+    daySection: {
+        marginBottom: 32,
+    },
     optimizeRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         marginTop: 16,
-        marginBottom: 16,
+        marginBottom: 10,
     },
     dayTitle: {
         fontSize: 20,
@@ -639,15 +1019,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 4,
         backgroundColor: '#F1F5F9',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 14,
         borderWidth: 1,
         borderColor: '#E2E8F0',
     },
     optimizeText: {
-        fontSize: 12,
-        fontWeight: '600',
+        fontSize: 11,
+        fontWeight: '700',
         color: '#0F172A',
     },
 
@@ -756,22 +1136,24 @@ const styles = StyleSheet.create({
         color: '#64748B',
     },
     directionsButton: {
-        backgroundColor: '#1E293B',
+        backgroundColor: '#F1F5F9',
         paddingHorizontal: 12,
         paddingVertical: 4,
         borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
     },
     directionsText: {
         fontSize: 11,
-        fontWeight: '600',
-        color: '#FFFFFF',
+        fontWeight: '700',
+        color: '#64748B',
     },
 
     // Travel connector between cards
     travelConnectorContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 6,
+        paddingVertical: 2,
         paddingLeft: 12,
         gap: 12,
     },
@@ -780,12 +1162,16 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        paddingRight: 4,
+    },
+    travelInfoGroup: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
     },
     travelModeBadge: {
         width: 28,
         height: 28,
-        borderRadius: 14,
-        backgroundColor: '#F1F5F9',
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -859,6 +1245,154 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '700',
         color: '#6366F1',
+    },
+
+    // Edit mode styles
+    spotCardSelected: {
+        borderColor: '#3B82F6',
+        backgroundColor: '#EFF6FF',
+    },
+    checkboxContainer: {
+        justifyContent: 'center',
+        marginRight: 10,
+    },
+    checkbox: {
+        width: 22,
+        height: 22,
+        borderRadius: 6,
+        borderWidth: 2,
+        borderColor: '#CBD5E1',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#FFFFFF',
+    },
+    checkboxChecked: {
+        backgroundColor: '#3B82F6',
+        borderColor: '#3B82F6',
+    },
+    dragHandle: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginLeft: 8,
+        paddingHorizontal: 4,
+        paddingVertical: 8,
+    },
+    spotCardDragging: {
+        backgroundColor: '#F8FAFC',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.15,
+        shadowRadius: 16,
+        elevation: 10,
+    },
+    editActionBarContainer: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        paddingTop: 60,            // Gradient fade area height
+        justifyContent: 'flex-end',
+        zIndex: 100,               // Ensure it sits above scroll view
+        elevation: 10,
+    },
+    editActionBar: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        paddingBottom: Platform.OS === 'ios' ? 120 : 105, // Sit higher above tab bar
+        paddingVertical: 10,
+        gap: 10,
+        zIndex: 2,
+    },
+    editActionBtn: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+        paddingVertical: 8,
+        borderRadius: 10,
+        backgroundColor: '#EFF6FF',
+        borderWidth: 1,
+        borderColor: '#BFDBFE',
+    },
+    editActionBtnRemove: {
+        backgroundColor: '#FEF2F2',
+        borderColor: '#FECACA',
+    },
+    editActionBtnText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#3B82F6',
+    },
+
+    // Move Picker Bottom Sheet
+    movePickerSheetBg: {
+        backgroundColor: '#FFFFFF',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+        elevation: 16,
+    },
+    movePickerHandle: {
+        backgroundColor: '#CBD5E1',
+        width: 36,
+        height: 4,
+        borderRadius: 2,
+    },
+    movePickerHeader: {
+        paddingHorizontal: 24,
+        paddingTop: 8,
+        paddingBottom: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9',
+    },
+    movePickerTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#0F172A',
+        marginBottom: 4,
+    },
+    movePickerSubtitle: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#94A3B8',
+    },
+    movePickerScrollContent: {
+        paddingHorizontal: 20,
+        paddingTop: 16,
+        paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+        gap: 12,
+    },
+    movePickerEmptyText: {
+        fontSize: 13,
+        fontWeight: '500',
+        color: '#94A3B8',
+        fontStyle: 'italic',
+    },
+
+    // Saving Overlay
+    savingOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(255, 255, 255, 0.85)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 999,
+        elevation: 10,
+        borderTopLeftRadius: 36,
+        borderTopRightRadius: 36,
+    },
+    savingOverlayText: {
+        marginTop: 12,
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#0F172A',
     },
 });
 
