@@ -26,6 +26,10 @@ export async function getSharedUrl() {
  * Save user session data to the App Group for the Share Extension.
  */
 export async function setAppGroupData(userId, backendUrl) {
+    if (Platform.OS !== 'ios') {
+        return false;
+    }
+
     if (!ShareIntentModule) {
         console.error('ShareIntentModule is undefined. Native module not linked.');
         return false;

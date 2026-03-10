@@ -60,9 +60,56 @@ export const useSaveSpot = (userId) => {
             });
             return data;
         },
-        onSuccess: () => {
-            // Invalidate spots query to trigger background refetch
+        onMutate: async (newSpot) => {
+            // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+            await queryClient.cancelQueries({ queryKey: ['spots', userId] });
+
+            // Snapshot the previous value
+            const previousData = queryClient.getQueryData(['spots', userId]);
+
+            // Optimistically update to the new value
+            if (previousData) {
+                const country = newSpot.country || 'Unknown';
+                const city = newSpot.city || 'Unknown';
+
+                // Deep clone grouped data
+                const newGrouped = JSON.parse(JSON.stringify(previousData.grouped || {}));
+                if (!newGrouped[country]) newGrouped[country] = {};
+                if (!newGrouped[country][city]) newGrouped[country][city] = { spots: [], cityPhoto: null };
+
+                // Add the new spot to the list
+                newGrouped[country][city].spots.push({
+                    ...newSpot,
+                    _id: `temp-${Date.now()}`, // Temporary ID
+                    userId,
+                    country,
+                    city,
+                });
+
+                // Update placeIds set
+                const newPlaceIds = new Set(previousData.placeIds);
+                if (newSpot.placeId) newPlaceIds.add(newSpot.placeId);
+
+                queryClient.setQueryData(['spots', userId], {
+                    ...previousData,
+                    grouped: newGrouped,
+                    totalSpots: (previousData.totalSpots || 0) + 1,
+                    placeIds: newPlaceIds,
+                });
+            }
+
+            return { previousData };
+        },
+        onError: (err, newSpot, context) => {
+            // Roll back to the previous value if mutation fails
+            if (context?.previousData) {
+                queryClient.setQueryData(['spots', userId], context.previousData);
+            }
+        },
+        onSettled: () => {
+            // Always refetch after error or success to sync with server
             queryClient.invalidateQueries({ queryKey: ['spots', userId] });
         },
     });
 };
+

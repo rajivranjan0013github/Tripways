@@ -31,7 +31,7 @@ import { useTripStore } from '../store/tripStore';
 // TanStack Query
 import { useSavedSpots, useSaveSpot } from '../hooks/useSpots';
 import { useSpotSearch } from '../hooks/useSpotSearch';
-import { useSpotDetail } from '../hooks/useSpotDetail';
+import { useSpotDetail, fetchSpotDetailFn } from '../hooks/useSpotDetail';
 import { getUserId } from '../services/api';
 import { detectPlatformFromUrl, getSharedUrl } from '../services/ShareIntent';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -71,10 +71,12 @@ const SpotsBottomSheet = ({
     // Local UI state
     const [searchText, setSearchText] = useState('');
     const [searchFocused, setSearchFocused] = useState(false);
-    const [savingSpotId, setSavingSpotId] = useState(null);
     const [videoProcessing, setVideoProcessing] = useState(false);
+
     const [videoProgress, setVideoProgress] = useState('');
     const [selectedSpotPlaceId, setSelectedSpotPlaceId] = useState(null);
+    const [showAddedBadge, setShowAddedBadge] = useState(false);
+
 
     // Refs
     const searchInputRef = useRef(null);
@@ -263,13 +265,23 @@ const SpotsBottomSheet = ({
     }));
 
     // Helpers
-    const saveSpotToBucketList = (spot) => {
+    const saveSpotToBucketList = async (spot) => {
         if (!spot || !spot.placeId) return;
-        setSavingSpotId(spot.placeId);
-        saveSpot(spot, {
-            onSettled: () => setSavingSpotId(null),
+
+        // Trigger "Spot Added" badge immediately for feedback
+        setShowAddedBadge(true);
+        setTimeout(() => setShowAddedBadge(false), 2000);
+
+        // Send minimal data; backend will enrich based on placeId
+        saveSpot({
+            placeId: spot.placeId,
+            name: spot.name,
+            address: spot.address || spot.secondary || '',
+            city: spot.city || spot.secondary?.split(', ')?.[0] || 'Unknown',
+            country: spot.country || spot.secondary?.split(', ')?.pop() || 'Unknown',
         });
     };
+
 
     return (
         <BottomSheet
@@ -465,7 +477,7 @@ const SpotsBottomSheet = ({
                                                         style={styles.spotBookmarkBtn}
                                                         onPress={(e) => {
                                                             e.stopPropagation?.();
-                                                            if (isSaved || isSaving) return;
+                                                            if (isSaved) return;
                                                             saveSpotToBucketList({
                                                                 placeId: item.placeId,
                                                                 name: item.name,
@@ -476,14 +488,11 @@ const SpotsBottomSheet = ({
                                                         }}
                                                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                                     >
-                                                        {isSaving ? (
-                                                            <ActivityIndicator size="small" color="#3B82F6" />
-                                                        ) : (
-                                                            <Svg width="20" height="20" viewBox="0 0 24 24" fill={isSaved ? '#3B82F6' : 'none'} stroke={isSaved ? '#3B82F6' : '#94A3B8'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                                <Path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                                            </Svg>
-                                                        )}
+                                                        <Svg width="20" height="20" viewBox="0 0 24 24" fill={isSaved ? '#3B82F6' : 'none'} stroke={isSaved ? '#3B82F6' : '#94A3B8'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                            <Path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                                        </Svg>
                                                     </TouchableOpacity>
+
                                                 </TouchableOpacity>
                                             );
                                         }}
@@ -683,12 +692,61 @@ const SpotsBottomSheet = ({
                                 </View>
                             </>
                         ) : null}
+
+                        {/* Badge inside Modal to ensure visibility */}
+                        <SpotAddedBadge visible={showAddedBadge} inModal />
                     </View>
                 </TouchableOpacity>
             </Modal>
+
+
+            {/* "Spot Added" Badge */}
+            <SpotAddedBadge visible={showAddedBadge} />
         </BottomSheet>
     );
 };
+
+/**
+ * Portable "Spot Added" black badge with rounded corners.
+ */
+const SpotAddedBadge = ({ visible, inModal = false }) => {
+    const opacity = useSharedValue(0);
+    const translateY = useSharedValue(20);
+
+    useEffect(() => {
+        if (visible) {
+            opacity.value = withTiming(1, { duration: 250 });
+            translateY.value = withTiming(0, { duration: 300, easing: Easing.out(Easing.back(1.5)) });
+        } else {
+            opacity.value = withTiming(0, { duration: 250 });
+            translateY.value = withTiming(20, { duration: 250 });
+        }
+    }, [visible]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        opacity: opacity.value,
+        transform: [{ translateY: translateY.value }],
+    }));
+
+    if (!visible && opacity.value === 0) return null;
+
+    return (
+        <Animated.View style={[
+            styles.addedBadgeContainer,
+            inModal && { bottom: 40, position: 'absolute' },
+            animatedStyle
+        ]}>
+            <View style={styles.addedBadge}>
+                <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <Path d="M20 6 9 17l-5-5" />
+                </Svg>
+                <Text style={styles.addedBadgeText}>Spot added</Text>
+            </View>
+        </Animated.View>
+    );
+};
+
+
 
 const styles = StyleSheet.create({
     sheetBackground: {
@@ -1023,6 +1081,36 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         color: '#FFFFFF',
     },
+    // Added Badge
+    addedBadgeContainer: {
+        position: 'absolute',
+        bottom: Platform.OS === 'ios' ? 100 : 80,
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        zIndex: 9999,
+        pointerEvents: 'none',
+    },
+    addedBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: '#000000',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    addedBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '700',
+    },
 });
+
 
 export default SpotsBottomSheet;
