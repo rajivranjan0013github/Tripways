@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState, useRef, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
     View,
     Text,
@@ -13,7 +14,7 @@ import {
     Keyboard,
     Modal
 } from 'react-native';
-import BottomSheet, { BottomSheetView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Animated, {
     useAnimatedStyle,
     interpolate,
@@ -62,11 +63,20 @@ const SpotsBottomSheet = ({
 
     // TanStack Query
     const userId = getUserId();
+    const queryClient = useQueryClient();
     const { data: spotsQueryData } = useSavedSpots(userId);
-    const { mutate: saveSpot } = useSaveSpot(userId);
+    const { mutateAsync: saveSpot } = useSaveSpot(userId);
     const savedSpots = spotsQueryData?.grouped || {};
     const savedPlaceIds = spotsQueryData?.placeIds || new Set();
-    const totalSpotsCount = spotsQueryData?.totalCount || 0;
+    const totalSpotsCount = spotsQueryData?.totalSpots || 0;
+    const mySpotsCountries = useMemo(() => (
+        Object.entries(savedSpots).map(([country, cities]) => ({
+            country,
+            cities,
+            cityCount: Object.keys(cities || {}).length,
+            spotCount: Object.values(cities || {}).reduce((sum, c) => sum + (c?.spots?.length || 0), 0),
+        }))
+    ), [savedSpots]);
 
     // Local UI state
     const [searchText, setSearchText] = useState('');
@@ -76,6 +86,8 @@ const SpotsBottomSheet = ({
     const [videoProgress, setVideoProgress] = useState('');
     const [selectedSpotPlaceId, setSelectedSpotPlaceId] = useState(null);
     const [showAddedBadge, setShowAddedBadge] = useState(false);
+    const [savingSpotId, setSavingSpotId] = useState(null);
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
 
 
     // Refs
@@ -244,6 +256,27 @@ const SpotsBottomSheet = ({
         processVideoUrl();
     }, [searchText, socialMode]);
 
+    // Track keyboard height so floating badge can stay above it.
+    useEffect(() => {
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+        const onShow = (event) => {
+            setKeyboardHeight(event?.endCoordinates?.height || 0);
+        };
+        const onHide = () => {
+            setKeyboardHeight(0);
+        };
+
+        const showSub = Keyboard.addListener(showEvent, onShow);
+        const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+        return () => {
+            showSub.remove();
+            hideSub.remove();
+        };
+    }, []);
+
     // Animations (driven by parent's sheetAnimatedPosition)
     const thresholdY = SCREEN_HEIGHT * 0.4;
     const fadeRange = SCREEN_HEIGHT * 0.06;
@@ -264,21 +297,80 @@ const SpotsBottomSheet = ({
         ),
     }));
 
-    // Helpers
-    const saveSpotToBucketList = async (spot) => {
+    // Helpers — instant save: no enrichment, fire-and-forget
+    const saveSpotToBucketList = (spot) => {
         if (!spot || !spot.placeId) return;
+        if (savingSpotId === spot.placeId || savedPlaceIds.has(spot.placeId)) return;
 
-        // Trigger "Spot Added" badge immediately for feedback
+        // Instant feedback
         setShowAddedBadge(true);
         setTimeout(() => setShowAddedBadge(false), 2000);
+        setSavingSpotId(spot.placeId);
 
-        // Send minimal data; backend will enrich based on placeId
+        const spotCity = spot.city || spot.secondary?.split(', ')?.[0] || 'Unknown';
+        const spotCountry = spot.country || spot.secondary?.split(', ')?.pop() || 'Unknown';
+
+        // Fire-and-forget: saveSpot triggers optimistic cache update via onMutate,
+        // so the UI updates instantly. Backend does enrichment + R2 in background.
         saveSpot({
             placeId: spot.placeId,
             name: spot.name,
             address: spot.address || spot.secondary || '',
-            city: spot.city || spot.secondary?.split(', ')?.[0] || 'Unknown',
-            country: spot.country || spot.secondary?.split(', ')?.pop() || 'Unknown',
+            city: spotCity,
+            country: spotCountry,
+            rating: spot.rating ?? null,
+            userRatingCount: spot.userRatingCount ?? 0,
+            photoUrl: spot.photoUrl || spot.image || null,
+            image: spot.image || spot.photoUrl || null,
+            coordinates: spot.coordinates || { lat: null, lng: null },
+        }).catch((err) => {
+            console.warn('Save spot failed:', err?.message || err);
+        }).finally(() => {
+            setSavingSpotId(null);
+        });
+
+        // Non-blocking: fetch photo/details from Google and patch the cache
+        // so the image appears ~1-2s after save without any page refresh.
+        fetchSpotDetailFn(spot.placeId).then((detail) => {
+            if (!detail?.photoUrl) {
+                console.log('[SpotSave] No photo from Google for', spot.placeId);
+                return;
+            }
+            console.log('[SpotSave] Got photo, patching cache for', spot.placeId, detail.photoUrl?.substring(0, 60));
+            queryClient.setQueryData(['spots', userId], (prev) => {
+                if (!prev?.grouped) return prev;
+                const country = detail.country || spotCountry;
+                const city = detail.city || spotCity;
+                const newGrouped = JSON.parse(JSON.stringify(prev.grouped));
+
+                // Find the spot in the cache and update it with enriched data
+                for (const [c, cities] of Object.entries(newGrouped)) {
+                    for (const [ci, cityData] of Object.entries(cities)) {
+                        const idx = (cityData.spots || []).findIndex(s => s.placeId === spot.placeId);
+                        if (idx !== -1) {
+                            cityData.spots[idx] = {
+                                ...cityData.spots[idx],
+                                photoUrl: detail.photoUrl,
+                                image: detail.photoUrl,
+                                rating: cityData.spots[idx].rating ?? detail.rating ?? null,
+                                userRatingCount: cityData.spots[idx].userRatingCount ?? detail.userRatingCount ?? 0,
+                                coordinates: cityData.spots[idx].coordinates?.lat ? cityData.spots[idx].coordinates : detail.coordinates,
+                                address: cityData.spots[idx].address || detail.address || '',
+                            };
+                            // Update city photo if this is the best one
+                            if (!cityData.cityPhoto) {
+                                cityData.cityPhoto = detail.photoUrl;
+                            }
+                            console.log('[SpotSave] Cache patched successfully for', spot.placeId);
+                            return { ...prev, grouped: newGrouped };
+                        }
+                    }
+                }
+                console.log('[SpotSave] Spot not found in cache for patching', spot.placeId);
+                return prev;
+            });
+        }).catch((err) => {
+            console.warn('[SpotSave] Photo fetch failed:', err?.message || err);
         });
     };
 
@@ -296,7 +388,7 @@ const SpotsBottomSheet = ({
             animationConfigs={sheetAnimationConfig}
             animatedPosition={sheetAnimatedPosition}
         >
-            <BottomSheetView style={styles.sheetContent}>
+            <View style={styles.sheetContent}>
                 {/* Search Row */}
                 <View style={styles.sheetSearchRow}>
                     <View style={styles.sheetSearchBar}>
@@ -319,7 +411,7 @@ const SpotsBottomSheet = ({
                         <TextInput
                             ref={searchInputRef}
                             style={styles.sheetSearchInput}
-                            placeholder={socialMode === 'instagram' ? 'Paste reels URL...' : socialMode === 'tiktok' ? 'Paste video URL...' : 'Search spots...'}
+                            placeholder={socialMode === 'instagram' ? 'Paste reels URL...' : socialMode === 'tiktok' ? 'Paste video URL...' : 'Search / Add spots...'}
                             placeholderTextColor={socialMode === 'instagram' ? '#E1306C' : socialMode === 'tiktok' ? '#000' : '#94A3B8'}
                             value={searchText}
                             onChangeText={setSearchText}
@@ -362,7 +454,11 @@ const SpotsBottomSheet = ({
                 {/* Conditional content based on search focus & text */}
                 {searchFocused && searchText.length === 0 && !socialMode ? (
                     /* ── Social Search ── */
-                    <View style={styles.socialSearchContainer}>
+                    <BottomSheetScrollView
+                        style={styles.socialSearchContainer}
+                        showsVerticalScrollIndicator={false}
+                        keyboardShouldPersistTaps="handled"
+                    >
                         <Text style={styles.sheetSectionLabel}>Search on</Text>
                         <View style={styles.socialCardsRow}>
                             <TouchableOpacity style={styles.socialCard} activeOpacity={0.8} onPress={() => setSocialMode('instagram')}>
@@ -404,7 +500,7 @@ const SpotsBottomSheet = ({
                                 </TouchableOpacity>
                             ))}
                         </View>
-                    </View>
+                    </BottomSheetScrollView>
                 ) : searchFocused && (searchText.length > 0 || socialMode) ? (
                     /* ── Search results / URL input ── */
                     <View style={styles.searchResultsContainer}>
@@ -448,12 +544,13 @@ const SpotsBottomSheet = ({
                                         <Text style={[styles.emptySpotsText, { marginTop: 12 }]}>Searching places…</Text>
                                     </View>
                                 ) : spotSearchResults.length > 0 ? (
-                                    <FlatList
+                                    <BottomSheetFlatList
                                         data={spotSearchResults}
                                         keyExtractor={(item) => item.placeId}
                                         keyboardShouldPersistTaps="handled"
                                         showsVerticalScrollIndicator={false}
-                                        style={{ maxHeight: SCREEN_HEIGHT * 0.55 }}
+                                        style={{ flex: 1 }}
+                                        contentContainerStyle={{ paddingBottom: 120 }}
                                         renderItem={({ item }) => {
                                             const isSaved = savedPlaceIds.has(item.placeId);
                                             const isSaving = savingSpotId === item.placeId;
@@ -477,7 +574,7 @@ const SpotsBottomSheet = ({
                                                         style={styles.spotBookmarkBtn}
                                                         onPress={(e) => {
                                                             e.stopPropagation?.();
-                                                            if (isSaved) return;
+                                                            if (isSaved || isSaving) return;
                                                             saveSpotToBucketList({
                                                                 placeId: item.placeId,
                                                                 name: item.name,
@@ -488,9 +585,13 @@ const SpotsBottomSheet = ({
                                                         }}
                                                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                                                     >
-                                                        <Svg width="20" height="20" viewBox="0 0 24 24" fill={isSaved ? '#3B82F6' : 'none'} stroke={isSaved ? '#3B82F6' : '#94A3B8'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                            <Path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                                                        </Svg>
+                                                        {isSaving ? (
+                                                            <ActivityIndicator size="small" color="#3B82F6" />
+                                                        ) : (
+                                                            <Svg width="20" height="20" viewBox="0 0 24 24" fill={isSaved ? '#3B82F6' : 'none'} stroke={isSaved ? '#3B82F6' : '#94A3B8'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                <Path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                                            </Svg>
+                                                        )}
                                                     </TouchableOpacity>
 
                                                 </TouchableOpacity>
@@ -499,11 +600,12 @@ const SpotsBottomSheet = ({
                                     />
                                 ) : (
                                     <View style={styles.emptySpots}>
-                                        <Svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                                            <Circle cx="11" cy="11" r="8" />
-                                            <Path d="m21 21-4.3-4.3" />
-                                        </Svg>
-                                        <Text style={[styles.emptySpotsText, { marginTop: 12 }]}>No results found</Text>
+                                        <Image
+                                            source={require('../assets/spots.png')}
+                                            style={[styles.emptySpotsImage, { width: 140, height: 140 }]}
+                                            resizeMode="contain"
+                                        />
+                                        <Text style={[styles.emptySpotsText, { marginTop: 0 }]}>No results found</Text>
                                         <Text style={styles.emptySpotsHint}>Try a different search term</Text>
                                     </View>
                                 )}
@@ -512,80 +614,85 @@ const SpotsBottomSheet = ({
                     </View>
                 ) : (
                     /* ── My Spots: default view ── */
-                    <View style={{ marginLeft: 0 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                            <View>
-                                <Text style={{ fontSize: 18, fontWeight: '700', color: '#0F172A', letterSpacing: -0.5 }}>My Spots</Text>
+                    <BottomSheetFlatList
+                        data={mySpotsCountries}
+                        keyExtractor={(item) => item.country}
+                        style={styles.mySpotsList}
+                        contentContainerStyle={styles.mySpotsListContent}
+                        showsVerticalScrollIndicator={false}
+                        nestedScrollEnabled
+                        bounces={false}
+                        ListHeaderComponent={(
+                            <View style={styles.mySpotsHeader}>
+                                <Text style={styles.mySpotsTitle}>My Spots</Text>
                                 {totalSpotsCount > 0 && (
-                                    <Text style={{ fontSize: 13, color: '#94A3B8', marginTop: 1 }}>{totalSpotsCount} Spots Saved</Text>
+                                    <Text style={styles.mySpotsSubtitle}>{totalSpotsCount} Spots Saved</Text>
                                 )}
                             </View>
-                        </View>
-
-                        {Object.keys(savedSpots).length > 0 ? (
-                            Object.entries(savedSpots).map(([country, cities]) => {
-                                const cityCount = Object.keys(cities).length;
-                                const spotCount = Object.values(cities).reduce((sum, c) => sum + c.spots.length, 0);
-                                return (
-                                    <View key={country} style={{ marginTop: 10 }}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', paddingHorizontal: 5, marginBottom: 12 }}>
-                                            <Text style={{ fontSize: 20, fontWeight: '600', color: '#1E293B' }}>{country}</Text>
-                                            <Text style={{ fontSize: 12, color: '#94A3B8' }}>{cityCount} {cityCount === 1 ? 'City' : 'Cities'} • {spotCount} {spotCount === 1 ? 'Spot' : 'Spots'}</Text>
-                                        </View>
-
-                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: 5, paddingRight: 0 }}>
-                                            {Object.entries(cities).map(([city, cityData]) => {
-                                                const cityKey = `${country}::${city}`;
-                                                return (
-                                                    <TouchableOpacity
-                                                        key={cityKey}
-                                                        activeOpacity={0.85}
-                                                        onPress={() => {
-                                                            bottomSheetRef.current?.close();
-                                                            tabBarTranslateY.value = withTiming(tabBarHeight, {
-                                                                duration: 400,
-                                                                easing: Easing.bezier(0.33, 1, 0.68, 1),
-                                                            });
-                                                            setTimeout(() => {
-                                                                createTripSheetRef.current?.openWithSavedSpots(country, city, cities);
-                                                            }, 350);
-                                                        }}
-                                                        style={{
-                                                            width: 150,
-                                                            marginRight: 12,
-                                                            borderRadius: 14,
-                                                            overflow: 'hidden',
-                                                            backgroundColor: '#F1F5F9',
-                                                        }}
-                                                    >
-                                                        {cityData.cityPhoto ? (
-                                                            <Image source={{ uri: cityData.cityPhoto }} style={{ width: 150, height: 110, borderTopLeftRadius: 14, borderTopRightRadius: 14 }} />
-                                                        ) : (
-                                                            <View style={{ width: 150, height: 110, backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center' }}>
-                                                                <Text style={{ fontSize: 32 }}>🏙️</Text>
-                                                            </View>
-                                                        )}
-                                                        <View style={{ paddingHorizontal: 10, paddingVertical: 8 }}>
-                                                            <Text style={{ fontSize: 14, fontWeight: '700', color: '#1E293B' }} numberOfLines={1}>{city}</Text>
-                                                            <Text style={{ fontSize: 11, color: '#94A3B8', marginTop: 1 }}>{cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}</Text>
-                                                        </View>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </ScrollView>
-                                    </View>
-                                );
-                            })
-                        ) : (
+                        )}
+                        ListEmptyComponent={(
                             <View style={styles.emptySpots}>
-                                <Text style={styles.emptySpotsIcon}>🔖</Text>
+                                <Image
+                                    source={require('../assets/spots.png')}
+                                    style={styles.emptySpotsImage}
+                                />
                                 <Text style={styles.emptySpotsText}>No saved spots yet</Text>
                                 <Text style={styles.emptySpotsHint}>Save spots from your trips to see them here</Text>
                             </View>
                         )}
-                    </View>
+                        renderItem={({ item }) => {
+                            const { country, cities, cityCount, spotCount } = item;
+                            return (
+                                <View style={styles.countrySection}>
+                                    <View style={styles.countryHeader}>
+                                        <Text style={styles.countryTitle}>{country}</Text>
+                                        <Text style={styles.countrySubtitle}>
+                                            {cityCount} {cityCount === 1 ? 'City' : 'Cities'} • {spotCount} {spotCount === 1 ? 'Spot' : 'Spots'}
+                                        </Text>
+                                    </View>
+
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cityCardsRow}>
+                                        {Object.entries(cities).map(([city, cityData]) => {
+                                            const cityKey = `${country}::${city}`;
+                                            return (
+                                                <TouchableOpacity
+                                                    key={cityKey}
+                                                    activeOpacity={0.85}
+                                                    onPress={() => {
+                                                        bottomSheetRef.current?.close();
+                                                        tabBarTranslateY.value = withTiming(tabBarHeight, {
+                                                            duration: 400,
+                                                            easing: Easing.bezier(0.33, 1, 0.68, 1),
+                                                        });
+                                                        setTimeout(() => {
+                                                            createTripSheetRef.current?.openWithSavedSpots(country, city, cities);
+                                                        }, 350);
+                                                    }}
+                                                    style={styles.cityCard}
+                                                >
+                                                    {cityData.cityPhoto ? (
+                                                        <Image source={{ uri: cityData.cityPhoto }} style={styles.cityCardImage} />
+                                                    ) : (
+                                                        <View style={styles.cityCardImagePlaceholder}>
+                                                            <Text style={styles.cityCardEmoji}>🏙️</Text>
+                                                        </View>
+                                                    )}
+                                                    <View style={styles.cityCardInfo}>
+                                                        <Text style={styles.cityCardTitle} numberOfLines={1}>{city}</Text>
+                                                        <Text style={styles.cityCardSubtitle}>
+                                                            {cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}
+                                                        </Text>
+                                                    </View>
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </ScrollView>
+                                </View>
+                            );
+                        }}
+                    />
                 )}
-            </BottomSheetView>
+            </View>
 
             {/* Spot Detail Modal */}
             <Modal
@@ -701,7 +808,7 @@ const SpotsBottomSheet = ({
 
 
             {/* "Spot Added" Badge */}
-            <SpotAddedBadge visible={showAddedBadge} />
+            <SpotAddedBadge visible={showAddedBadge} keyboardHeight={keyboardHeight} />
         </BottomSheet>
     );
 };
@@ -709,7 +816,7 @@ const SpotsBottomSheet = ({
 /**
  * Portable "Spot Added" black badge with rounded corners.
  */
-const SpotAddedBadge = ({ visible, inModal = false }) => {
+const SpotAddedBadge = ({ visible, inModal = false, keyboardHeight = 0 }) => {
     const opacity = useSharedValue(0);
     const translateY = useSharedValue(20);
 
@@ -730,10 +837,13 @@ const SpotAddedBadge = ({ visible, inModal = false }) => {
 
     if (!visible && opacity.value === 0) return null;
 
+    const baseBottom = Platform.OS === 'ios' ? 160 : 140;
+    const keyboardAwareBottom = keyboardHeight > 0 ? keyboardHeight + 80 : baseBottom;
+
     return (
         <Animated.View style={[
             styles.addedBadgeContainer,
-            inModal && { bottom: 40, position: 'absolute' },
+            { bottom: inModal ? 40 : keyboardAwareBottom },
             animatedStyle
         ]}>
             <View style={styles.addedBadge}>
@@ -829,6 +939,7 @@ const styles = StyleSheet.create({
         marginBottom: 8,
     },
     socialSearchContainer: {
+        flex: 1,
         paddingTop: 4,
     },
     socialCardsRow: {
@@ -887,7 +998,89 @@ const styles = StyleSheet.create({
         color: '#64748B',
     },
     searchResultsContainer: {
+        flex: 1,
         paddingTop: 4,
+    },
+    mySpotsList: {
+        flex: 1,
+        marginLeft: 0,
+    },
+    mySpotsListContent: {
+        paddingBottom: 120,
+    },
+    mySpotsHeader: {
+        marginBottom: 4,
+    },
+    mySpotsTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#0F172A',
+        letterSpacing: -0.5,
+    },
+    mySpotsSubtitle: {
+        fontSize: 13,
+        color: '#94A3B8',
+        marginTop: 1,
+    },
+    countrySection: {
+        marginTop: 10,
+    },
+    countryHeader: {
+        flexDirection: 'row',
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        paddingHorizontal: 5,
+        marginBottom: 12,
+    },
+    countryTitle: {
+        fontSize: 20,
+        fontWeight: '600',
+        color: '#1E293B',
+    },
+    countrySubtitle: {
+        fontSize: 12,
+        color: '#94A3B8',
+    },
+    cityCardsRow: {
+        paddingLeft: 5,
+        paddingRight: 0,
+    },
+    cityCard: {
+        width: 150,
+        marginRight: 12,
+        borderRadius: 14,
+        overflow: 'hidden',
+        backgroundColor: '#F1F5F9',
+    },
+    cityCardImage: {
+        width: 150,
+        height: 110,
+        borderTopLeftRadius: 14,
+        borderTopRightRadius: 14,
+    },
+    cityCardImagePlaceholder: {
+        width: 150,
+        height: 110,
+        backgroundColor: '#E2E8F0',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    cityCardEmoji: {
+        fontSize: 32,
+    },
+    cityCardInfo: {
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+    },
+    cityCardTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#1E293B',
+    },
+    cityCardSubtitle: {
+        fontSize: 11,
+        color: '#94A3B8',
+        marginTop: 1,
     },
     spotSearchRow: {
         flexDirection: 'row',
@@ -941,6 +1134,11 @@ const styles = StyleSheet.create({
     emptySpotsIcon: {
         fontSize: 28,
         marginBottom: 8,
+    },
+    emptySpotsImage: {
+        width: 400,
+        height: 250,
+        marginBottom: 12,
     },
     emptySpotsText: {
         fontSize: 14,

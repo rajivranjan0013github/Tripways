@@ -7,6 +7,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Linking } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import RNBootSplash from 'react-native-bootsplash';
 import { MMKV } from 'react-native-mmkv';
 
 import OnboardingScreen from '../screens/OnboardingScreen';
@@ -92,7 +93,15 @@ const AppNavigator = () => {
     if (!isReady) return null;
 
     return (
-        <NavigationContainer linking={linking}>
+        <NavigationContainer
+            linking={linking}
+            onReady={() => {
+                // Hide native splash once navigation tree is ready
+                try {
+                    RNBootSplash.hide({ fade: true });
+                } catch { }
+            }}
+        >
             <Stack.Navigator
                 initialRouteName={initialRoute}
                 screenOptions={{

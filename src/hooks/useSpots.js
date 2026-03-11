@@ -11,9 +11,32 @@ export const useSavedSpots = (userId) => {
         queryFn: async () => {
             const data = await apiGet(`/api/spots/user/${userId}`);
             if (data?.success && data?.grouped) {
+                // Normalize spot image fields so UI can always read `photoUrl`.
+                const normalizedGrouped = {};
+
+                Object.entries(data.grouped).forEach(([country, cities]) => {
+                    normalizedGrouped[country] = {};
+
+                    Object.entries(cities || {}).forEach(([city, cityData]) => {
+                        const normalizedSpots = (cityData?.spots || []).map((spot) => {
+                            const resolvedPhotoUrl = spot?.photoUrl || spot?.image || null;
+                            return {
+                                ...spot,
+                                photoUrl: resolvedPhotoUrl,
+                                image: resolvedPhotoUrl,
+                            };
+                        });
+
+                        normalizedGrouped[country][city] = {
+                            ...cityData,
+                            spots: normalizedSpots,
+                        };
+                    });
+                });
+
                 // Extract placeIds into a Set for quick lookups
                 const placeIds = new Set();
-                Object.values(data.grouped).forEach(cities => {
+                Object.values(normalizedGrouped).forEach(cities => {
                     Object.values(cities).forEach(cityData => {
                         (cityData.spots || []).forEach(spot => {
                             if (spot.placeId) placeIds.add(spot.placeId);
@@ -22,7 +45,7 @@ export const useSavedSpots = (userId) => {
                 });
 
                 return {
-                    grouped: data.grouped,
+                    grouped: normalizedGrouped,
                     totalSpots: data.totalSpots || 0,
                     placeIds,
                 };
@@ -30,6 +53,7 @@ export const useSavedSpots = (userId) => {
             return { grouped: {}, totalSpots: 0, placeIds: new Set() };
         },
         enabled: !!userId,
+        refetchOnWindowFocus: true,
     });
 };
 
@@ -54,6 +78,7 @@ export const useSaveSpot = (userId) => {
                     rating: spot.rating || null,
                     userRatingCount: spot.userRatingCount || 0,
                     photoUrl: spot.photoUrl || null,
+                    image: spot.photoUrl || spot.image || null,
                     coordinates: spot.coordinates || { lat: null, lng: null },
                     source: 'manual',
                 }],
@@ -80,6 +105,7 @@ export const useSaveSpot = (userId) => {
                 // Add the new spot to the list
                 newGrouped[country][city].spots.push({
                     ...newSpot,
+                    image: newSpot.photoUrl || newSpot.image || null,
                     _id: `temp-${Date.now()}`, // Temporary ID
                     userId,
                     country,
@@ -107,9 +133,13 @@ export const useSaveSpot = (userId) => {
             }
         },
         onSettled: () => {
-            // Always refetch after error or success to sync with server
-            queryClient.invalidateQueries({ queryKey: ['spots', userId] });
+            // Delay refetch to avoid overwriting the frontend photo cache patch.
+            // The frontend fetches the photo (~2s) and patches the cache directly.
+            // The backend enriches + uploads to R2 (~10s) in the background.
+            // After 15s, refetch picks up the permanent R2 URL from the server.
+            setTimeout(() => {
+                queryClient.invalidateQueries({ queryKey: ['spots', userId] });
+            }, 15000);
         },
     });
 };
-

@@ -390,20 +390,12 @@ const HomeScreen = () => {
                 userInterfaceStyle="light"
                 customMapStyle={customMapStyle}
                 initialRegion={{
-                    latitude: 28.6139,
-                    longitude: 77.2090,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
+                    latitude: -20.0, // Centered perfectly on the Caribbean/Central America to match screenshot framing above the bottom sheet
+                    longitude: -80.0,
+                    latitudeDelta: 75.0,
+                    longitudeDelta: 75.0,
                 }}
             >
-                {/* Default marker when no trip data */}
-                {!tripData && (
-                    <Marker
-                        coordinate={{ latitude: 28.6139, longitude: 77.2090 }}
-                        title={"TripWays"}
-                        description={"Start your journey here"}
-                    />
-                )}
 
                 {/* Itinerary place markers — styled circles with numbers like frontendweb */}
                 {tripData?.itinerary?.flatMap((day, dayIndex) => {
@@ -512,16 +504,7 @@ const HomeScreen = () => {
             </MapView>
 
 
-            {/* Floating My Spots button — tracks the spots sheet */}
-            <Animated.View
-                style={[styles.mySpotFab, fabAnimatedStyle]}
-                pointerEvents="box-none"
-            >
-                <TouchableOpacity activeOpacity={0.85} style={styles.mySpotFabInner}>
-                    <MySpotIcon width={22} height={22} fill="#3B82F6" />
-                </TouchableOpacity>
-            </Animated.View>
-
+           
             {/* Spots Bottom Sheet */}
             <SpotsBottomSheet
                 bottomSheetRef={bottomSheetRef}

@@ -34,4 +34,15 @@ export const useUIStore = create((set) => ({
     // Social mode for video import
     socialMode: null, // null | 'instagram' | 'tiktok'
     setSocialMode: (mode) => set({ socialMode: mode }),
+
+    // Reset store
+    resetUI: () => set({
+        activeTab: 'home',
+        showProfile: false,
+        showCreateOptions: false,
+        isEditMode: false,
+        isTripOverviewOpen: false,
+        selectedItinerarySpot: null,
+        socialMode: null,
+    }),
 }));

@@ -6,12 +6,17 @@ import { GestureHandlerRootView, TouchableOpacity as RNGHTouchableOpacity } from
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Svg, { Path, Circle } from 'react-native-svg';
 import LinearGradient from 'react-native-linear-gradient';
+import Config from 'react-native-config';
+import { useQueryClient } from '@tanstack/react-query';
+import { MMKV } from 'react-native-mmkv';
 
 // Zustand stores
 import { useUIStore } from '../store/uiStore';
 import { useTripStore } from '../store/tripStore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const tripStorage = new MMKV();
+const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 
 // Stable ID generator for places without explicit IDs
 const PLACE_ID_MAP = new WeakMap();
@@ -51,9 +56,9 @@ const TRAVEL_MODES = {
 };
 
 const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
-    // Read from Zustand stores instead of props
-    const { tripData, isTripLoading: isLoading, isSavingTrip, reorderSpots, removeSpots, moveSpots } = useTripStore();
+    const { tripData, isTripLoading: isLoading, isSavingTrip, isTemplateTripView, setIsTemplateTripView, reorderSpots, removeSpots, moveSpots } = useTripStore();
     const { isEditMode, setSelectedSpot } = useUIStore();
+    const queryClient = useQueryClient();
     const onSpotPress = setSelectedSpot;
     const [mode, setMode] = useState('overview'); // 'overview' or 'itinerary'
     const [selectedDay, setSelectedDay] = useState(1);
@@ -61,6 +66,50 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
     const snapPoints = useMemo(() => ['60%'], []);
     const scrollViewRef = useRef(null);
     const dayLayoutRefs = useRef({});
+    const [isSavingTemplate, setIsSavingTemplate] = useState(false);
+
+    // Save template trip to user's trips
+    const handleSaveTemplateTrip = async () => {
+        if (!tripData || isSavingTemplate) return;
+        try {
+            setIsSavingTemplate(true);
+            const userStr = tripStorage.getString('user');
+            if (!userStr) return;
+            const user = JSON.parse(userStr);
+            const userId = user?.id || user?._id;
+            if (!userId) return;
+
+            const res = await fetch(`${BACKEND_URL}/api/trips`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId,
+                    destination: tripData.locationName,
+                    days: tripData.numDays,
+                    interests: [],
+                    itinerary: tripData.itinerary,
+                    discoveredPlaces: tripData.discoveredPlaces || [],
+                }),
+            });
+
+            const data = await res.json();
+            if (data?.success && data?.trip) {
+                // Update current tripData with the new saved trip ID
+                const saved = data.trip;
+                useTripStore.getState().setTripData({
+                    ...tripData,
+                    _id: saved._id,
+                });
+                setIsTemplateTripView(false);
+                // Refresh the saved trips list
+                queryClient.invalidateQueries({ queryKey: ['trips', userId] });
+            }
+        } catch (err) {
+            console.warn('Failed to save template trip:', err);
+        } finally {
+            setIsSavingTemplate(false);
+        }
+    };
 
     // Edit mode state
     const [selectedSpots, setSelectedSpots] = useState(new Set()); // stores spot.originalPlace objects
@@ -228,7 +277,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                     fullName: place.name,
                     address: place.address || '',
                     category: mapCategory(place.category),
-                    image: photoLookup[nameLower] || null,
+                    image: photoLookup[nameLower] || place.photoUrl || null,
                     description: place.description || '',
                     estimatedTimeHours: place.estimatedTimeHours || 2,
                     bestTimeOfDay: place.bestTimeOfDay || 'morning',
@@ -243,8 +292,19 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                     const currentPlace = dayData.places[i];
                     const nextPlace = dayData.places[i + 1];
 
-                    // Check if route data exists (from the 'routed' SSE event)
-                    if (currentPlace.routeToNext) {
+                    // Check if route data exists from the backend's routingService (dayData.route.legs)
+                    const leg = dayData.route?.legs?.[i];
+
+                    if (leg) {
+                        travelInfo.push({
+                            mode: 'driving',
+                            time: leg.durationMinutes >= 60 
+                                ? `${Math.floor(leg.durationMinutes / 60)}h ${leg.durationMinutes % 60}m` 
+                                : `${leg.durationMinutes} min`,
+                            distance: `${leg.distanceKm} km`,
+                        });
+                    } else if (currentPlace.routeToNext) {
+                        // Fallback for old streaming SSE event format
                         travelInfo.push({
                             mode: currentPlace.routeToNext.travelMode?.toLowerCase() || 'driving',
                             time: currentPlace.routeToNext.duration || '~',
@@ -675,6 +735,27 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                                 </TouchableOpacity>
                             </View>
                             <Text style={styles.duration}>📅 {numDays} days {numDays - 1} nights • <Text style={{ color: '#0F172A' }}>Choose dates {'>'}</Text></Text>
+                            {isTemplateTripView && (
+                                <TouchableOpacity
+                                    style={styles.saveTemplateButton}
+                                    activeOpacity={0.8}
+                                    onPress={handleSaveTemplateTrip}
+                                    disabled={isSavingTemplate}
+                                >
+                                    {isSavingTemplate ? (
+                                        <ActivityIndicator size="small" color="#FFFFFF" />
+                                    ) : (
+                                        <>
+                                            <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                <Path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                                <Path d="M17 21v-8H7v8" />
+                                                <Path d="M7 3v5h8" />
+                                            </Svg>
+                                            <Text style={styles.saveTemplateButtonText}>Save to My Trips</Text>
+                                        </>
+                                    )}
+                                </TouchableOpacity>
+                            )}
                         </View>
                     )}
 
@@ -1401,6 +1482,22 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '700',
         color: '#0F172A',
+    },
+    saveTemplateButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: '#3B82F6',
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        borderRadius: 14,
+        marginTop: 12,
+    },
+    saveTemplateButtonText: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#FFFFFF',
     },
 });
 

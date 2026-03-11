@@ -22,12 +22,19 @@ import { MMKV } from 'react-native-mmkv';
 
 import { useTripStore } from '../store/tripStore';
 import { useSavedSpots } from '../hooks/useSpots';
+import { fetchSpotDetailFn } from '../hooks/useSpotDetail';
 
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const FULL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.92;
+
+const FONT_SERIF = Platform.select({
+    ios: 'Cormorant Garamond',
+    android: 'CormorantGaramond-SemiBoldItalic',
+    default: 'System',
+});
 
 const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated, onPlanningStarted }, ref) => {
     const insets = useSafeAreaInsets();
@@ -133,6 +140,25 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             setIsFromSavedSpots(true);
             setStep('discoverSpots');
             bottomSheetInternalRef.current?.expand();
+
+            // Fetch photos for spots missing them (background, non-blocking)
+            allSpots.forEach((spot) => {
+                if (spot.photoUrl || !spot.placeId) return;
+                fetchSpotDetailFn(spot.placeId).then((detail) => {
+                    if (!detail?.photoUrl) return;
+                    setDiscoveredPlaces((prev) =>
+                        prev.map((s) =>
+                            s.placeId === spot.placeId
+                                ? {
+                                    ...s, photoUrl: detail.photoUrl, image: detail.photoUrl,
+                                    rating: s.rating ?? detail.rating ?? null,
+                                    address: s.address || detail.address || ''
+                                }
+                                : s
+                        )
+                    );
+                }).catch(() => { });
+            });
         },
     }));
 
@@ -1337,10 +1363,11 @@ const styles = StyleSheet.create({
     },
     footerTitle: {
         fontSize: 52,
-        fontWeight: '800',
+        fontFamily: FONT_SERIF,
+        ...Platform.select({ ios: { fontStyle: 'italic', fontWeight: '600' }, android: {} }),
         color: '#0F172A',
         marginBottom: 10,
-        letterSpacing: -1.5,
+        letterSpacing: -0.5,
         lineHeight: 60,
     },
     footerSubtitle: {

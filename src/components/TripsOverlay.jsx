@@ -12,7 +12,9 @@ import {
     TouchableOpacity,
     ScrollView,
     Image,
+    ImageBackground,
     Dimensions,
+    Platform,
 } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -22,11 +24,21 @@ import Config from 'react-native-config';
 import { useUIStore } from '../store/uiStore';
 import { useTripStore } from '../store/tripStore';
 import { useSavedTrips } from '../hooks/useTrips';
+import { useTemplateTrips } from '../hooks/useTemplateTrips';
 import { MMKV } from 'react-native-mmkv';
 
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const FONT_SERIF = Platform.select({
+    ios: 'Cormorant Garamond',
+    android: 'CormorantGaramond-SemiBoldItalic',
+    default: 'System',
+});
+
+// Fallback colors for guide cards without a cover image
+const GUIDE_FALLBACK_COLORS = ['#C4B5A5', '#94A3A8', '#6366F1', '#D946EF', '#F59E0B'];
 
 /**
  * @param {object} props
@@ -38,7 +50,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const TripsOverlay = ({ animatedOverlayStyle, onTripOpen }) => {
     const insets = useSafeAreaInsets();
     const { activeTab } = useUIStore();
-    const { setTripData } = useTripStore();
+    const { setTripData, setIsTemplateTripView } = useTripStore();
 
     // Get userId for TanStack Query
     const storedUser = React.useMemo(() => {
@@ -51,6 +63,7 @@ const TripsOverlay = ({ animatedOverlayStyle, onTripOpen }) => {
     }, []);
     const userId = storedUser?.id || storedUser?._id;
     const { data: savedTrips = [] } = useSavedTrips(userId);
+    const { data: templateTrips = [] } = useTemplateTrips();
 
     const handleTripPress = async (tripId) => {
         if (!tripId) return;
@@ -66,10 +79,33 @@ const TripsOverlay = ({ animatedOverlayStyle, onTripOpen }) => {
                     itinerary: fullTrip.itinerary,
                     discoveredPlaces: fullTrip.discoveredPlaces || [],
                 });
+                setIsTemplateTripView(false);
                 onTripOpen?.();
             }
         } catch (err) {
             console.warn('Failed to fetch trip details:', err);
+        }
+    };
+
+    const handleGuidePress = async (templateId) => {
+        if (!templateId) return;
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/template-trips/${templateId}`);
+            const data = await res.json();
+            if (data?.success && data?.trip) {
+                const t = data.trip;
+                setTripData({
+                    _id: t._id,
+                    numDays: t.days,
+                    locationName: t.destination,
+                    itinerary: t.itinerary,
+                    discoveredPlaces: t.discoveredPlaces || [],
+                });
+                setIsTemplateTripView(true);
+                onTripOpen?.();
+            }
+        } catch (err) {
+            console.warn('Failed to fetch template trip:', err);
         }
     };
 
@@ -87,7 +123,7 @@ const TripsOverlay = ({ animatedOverlayStyle, onTripOpen }) => {
                 contentContainerStyle={styles.tripsScrollContent}
             >
                 <View style={styles.tripsHeader}>
-                    <Text style={styles.tripsLogo}>Roamy</Text>
+                    <Text style={styles.tripsLogo}>Where</Text>
                     <TouchableOpacity style={styles.tripsAvatar}>
                         <Text style={styles.tripsAvatarText}>A</Text>
                     </TouchableOpacity>
@@ -99,19 +135,30 @@ const TripsOverlay = ({ animatedOverlayStyle, onTripOpen }) => {
                     showsHorizontalScrollIndicator={false}
                     contentContainerStyle={styles.guidesScroll}
                 >
-                    {[
-                        { title: '1-Day Paris Trip', spots: '9 Spots', color: '#C4B5A5' },
-                        { title: '1-Day Rome Trip', spots: '7 Spots', color: '#94A3A8' },
-                        { title: '3-Day London Trip', spots: '19 Spots', color: '#6366F1' },
-                    ].map((guide, idx) => (
+                    {templateTrips.map((guide, idx) => (
                         <TouchableOpacity
-                            key={idx}
-                            style={[styles.guideCard, { backgroundColor: guide.color }]}
+                            key={guide._id || idx}
+                            style={[styles.guideCard, !guide.coverImage && { backgroundColor: GUIDE_FALLBACK_COLORS[idx % GUIDE_FALLBACK_COLORS.length] }]}
+                            activeOpacity={0.8}
+                            onPress={() => handleGuidePress(guide._id)}
                         >
-                            <View style={styles.guideCardOverlay}>
-                                <Text style={styles.guideTitle}>{guide.title}</Text>
-                                <Text style={styles.guideSpots}>{guide.spots}</Text>
-                            </View>
+                            {guide.coverImage ? (
+                                <ImageBackground
+                                    source={{ uri: guide.coverImage }}
+                                    style={styles.guideCardBg}
+                                    imageStyle={{ borderRadius: 18 }}
+                                >
+                                    <View style={styles.guideCardOverlay}>
+                                        <Text style={styles.guideTitle}>{guide.title}</Text>
+                                        <Text style={styles.guideSpots}>{guide.spots} Spots</Text>
+                                    </View>
+                                </ImageBackground>
+                            ) : (
+                                <View style={styles.guideCardOverlay}>
+                                    <Text style={styles.guideTitle}>{guide.title}</Text>
+                                    <Text style={styles.guideSpots}>{guide.spots} Spots</Text>
+                                </View>
+                            )}
                         </TouchableOpacity>
                     ))}
                 </ScrollView>
@@ -193,8 +240,9 @@ const styles = StyleSheet.create({
         paddingVertical: 14,
     },
     tripsLogo: {
-        fontSize: 22,
-        fontWeight: '900',
+        fontSize: 32,
+        fontFamily: FONT_SERIF,
+        ...Platform.select({ ios: { fontStyle: 'italic', fontWeight: '600' }, android: {} }),
         color: '#0F172A',
         letterSpacing: -0.5,
     },
@@ -212,12 +260,14 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
     },
     sectionTitle: {
-        fontSize: 18,
-        fontWeight: '800',
+        fontSize: 22,
+        fontFamily: FONT_SERIF,
+        ...Platform.select({ ios: { fontStyle: 'italic', fontWeight: '600' }, android: {} }),
         color: '#0F172A',
         marginLeft: 20,
         marginTop: 18,
         marginBottom: 12,
+        textTransform: 'lowercase',
     },
     guidesScroll: {
         paddingHorizontal: 20,
@@ -225,15 +275,19 @@ const styles = StyleSheet.create({
     },
     guideCard: {
         width: SCREEN_WIDTH * 0.42,
-        height: 140,
+        height: 200,
         borderRadius: 18,
         overflow: 'hidden',
+    },
+    guideCardBg: {
+        flex: 1,
     },
     guideCardOverlay: {
         flex: 1,
         justifyContent: 'flex-end',
         padding: 14,
-        backgroundColor: 'rgba(0,0,0,0.15)',
+        backgroundColor: 'rgba(0,0,0,0.25)',
+        borderRadius: 18,
     },
     guideTitle: {
         fontSize: 15,

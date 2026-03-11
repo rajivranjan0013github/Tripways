@@ -12,6 +12,7 @@ import {
     ScrollView,
     Dimensions,
     Image,
+    Platform,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -24,6 +25,10 @@ import { MMKV } from 'react-native-mmkv';
 import Config from 'react-native-config';
 
 import { useUserProfile } from '../hooks/useUserProfile';
+import { queryClient } from '../services/queryClient';
+import { useTripStore } from '../store/tripStore';
+import { useUIStore } from '../store/uiStore';
+import { setAppGroupData } from '../services/ShareIntent';
 
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
@@ -153,11 +158,25 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
 
     const handleLogout = () => {
         try {
+            // 1. Clear local session storage
             storage.delete('user');
             storage.delete('isNewUser');
+
+            // 2. Clear React Query cache (Saved Places, Trips, Profile)
+            queryClient.clear();
+
+            // 3. Reset Zustand stores
+            useTripStore.getState().clearTrip();
+            useUIStore.getState().resetUI();
+
+            // 4. Clear App Group context for Share Extension
+            if (Platform.OS === 'ios') {
+                setAppGroupData('', '');
+            }
         } catch (e) {
-            console.warn('Failed to clear storage:', e);
+            console.warn('Failed to clear state on logout:', e);
         }
+
         onClose();
         if (navigation) {
             navigation.reset({

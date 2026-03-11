@@ -10,6 +10,10 @@ export const useTripStore = create((set, get) => ({
     tripData: null,
     setTripData: (data) => set({ tripData: data }),
 
+    // Whether the currently viewed trip is a template trip (not saved to user's trips)
+    isTemplateTripView: false,
+    setIsTemplateTripView: (val) => set({ isTemplateTripView: val }),
+
     // Loading states
     isTripLoading: false,
     setTripLoading: (val) => set({ isTripLoading: val }),
@@ -91,5 +95,5 @@ export const useTripStore = create((set, get) => ({
     /**
      * Clear the current trip (e.g. when closing the overview sheet).
      */
-    clearTrip: () => set({ tripData: null, isTripLoading: false, isSavingTrip: false }),
+    clearTrip: () => set({ tripData: null, isTripLoading: false, isSavingTrip: false, isTemplateTripView: false }),
 }));

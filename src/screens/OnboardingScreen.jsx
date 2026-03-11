@@ -490,7 +490,7 @@ const styles = StyleSheet.create({
     tagText: {
         fontSize: 11,
         fontFamily: FONT_DISPLAY_BOLD,
-        fontWeight: '700',
+        ...Platform.select({ ios: { fontWeight: '700' }, android: {} }),
         letterSpacing: 2.5,
         color: '#3378c7',
         textTransform: 'uppercase',
@@ -500,8 +500,7 @@ const styles = StyleSheet.create({
     headline: {
         fontSize: 40,
         fontFamily: FONT_SERIF,
-        fontWeight: '600',
-        fontStyle: 'italic',
+        ...Platform.select({ ios: { fontWeight: '600', fontStyle: 'italic' }, android: {} }),
         lineHeight: 46,
         color: '#0f172a',
         textAlign: 'center',
@@ -512,7 +511,7 @@ const styles = StyleSheet.create({
     body: {
         fontSize: 15,
         fontFamily: FONT_DISPLAY,
-        fontWeight: '400',
+        ...Platform.select({ ios: { fontWeight: '400' }, android: {} }),
         lineHeight: 23,
         color: '#475569',
         textAlign: 'center',
@@ -533,7 +532,7 @@ const styles = StyleSheet.create({
     skipText: {
         fontSize: 14,
         fontFamily: FONT_DISPLAY_SEMIBOLD,
-        fontWeight: '600',
+        ...Platform.select({ ios: { fontWeight: '600' }, android: {} }),
         color: '#64748b',
     },
 
@@ -595,7 +594,7 @@ const styles = StyleSheet.create({
     continueText: {
         fontSize: 18,
         fontFamily: FONT_DISPLAY_MEDIUM,
-        fontWeight: '500',
+        ...Platform.select({ ios: { fontWeight: '500' }, android: {} }),
         color: '#FFFFFF',
     },
     // ── Social flow card (on first slide, below text) ──
@@ -653,7 +652,7 @@ const styles = StyleSheet.create({
     flowLabel: {
         fontSize: 11,
         fontFamily: FONT_DISPLAY_MEDIUM,
-        fontWeight: '500',
+        ...Platform.select({ ios: { fontWeight: '500' }, android: {} }),
         color: '#64748B',
         letterSpacing: 0.5,
     },

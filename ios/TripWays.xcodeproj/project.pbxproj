@@ -3,7 +3,7 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 56;
+	objectVersion = 70;
 	objects = {
 
 /* Begin PBXBuildFile section */
@@ -14,6 +14,7 @@
 		4CDAC8DEAC284DA393EB2053 /* CormorantGaramond-LightItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 52F4E593845B4E22BEA87C88 /* CormorantGaramond-LightItalic.ttf */; };
 		5914BEB089484D7BA1C87276 /* CormorantGaramond-MediumItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 908FCD01B385403DB04AF7F8 /* CormorantGaramond-MediumItalic.ttf */; };
 		5D2D90C4D6CA4FD9A58A51A5 /* CormorantGaramond-BoldItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C59F0C731F91479883122BCF /* CormorantGaramond-BoldItalic.ttf */; };
+		6A84C5E41EB64314BC6DBF7E /* Colors.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2279D1904CAE495A80A16055 /* Colors.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		790070202F5634E500ADABE6 /* GoogleSignInModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 7900701D2F5634E500ADABE6 /* GoogleSignInModule.m */; };
 		790070212F5634E500ADABE6 /* GoogleSignInModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7900701E2F5634E500ADABE6 /* GoogleSignInModule.swift */; };
@@ -23,6 +24,7 @@
 		8263FE6963D545FE94848C2F /* CormorantGaramond-SemiBoldItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DD547633744E44F4B4ED72E2 /* CormorantGaramond-SemiBoldItalic.ttf */; };
 		A83281D3857965242B64F5B8 /* ShareIntentModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 1530E569BB92677295B8427D /* ShareIntentModule.m */; };
 		B25237EC7365ED8454042A90 /* libPods-ShareExtension.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 39BBEA7489FF6E33F05AFA2B /* libPods-ShareExtension.a */; };
+		BAD874E32433442B969F1648 /* BootSplash.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 367271AE605C4CA1979016A6 /* BootSplash.storyboard */; };
 		CD6284102E70407AB84FD5F8 /* CormorantGaramond-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = BC73D342A1AB4BCCB4626D1C /* CormorantGaramond-Italic.ttf */; };
 		DA6C563535BB4FE6942EBC9E /* CormorantGaramond-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1AFAFBB92CF34FF5AD55B877 /* CormorantGaramond-Medium.ttf */; };
 		FB856A04FBDC4E31AAA67C70 /* CormorantGaramond-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 4FD12C984D73457798B78A1E /* CormorantGaramond-SemiBold.ttf */; };
@@ -61,7 +63,9 @@
 		1530E569BB92677295B8427D /* ShareIntentModule.m */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.c.objc; name = ShareIntentModule.m; path = TripWays/ShareIntentModule.m; sourceTree = "<group>"; };
 		186EA75483BC0871CF5A5067 /* Pods-ShareExtension.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ShareExtension.release.xcconfig"; path = "Target Support Files/Pods-ShareExtension/Pods-ShareExtension.release.xcconfig"; sourceTree = "<group>"; };
 		1AFAFBB92CF34FF5AD55B877 /* CormorantGaramond-Medium.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "CormorantGaramond-Medium.ttf"; path = "../src/assets/fonts/CormorantGaramond-Medium.ttf"; sourceTree = "<group>"; };
+		2279D1904CAE495A80A16055 /* Colors.xcassets */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = folder.assetcatalog; name = Colors.xcassets; path = TripWays/Colors.xcassets; sourceTree = "<group>"; };
 		29A852816D7F0371762AE80D /* Pods-ShareExtension.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-ShareExtension.debug.xcconfig"; path = "Target Support Files/Pods-ShareExtension/Pods-ShareExtension.debug.xcconfig"; sourceTree = "<group>"; };
+		367271AE605C4CA1979016A6 /* BootSplash.storyboard */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = BootSplash.storyboard; path = TripWays/BootSplash.storyboard; sourceTree = "<group>"; };
 		39BBEA7489FF6E33F05AFA2B /* libPods-ShareExtension.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-ShareExtension.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3B4392A12AC88292D35C810B /* Pods-TripWays.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-TripWays.debug.xcconfig"; path = "Target Support Files/Pods-TripWays/Pods-TripWays.debug.xcconfig"; sourceTree = "<group>"; };
 		4FD12C984D73457798B78A1E /* CormorantGaramond-SemiBold.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "CormorantGaramond-SemiBold.ttf"; path = "../src/assets/fonts/CormorantGaramond-SemiBold.ttf"; sourceTree = "<group>"; };
@@ -87,7 +91,7 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		790070482F5EF6A900ADABE6 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */ = {
+		790070482F5EF6A900ADABE6 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Info.plist,
@@ -97,18 +101,7 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		790070282F5ECA7200ADABE6 /* ShareExtension */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				790070482F5EF6A900ADABE6 /* Exceptions for "ShareExtension" folder in "ShareExtension" target */,
-			);
-			explicitFileTypes = {
-			};
-			explicitFolders = (
-			);
-			path = ShareExtension;
-			sourceTree = "<group>";
-		};
+		790070282F5ECA7200ADABE6 /* ShareExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; exceptions = (790070482F5EF6A900ADABE6 /* PBXFileSystemSynchronizedBuildFileExceptionSet */, ); explicitFileTypes = {}; explicitFolders = (); path = ShareExtension; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -141,6 +134,8 @@
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
 				1530E569BB92677295B8427D /* ShareIntentModule.m */,
+				367271AE605C4CA1979016A6 /* BootSplash.storyboard */,
+				2279D1904CAE495A80A16055 /* Colors.xcassets */,
 			);
 			name = TripWays;
 			sourceTree = "<group>";
@@ -320,6 +315,8 @@
 				10137EACA26E4E35AD50F096 /* CormorantGaramond-Bold.ttf in Resources */,
 				8263FE6963D545FE94848C2F /* CormorantGaramond-SemiBoldItalic.ttf in Resources */,
 				DA6C563535BB4FE6942EBC9E /* CormorantGaramond-Medium.ttf in Resources */,
+				BAD874E32433442B969F1648 /* BootSplash.storyboard in Resources */,
+				6A84C5E41EB64314BC6DBF7E /* Colors.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -357,9 +354,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-TripWays/Pods-TripWays-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-TripWays/Pods-TripWays-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -418,9 +419,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-TripWays/Pods-TripWays-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-TripWays/Pods-TripWays-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -679,10 +684,7 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					" ",
-				);
+				OTHER_LDFLAGS = "$(inherited)  ";
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
@@ -751,10 +753,7 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					" ",
-				);
+				OTHER_LDFLAGS = "$(inherited)  ";
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				USE_HERMES = true;
