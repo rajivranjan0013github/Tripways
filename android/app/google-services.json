@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "600831714498",
+    "project_id": "travel-planner-488511",
+    "storage_bucket": "travel-planner-488511.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:600831714498:android:7ff8ef7c9f8b4976d4875b",
+        "android_client_info": {
+          "package_name": "com.thousandways.travel"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "600831714498-b4h3pgaf049kjrue5snp21qhh5hqmecr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC4lUvrb7jHfUqDtjmxTJTc7l0IGgzKXE8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "600831714498-b4h3pgaf049kjrue5snp21qhh5hqmecr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "600831714498-3e2apuej7ojgf568elvibrifo4qn05lu.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.thousandways.travel"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

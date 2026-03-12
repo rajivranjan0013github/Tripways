@@ -24,6 +24,16 @@ target 'TripWays' do
   # Google Sign-In
   pod 'GoogleSignIn', '~> 8.0'
 
+  # Firebase modular headers (required for Swift interop without breaking RN module maps)
+  pod 'FirebaseCore', :modular_headers => true
+  pod 'FirebaseCoreInternal', :modular_headers => true
+  pod 'FirebaseInstallations', :modular_headers => true
+  pod 'FirebaseMessaging', :modular_headers => true
+  pod 'FirebaseCoreExtension', :modular_headers => true
+  pod 'GoogleDataTransport', :modular_headers => true
+  pod 'GoogleUtilities', :modular_headers => true
+  pod 'nanopb', :modular_headers => true
+
   use_react_native!(
     :path => config[:reactNativePath],
     # An absolute path to your application root.
@@ -44,3 +54,4 @@ end
 target 'ShareExtension' do
   # No React Native modules needed here to avoid extension-safe errors
 end
+

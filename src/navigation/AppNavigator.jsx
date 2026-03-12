@@ -14,6 +14,7 @@ import OnboardingScreen from '../screens/OnboardingScreen';
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
 import DetailsScreen from '../screens/DetailsScreen';
+import NotificationPermissionScreen from '../screens/NotificationPermissionScreen';
 import { getSharedUrl, onShareIntent, detectPlatformFromUrl } from '../services/ShareIntent';
 
 const Stack = createNativeStackNavigator();
@@ -23,7 +24,9 @@ const storage = new MMKV();
 const getInitialRoute = () => {
     try {
         const user = storage.getString('user');
-        return user ? 'Home' : 'Onboarding';
+        if (!user) return 'Onboarding';
+        if (!storage.getBoolean('notifDecided')) return 'NotificationPermission';
+        return 'Home';
     } catch {
         return 'Onboarding';
     }
@@ -127,6 +130,14 @@ const AppNavigator = () => {
                     component={LoginScreen}
                     options={{
                         contentStyle: { backgroundColor: '#7DD3FC' },
+                    }}
+                />
+
+                <Stack.Screen
+                    name="NotificationPermission"
+                    component={NotificationPermissionScreen}
+                    options={{
+                        contentStyle: { backgroundColor: '#F0F9FF' },
                     }}
                 />
 

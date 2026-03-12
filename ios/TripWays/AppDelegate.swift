@@ -5,9 +5,12 @@ import ReactAppDependencyProvider
 import GoogleMaps
 import GoogleSignIn
 import RNBootSplash
+import FirebaseCore
+import FirebaseMessaging
+import UserNotifications
 
 @main
-class AppDelegate: UIResponder, UIApplicationDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationCenterDelegate, MessagingDelegate {
   var window: UIWindow?
 
   var reactNativeDelegate: ReactNativeDelegate?
@@ -17,6 +20,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
+    // Configure Firebase
+    FirebaseApp.configure()
+
+    // Set up notification delegates
+    UNUserNotificationCenter.current().delegate = self
+    Messaging.messaging().delegate = self
+
+    // Register for remote notifications
+    application.registerForRemoteNotifications()
+
     // Load Google Maps API key from .env file
     var effectiveApiKey = "AIzaSyCOFspyPIIgmBgptwpf7IKfCUDHSLyLBlo" // Guaranteed fallback
     if let envKey = Self.readEnvValue(forKey: "GOOGLE_MAPS_API_KEY"), !envKey.isEmpty {
@@ -55,6 +68,19 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     if GIDSignIn.sharedInstance.handle(url) { return true }
     // Forward to React Native Linking (handles standard scheme)
     return RCTLinkingManager.application(app, open: url, options: options)
+  }
+
+  // Forward APNS token to Firebase Messaging
+  func application(_ application: UIApplication,
+                   didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+    Messaging.messaging().apnsToken = deviceToken
+  }
+
+  // Handle foreground notification display
+  func userNotificationCenter(_ center: UNUserNotificationCenter,
+                              willPresent notification: UNNotification,
+                              withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+    completionHandler([.banner, .list, .sound])
   }
 
   /// Reads a value from the .env file in the project root
@@ -109,3 +135,4 @@ class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
 #endif
   }
 }
+
