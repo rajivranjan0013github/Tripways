@@ -160,6 +160,17 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                 }).catch(() => { });
             });
         },
+        // Open Discover Spots directly for a location (City or Country)
+        openWithLocation: (locationName) => {
+            setSelectedLocation({ name: locationName });
+            setNumDays(4);
+            setStep('discoverSpots');
+            bottomSheetInternalRef.current?.expand();
+            // Trigger discovery flow
+            setTimeout(() => {
+                fetchDiscoverPlacesWithArgs(locationName, ['popular'], 4);
+            }, 100);
+        },
     }));
 
     // Skeleton pulse animation
@@ -780,6 +791,8 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
         setIsLoadingPlaces(true);
         setDiscoveredPlaces([]);
         setSelectedSpots([]);
+        setIsFromSavedSpots(false);
+        setIsFromVideo(true);
         try {
             const backendUrl = Config.BACKEND_URL || 'http://localhost:3000';
             const response = await fetch(`${backendUrl}/api/discover-places`, {
@@ -996,6 +1009,16 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                             <Text style={{ fontSize: 16 }}>🌍</Text>
                                             <Text style={[styles.cityName, { fontWeight: '700', fontSize: 15, color: '#1E293B' }]}>{country}</Text>
                                         </View>
+                                        <TouchableOpacity
+                                            style={styles.addLocationBtn}
+                                            activeOpacity={0.7}
+                                            onPress={() => fetchDiscoverPlacesWithArgs(country, ['popular'], 4)}
+                                        >
+                                            <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                                                <Path d="M12 5v14M5 12h14" />
+                                            </Svg>
+                                            <Text style={styles.addLocationBtnText}>Add spots in {country}</Text>
+                                        </TouchableOpacity>
                                     </View>
                                     {Object.entries(cities).map(([city, spots]) => {
                                         const citySpotIds = spots.map(s => s.id);
@@ -1055,6 +1078,17 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                                         </TouchableOpacity>
                                                     );
                                                 })}
+                                                {/* Add More Button below spots list */}
+                                                <TouchableOpacity
+                                                    style={[styles.addLocationBtn, { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', paddingVertical: 8, paddingHorizontal: 16, marginTop: 12, marginBottom: 20, marginHorizontal: 24, justifyContent: 'center' }]}
+                                                    activeOpacity={0.7}
+                                                    onPress={() => fetchDiscoverPlacesWithArgs(city, ['popular'], 4)}
+                                                >
+                                                    <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                        <Path d="M12 5v14M5 12h14" />
+                                                    </Svg>
+                                                    <Text style={[styles.addLocationBtnText, { fontSize: 13, color: '#64748B' }]}>Add more spots in {city}</Text>
+                                                </TouchableOpacity>
                                             </View>
                                         );
                                     })}
@@ -1074,9 +1108,6 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                 </View>
                                 <Text style={styles.cityName}>{selectedLocation?.name || 'Unknown'}</Text>
                             </View>
-                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M6 9l6 6 6-6" />
-                            </Svg>
                         </View>
 
                         {/* Spots List */}
@@ -1118,6 +1149,18 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                 </TouchableOpacity>
                             );
                         })}
+
+                        {/* Add More Button below spots list (Single Location View) */}
+                        <TouchableOpacity
+                            style={[styles.addLocationBtn, { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', paddingVertical: 10, paddingHorizontal: 20, marginTop: 12, marginBottom: 40, justifyContent: 'center' }]}
+                            activeOpacity={0.7}
+                            onPress={() => fetchDiscoverPlacesWithArgs(selectedLocation?.name || 'Unknown', ['popular'], 4)}
+                        >
+                            <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M12 5v14M5 12h14" />
+                            </Svg>
+                            <Text style={[styles.addLocationBtnText, { fontSize: 14, color: '#64748B' }]}>Add more spots in {selectedLocation?.name || 'Unknown'}</Text>
+                        </TouchableOpacity>
                     </BottomSheetScrollView>
                 )}
 
@@ -1192,8 +1235,8 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                             pointerEvents="none"
                         />
                         <View style={[styles.addSpotsBar, { bottom: Platform.OS === 'android' ? Math.max(60, 10 + insets.bottom) : 40 }]} pointerEvents="box-none">
-                            {/* Save Spots button for video places */}
-                            {isFromVideo && !isFromSavedSpots && selectedSpots.length > 0 && !isPlanning && !isLoadingPlaces && (
+                            {/* Save Spots button for discovered places */}
+                            {!isFromSavedSpots && selectedSpots.length > 0 && !isPlanning && !isLoadingPlaces && (
                                 <TouchableOpacity
                                     style={[styles.addSpotsButton, { backgroundColor: '#10B981', marginBottom: 8 }]}
                                     onPress={async () => {
@@ -1212,13 +1255,21 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                                 userRatingCount: p.userRatingCount,
                                                 photoUrl: p.photoUrl,
                                                 coordinates: p.coordinates,
-                                                source: 'video',
+                                                source: 'discovery',
                                             }));
-                                            await fetch(`${BACKEND_URL}/api/spots`, {
+                                            const response = await fetch(`${BACKEND_URL}/api/spots`, {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({ userId, spots: spotsToSave }),
                                             });
+                                            const data = await response.json();
+                                            if (data.success) {
+                                                // Update UI: mark as saved and clear selection
+                                                setDiscoveredPlaces(prev => prev.map(p => 
+                                                    selectedSpots.includes(p.id) ? { ...p, _isSavedSpot: true } : p
+                                                ));
+                                                setSelectedSpots([]);
+                                            }
                                         } catch (e) { console.warn('Save spots failed:', e); }
                                         setIsSavingSpots(false);
                                     }}
@@ -1445,6 +1496,23 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: 'rgba(15, 23, 42, 0.4)',
         marginTop: 1,
+    },
+    // Add Location buttons in discovery
+    addLocationBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        backgroundColor: '#EFF6FF',
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#DBEAFE',
+    },
+    addLocationBtnText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#3B82F6',
     },
     // Selected Location Bar (in Preferences)
     selectedLocationBar: {
@@ -1701,7 +1769,7 @@ const styles = StyleSheet.create({
         paddingTop: 8,
     },
     discoverTitle: {
-        fontSize: 25,
+        fontSize: 22,
         fontWeight: '800',
         color: '#0F172A',
         letterSpacing: -0.5,
@@ -1746,7 +1814,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingVertical: 20,
+        paddingVertical: 10,
         borderBottomWidth: 1,
         borderBottomColor: '#F1F5F9',
     },
@@ -1769,14 +1837,14 @@ const styles = StyleSheet.create({
         borderColor: '#CBD5E1',
     },
     cityName: {
-        fontSize: 20,
+        fontSize: 16,
         fontWeight: '800',
         color: '#0F172A',
     },
     spotRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 14,
+        paddingVertical: 10,
         borderBottomWidth: 1,
         borderBottomColor: '#F8FAFC',
         gap: 12,
@@ -1797,16 +1865,16 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     spotName: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '700',
         color: '#0F172A',
         marginBottom: 2,
     },
     spotDesc: {
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: '500',
         color: '#94A3B8',
-        lineHeight: 18,
+        lineHeight: 16,
     },
     savedTag: {
         backgroundColor: '#ECFDF5',
@@ -1844,7 +1912,7 @@ const styles = StyleSheet.create({
     },
     addSpotsBar: {
         position: 'absolute',
-        bottom: 60,
+        bottom: 40,
         left: 22,
         right: 22,
     },

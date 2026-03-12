@@ -15,9 +15,11 @@ export const useSavedSpots = (userId) => {
                 const normalizedGrouped = {};
 
                 Object.entries(data.grouped).forEach(([country, cities]) => {
+                    if (!country || typeof cities !== 'object') return;
                     normalizedGrouped[country] = {};
 
                     Object.entries(cities || {}).forEach(([city, cityData]) => {
+                        if (!city || !cityData) return;
                         const normalizedSpots = (cityData?.spots || []).map((spot) => {
                             const resolvedPhotoUrl = spot?.photoUrl || spot?.image || null;
                             return {
@@ -30,6 +32,7 @@ export const useSavedSpots = (userId) => {
                         normalizedGrouped[country][city] = {
                             ...cityData,
                             spots: normalizedSpots,
+                            cityPhoto: cityData.cityPhoto || null,
                         };
                     });
                 });
@@ -37,9 +40,9 @@ export const useSavedSpots = (userId) => {
                 // Extract placeIds into a Set for quick lookups
                 const placeIds = new Set();
                 Object.values(normalizedGrouped).forEach(cities => {
-                    Object.values(cities).forEach(cityData => {
-                        (cityData.spots || []).forEach(spot => {
-                            if (spot.placeId) placeIds.add(spot.placeId);
+                    Object.values(cities || {}).forEach(cityData => {
+                        (cityData?.spots || []).forEach(spot => {
+                            if (spot?.placeId) placeIds.add(spot.placeId);
                         });
                     });
                 });
@@ -85,61 +88,11 @@ export const useSaveSpot = (userId) => {
             });
             return data;
         },
-        onMutate: async (newSpot) => {
-            // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
-            await queryClient.cancelQueries({ queryKey: ['spots', userId] });
-
-            // Snapshot the previous value
-            const previousData = queryClient.getQueryData(['spots', userId]);
-
-            // Optimistically update to the new value
-            if (previousData) {
-                const country = newSpot.country || 'Unknown';
-                const city = newSpot.city || 'Unknown';
-
-                // Deep clone grouped data
-                const newGrouped = JSON.parse(JSON.stringify(previousData.grouped || {}));
-                if (!newGrouped[country]) newGrouped[country] = {};
-                if (!newGrouped[country][city]) newGrouped[country][city] = { spots: [], cityPhoto: null };
-
-                // Add the new spot to the list
-                newGrouped[country][city].spots.push({
-                    ...newSpot,
-                    image: newSpot.photoUrl || newSpot.image || null,
-                    _id: `temp-${Date.now()}`, // Temporary ID
-                    userId,
-                    country,
-                    city,
-                });
-
-                // Update placeIds set
-                const newPlaceIds = new Set(previousData.placeIds);
-                if (newSpot.placeId) newPlaceIds.add(newSpot.placeId);
-
-                queryClient.setQueryData(['spots', userId], {
-                    ...previousData,
-                    grouped: newGrouped,
-                    totalSpots: (previousData.totalSpots || 0) + 1,
-                    placeIds: newPlaceIds,
-                });
-            }
-
-            return { previousData };
-        },
-        onError: (err, newSpot, context) => {
-            // Roll back to the previous value if mutation fails
-            if (context?.previousData) {
-                queryClient.setQueryData(['spots', userId], context.previousData);
-            }
-        },
         onSettled: () => {
-            // Delay refetch to avoid overwriting the frontend photo cache patch.
-            // The frontend fetches the photo (~2s) and patches the cache directly.
-            // The backend enriches + uploads to R2 (~10s) in the background.
-            // After 15s, refetch picks up the permanent R2 URL from the server.
-            setTimeout(() => {
-                queryClient.invalidateQueries({ queryKey: ['spots', userId] });
-            }, 15000);
+            // Immediate invalidation is more reliable than manual cache patching.
+            // Since manual save is now synchronous on the backend, this refetch
+            // will immediately bring in the 100% accurate enriched data.
+            queryClient.invalidateQueries({ queryKey: ['spots', userId] });
         },
     });
 };

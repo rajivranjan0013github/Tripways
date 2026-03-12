@@ -310,8 +310,8 @@ const SpotsBottomSheet = ({
         const spotCity = spot.city || spot.secondary?.split(', ')?.[0] || 'Unknown';
         const spotCountry = spot.country || spot.secondary?.split(', ')?.pop() || 'Unknown';
 
-        // Fire-and-forget: saveSpot triggers optimistic cache update via onMutate,
-        // so the UI updates instantly. Backend does enrichment + R2 in background.
+        // Synchronous save: backend fetches full details (city, country, capital, photo)
+        // before responding. useSaveSpot's onSuccess handles the cache update.
         saveSpot({
             placeId: spot.placeId,
             name: spot.name,
@@ -328,52 +328,7 @@ const SpotsBottomSheet = ({
         }).finally(() => {
             setSavingSpotId(null);
         });
-
-        // Non-blocking: fetch photo/details from Google and patch the cache
-        // so the image appears ~1-2s after save without any page refresh.
-        fetchSpotDetailFn(spot.placeId).then((detail) => {
-            if (!detail?.photoUrl) {
-                console.log('[SpotSave] No photo from Google for', spot.placeId);
-                return;
-            }
-            console.log('[SpotSave] Got photo, patching cache for', spot.placeId, detail.photoUrl?.substring(0, 60));
-            queryClient.setQueryData(['spots', userId], (prev) => {
-                if (!prev?.grouped) return prev;
-                const country = detail.country || spotCountry;
-                const city = detail.city || spotCity;
-                const newGrouped = JSON.parse(JSON.stringify(prev.grouped));
-
-                // Find the spot in the cache and update it with enriched data
-                for (const [c, cities] of Object.entries(newGrouped)) {
-                    for (const [ci, cityData] of Object.entries(cities)) {
-                        const idx = (cityData.spots || []).findIndex(s => s.placeId === spot.placeId);
-                        if (idx !== -1) {
-                            cityData.spots[idx] = {
-                                ...cityData.spots[idx],
-                                photoUrl: detail.photoUrl,
-                                image: detail.photoUrl,
-                                rating: cityData.spots[idx].rating ?? detail.rating ?? null,
-                                userRatingCount: cityData.spots[idx].userRatingCount ?? detail.userRatingCount ?? 0,
-                                coordinates: cityData.spots[idx].coordinates?.lat ? cityData.spots[idx].coordinates : detail.coordinates,
-                                address: cityData.spots[idx].address || detail.address || '',
-                            };
-                            // Update city photo if this is the best one
-                            if (!cityData.cityPhoto) {
-                                cityData.cityPhoto = detail.photoUrl;
-                            }
-                            console.log('[SpotSave] Cache patched successfully for', spot.placeId);
-                            return { ...prev, grouped: newGrouped };
-                        }
-                    }
-                }
-                console.log('[SpotSave] Spot not found in cache for patching', spot.placeId);
-                return prev;
-            });
-        }).catch((err) => {
-            console.warn('[SpotSave] Photo fetch failed:', err?.message || err);
-        });
     };
-
 
     return (
         <BottomSheet
