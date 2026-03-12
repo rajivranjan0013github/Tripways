@@ -6,7 +6,7 @@
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, Keyboard, ActivityIndicator } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, interpolate } from 'react-native-reanimated';
-import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
+import MapView, { PROVIDER_GOOGLE, Marker, Polyline, Geojson } from 'react-native-maps';
 import { BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -23,6 +23,8 @@ import TripsOverlay from '../components/TripsOverlay';
 import SpotsBottomSheet from '../components/SpotsBottomSheet';
 import { setAppGroupData } from '../services/ShareIntent';
 import MySpotIcon from '../assets/My-spot';
+import countriesGeoJson from '../assets/countries.geo.json';
+import { getCountryMapData, COUNTRY_COLORS as MAP_COUNTRY_COLORS } from '../utils/countryMapUtils';
 
 // Zustand stores
 import { useUIStore } from '../store/uiStore';
@@ -40,23 +42,33 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const DAY_COLORS = ['#6366F1', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
 
 // Custom map style — natural map, hide clutter labels, muted roads, smaller city names
-const customMapStyle = [
-    // Hide POI labels (restaurants, shops, etc.)
-    { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-    // Hide road name labels
-    { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-    // Mute road geometry — lighter, desaturated
-    { featureType: 'road', elementType: 'geometry', stylers: [{ saturation: -80 }, { lightness: 30 }] },
-    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ saturation: -70 }, { lightness: 25 }] },
-    // Hide transit labels
-    { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-    // City / locality labels — lighter color, thin stroke
-    { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#aaaaaa' }] },
-    { featureType: 'administrative.locality', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
-    // Neighborhood labels — very light
-    { featureType: 'administrative.neighborhood', elementType: 'labels.text.fill', stylers: [{ color: '#cccccc' }] },
-    { featureType: 'administrative.neighborhood', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
-];
+const getCustomMapStyle = (zoomLevel) => {
+    const isZoomedOut = zoomLevel < 4.5;
+    
+    return [
+        // Hide POI labels (restaurants, shops, etc.)
+        { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+        // Hide road name labels
+        { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+        // Mute road geometry — lighter, desaturated
+        { featureType: 'road', elementType: 'geometry', stylers: [{ saturation: -80 }, { lightness: 30 }] },
+        { featureType: 'road.highway', elementType: 'geometry', stylers: [{ saturation: -70 }, { lightness: 25 }] },
+        // Hide transit labels
+        { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+        // Dynamic Country labels: hide when zoomed out so they don't clash with My Spots badges
+        { 
+            featureType: 'administrative.country', 
+            elementType: 'labels', 
+            stylers: [{ visibility: isZoomedOut ? 'off' : 'on' }] 
+        },
+        // City / locality labels — lighter color, thin stroke
+        { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#aaaaaa' }] },
+        { featureType: 'administrative.locality', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
+        // Neighborhood labels — very light
+        { featureType: 'administrative.neighborhood', elementType: 'labels.text.fill', stylers: [{ color: '#cccccc' }] },
+        { featureType: 'administrative.neighborhood', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
+    ];
+};
 
 /**
  * Decode an encoded polyline string into an array of {latitude, longitude} coordinates.
@@ -113,6 +125,7 @@ const HomeScreen = () => {
     // --- Local-only UI state (not shared across components) ---
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [sheetIndex, setSheetIndex] = useState(1);
+    const [mapZoomLevel, setMapZoomLevel] = useState(3); // Track zoom for dynamic map style
 
     // Load user data from MMKV
     const storedUser = useMemo(() => {
@@ -140,6 +153,36 @@ const HomeScreen = () => {
     const { data: spotsData } = useSavedSpots(userId);
     const savedSpots = spotsData?.grouped || {};
     const totalSpotsCount = spotsData?.totalSpots || 0;
+
+    // Memoize country map data for the "My Spots" colored country polygons
+    const countryMapData = useMemo(() => {
+        if (!savedSpots || Object.keys(savedSpots).length === 0) return [];
+        return getCountryMapData(savedSpots, countriesGeoJson);
+    }, [savedSpots]);
+
+    // Flatten all spots with their assigned country colors for individual marker display
+    const individualSpotsData = useMemo(() => {
+        if (!savedSpots || Object.keys(savedSpots).length === 0) return [];
+        const spots = [];
+        // Important: we must use the same index-to-color mapping as countryMapData for consistency
+        Object.entries(savedSpots).forEach(([countryName, cities], countryIndex) => {
+            const countryColor = MAP_COUNTRY_COLORS[countryIndex % MAP_COUNTRY_COLORS.length];
+            Object.values(cities || {}).forEach(cityData => {
+                (cityData.spots || []).forEach(spot => {
+                    if (spot.coordinates?.lat && spot.coordinates?.lng) {
+                        spots.push({
+                            ...spot,
+                            color: countryColor,
+                        });
+                    }
+                });
+            });
+        });
+        return spots;
+    }, [savedSpots]);
+
+    // Whether to show the country map overlay (My Spots default view, no trip open)
+    const showCountryMap = activeTab === 'home' && !tripData && countryMapData.length > 0;
 
     // Sync userId & backendUrl to App Group UserDefaults for the Share Extension
     useEffect(() => {
@@ -388,14 +431,61 @@ const HomeScreen = () => {
                 provider={PROVIDER_GOOGLE}
                 style={styles.map}
                 userInterfaceStyle="light"
-                customMapStyle={customMapStyle}
+                customMapStyle={getCustomMapStyle(mapZoomLevel)}
                 initialRegion={{
                     latitude: -20.0, // Centered perfectly on the Caribbean/Central America to match screenshot framing above the bottom sheet
                     longitude: -80.0,
                     latitudeDelta: 75.0,
                     longitudeDelta: 75.0,
                 }}
+                onRegionChangeComplete={(region) => {
+                    // Approximate zoom level calculation from longitudeDelta
+                    // Zoom 0 = entire world, zoom 20 = highly zoomed in
+                    setMapZoomLevel(Math.round(Math.log2(360 / region.longitudeDelta)));
+                }}
             >
+
+                {/* ── My Spots: colored country polygons + spot count badges ── */}
+                {showCountryMap && countryMapData.map((item) => (
+                    <Geojson
+                        key={`country-${item.countryName}`}
+                        geojson={{ type: 'FeatureCollection', features: [item.feature] }}
+                        fillColor={item.color + '80'}
+                        strokeColor={item.color}
+                        strokeWidth={2.5}
+                    />
+                ))}
+                {showCountryMap && mapZoomLevel < 5.5 && countryMapData.map((item) => (
+                    <Marker
+                        key={`badge-${item.countryName}`}
+                        coordinate={item.centroid}
+                        anchor={{ x: 0.5, y: 0.5 }}
+                        tracksViewChanges={false}
+                    >
+                        <View style={styles.countryBadge}>
+                            <View style={[styles.countryBadgeCircle, { backgroundColor: item.color }]}>
+                                <Text style={styles.countryBadgeCount}>{item.spotCount}</Text>
+                            </View>
+                            <Text style={styles.countryBadgeLabel} numberOfLines={1}>{item.countryName}</Text>
+                        </View>
+                    </Marker>
+                ))}
+
+                {/* Individual Spot Dots: Only when zoomed in */}
+                {showCountryMap && mapZoomLevel >= 5.5 && individualSpotsData.map((spot) => (
+                    <Marker
+                        key={`spot-${spot._id || spot.id || spot.placeId}`}
+                        coordinate={{
+                            latitude: spot.coordinates.lat,
+                            longitude: spot.coordinates.lng,
+                        }}
+                        anchor={{ x: 0.5, y: 0.5 }}
+                        onPress={() => handleSpotPress(spot)}
+                        tracksViewChanges={false}
+                    >
+                        <View style={[styles.spotMarkerDot, { backgroundColor: spot.color }]} />
+                    </Marker>
+                ))}
 
                 {/* Itinerary place markers — styled circles with numbers like frontendweb */}
                 {tripData?.itinerary?.flatMap((day, dayIndex) => {
@@ -995,6 +1085,58 @@ const styles = StyleSheet.create({
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.15,
         shadowRadius: 8,
+    },
+    // Country map badge styles
+    countryBadge: {
+        alignItems: 'center',
+        width: 90,
+    },
+    countryBadgeCircle: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        borderWidth: 2.5,
+        borderColor: '#FFFFFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 4,
+        elevation: 5,
+    },
+    countryBadgeCount: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '800',
+    },
+    countryBadgeLabel: {
+        marginTop: 3,
+        fontSize: 10,
+        fontWeight: '700',
+        color: '#1E293B',
+        textAlign: 'center',
+        backgroundColor: 'rgba(255,255,255,0.85)',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+        overflow: 'hidden',
+        textShadowColor: 'rgba(255,255,255,0.9)',
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 3,
+    },
+    // Individual spot markers (zoomed in)
+    spotMarkerDot: {
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+        borderWidth: 2,
+        borderColor: '#FFFFFF',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
+        elevation: 4,
     },
 });
 
