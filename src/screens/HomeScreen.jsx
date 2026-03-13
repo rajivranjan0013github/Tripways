@@ -5,8 +5,8 @@
 
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, Keyboard, ActivityIndicator } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, interpolate } from 'react-native-reanimated';
-import MapView, { PROVIDER_GOOGLE, Marker, Polyline, Geojson } from 'react-native-maps';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, interpolate, useDerivedValue } from 'react-native-reanimated';
+import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import { BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -25,6 +25,7 @@ import { setAppGroupData } from '../services/ShareIntent';
 import MySpotIcon from '../assets/My-spot';
 import countriesGeoJson from '../assets/countries.geo.json';
 import { getCountryMapData, COUNTRY_COLORS as MAP_COUNTRY_COLORS } from '../utils/countryMapUtils';
+import { useMapClusters } from '../hooks/useMapClusters';
 
 // Zustand stores
 import { useUIStore } from '../store/uiStore';
@@ -41,34 +42,20 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Day colors matching the frontendweb reference
 const DAY_COLORS = ['#6366F1', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
 
-// Custom map style — natural map, hide clutter labels, muted roads, smaller city names
-const getCustomMapStyle = (zoomLevel) => {
-    const isZoomedOut = zoomLevel < 4.5;
-    
-    return [
-        // Hide POI labels (restaurants, shops, etc.)
-        { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-        // Hide road name labels
-        { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-        // Mute road geometry — lighter, desaturated
-        { featureType: 'road', elementType: 'geometry', stylers: [{ saturation: -80 }, { lightness: 30 }] },
-        { featureType: 'road.highway', elementType: 'geometry', stylers: [{ saturation: -70 }, { lightness: 25 }] },
-        // Hide transit labels
-        { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-        // Dynamic Country labels: hide when zoomed out so they don't clash with My Spots badges
-        { 
-            featureType: 'administrative.country', 
-            elementType: 'labels', 
-            stylers: [{ visibility: isZoomedOut ? 'off' : 'on' }] 
-        },
-        // City / locality labels — lighter color, thin stroke
-        { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#aaaaaa' }] },
-        { featureType: 'administrative.locality', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
-        // Neighborhood labels — very light
-        { featureType: 'administrative.neighborhood', elementType: 'labels.text.fill', stylers: [{ color: '#cccccc' }] },
-        { featureType: 'administrative.neighborhood', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
-    ];
-};
+// Single static map style — never changes, so Google Maps never re-applies tiles.
+// Country labels are always off because flag emoji markers serve as country labels.
+const CUSTOM_MAP_STYLE = [
+    { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    { featureType: 'road', elementType: 'geometry', stylers: [{ saturation: -80 }, { lightness: 30 }] },
+    { featureType: 'road.highway', elementType: 'geometry', stylers: [{ saturation: -70 }, { lightness: 25 }] },
+    { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    { featureType: 'administrative.country', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#aaaaaa' }] },
+    { featureType: 'administrative.locality', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
+    { featureType: 'administrative.neighborhood', elementType: 'labels.text.fill', stylers: [{ color: '#cccccc' }] },
+    { featureType: 'administrative.neighborhood', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
+];
 
 /**
  * Decode an encoded polyline string into an array of {latitude, longitude} coordinates.
@@ -125,7 +112,21 @@ const HomeScreen = () => {
     // --- Local-only UI state (not shared across components) ---
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [sheetIndex, setSheetIndex] = useState(1);
-    const [mapZoomLevel, setMapZoomLevel] = useState(3); // Track zoom for dynamic map style
+
+    // Zoom level + map region stored in refs to avoid re-renders on every pan/zoom.
+    const mapZoomRef = useRef(3);
+    const mapRegionRef = useRef(null);
+    // Only threshold-crossing booleans trigger re-renders when they actually change.
+    const [showFlags, setShowFlags] = useState(true);           // true = show flag markers, false = show clusters
+    const [showItineraryLabels, setShowItineraryLabels] = useState(false); // >= 10
+    // clusterRegion is a state that ONLY updates when clusters are visible, to trigger cluster recalculation.
+    const [clusterRegion, setClusterRegion] = useState(null);
+
+    // Animated crossfade for flag ↔ cluster transition
+    const flagOpacity = useSharedValue(1);
+    const clusterOpacity = useSharedValue(0);
+    const flagAnimatedStyle = useAnimatedStyle(() => ({ opacity: flagOpacity.value }));
+    const clusterAnimatedStyle = useAnimatedStyle(() => ({ opacity: clusterOpacity.value }));
 
     // Load user data from MMKV
     const storedUser = useMemo(() => {
@@ -181,7 +182,77 @@ const HomeScreen = () => {
         return spots;
     }, [savedSpots]);
 
+    // Supercluster-powered clustering for individual spots
+    const { clusters, getClusterExpansionZoom } = useMapClusters(
+        showCountryMap && !showFlags ? individualSpotsData : [],
+        clusterRegion,
+        mapZoomRef.current
+    );
+
+    // --- Logic for Marker Label Collision Avoidance ---
+    // Calculates which labels should be shown based on zoom and relative screen distance
+    const visibleLabelIds = useMemo(() => {
+        if (!tripData?.itinerary) return new Set();
+
+        const allPlaces = tripData.itinerary.flatMap((day, dayIndex) =>
+            (day.places || [])
+                .filter(place => place.coordinates?.lat && place.coordinates?.lng)
+                .map((place, placeIndex) => ({
+                    id: `marker-${day.day}-${placeIndex}`,
+                    lat: place.coordinates.lat,
+                    lng: place.coordinates.lng,
+                    name: place.name,
+                }))
+        );
+
+        // 1. Zoom Threshold: Show labels only when sufficiently zoomed in
+        if (!showItineraryLabels) return new Set();
+
+        const zoom = mapZoomRef.current;
+        const visibleIds = new Set();
+        const screenPositions = [];
+
+        // 2. Pre-calculate mapping from pixels to degrees for current zoom and world scale
+        // In Web Mercator, 1 pixel at zoom level z roughly equals:
+        const degLngPerPixel = 360 / (256 * Math.pow(2, zoom));
+        
+        // Horizontal spacing for labels (roughly 100px - 140px depending on name length)
+        // Vertical spacing (roughly 40px)
+        const HORIZONTAL_GAP_PX = 120;
+        const VERTICAL_GAP_PX = 32;
+
+        allPlaces.forEach((place) => {
+            // Mercator correction: 1 pixel covers fewer degrees of latitude at higher lats
+            const latRad = (place.lat * Math.PI) / 180;
+            const degLatPerPixel = degLngPerPixel * Math.cos(latRad);
+
+            const horizontalThreshold = HORIZONTAL_GAP_PX * degLngPerPixel;
+            const verticalThreshold = VERTICAL_GAP_PX * degLatPerPixel;
+
+            let isTooClose = false;
+            for (const other of screenPositions) {
+                const dLat = Math.abs(place.lat - other.lat);
+                const dLng = Math.abs(place.lng - other.lng);
+
+                // Check if current place collides with an already visible label's "box"
+                if (dLat < verticalThreshold && dLng < horizontalThreshold) {
+                    isTooClose = true;
+                    break;
+                }
+            }
+
+            if (!isTooClose) {
+                visibleIds.add(place.id);
+                screenPositions.push({ lat: place.lat, lng: place.lng });
+            }
+        });
+
+        return visibleIds;
+    }, [tripData, showItineraryLabels]);
+
+
     // Whether to show the country map overlay (My Spots default view, no trip open)
+
     const showCountryMap = activeTab === 'home' && !tripData && countryMapData.length > 0;
 
     // Sync userId & backendUrl to App Group UserDefaults for the Share Extension
@@ -259,6 +330,17 @@ const HomeScreen = () => {
         };
     });
 
+    // Dynamic map padding to keep markers/UI above bottom sheets
+    const dynamicMapPadding = useMemo(() => {
+        if (isTripOverviewOpen) {
+            return { top: 50, right: 10, bottom: SCREEN_HEIGHT * 0.6, left: 10 };
+        }
+        // When my spots sheet is open, we can use its index to estimate padding
+        // sheetIndex 0: 12%, 1: 50%, 2: 90%
+        const snapPadding = [0.12, 0.5, 0.9][sheetIndex] * SCREEN_HEIGHT;
+        return { top: 50, right: 10, bottom: snapPadding, left: 10 };
+    }, [isTripOverviewOpen, sheetIndex]);
+
 
 
     // Hide floating tab bar when keyboard is open
@@ -317,16 +399,32 @@ const HomeScreen = () => {
                     coords.push({ latitude: place.coordinates.lat, longitude: place.coordinates.lng });
                 }
             });
+            // Include route polyline coordinates in the fit range
+            if (day.route?.polyline) {
+                try {
+                    const polyPoints = decodePolyline(day.route.polyline);
+                    coords.push(...polyPoints);
+                } catch (e) {
+                    console.warn('Polyline decode failed for fitToCoordinates', e);
+                }
+            }
         });
+
         if (coords.length > 0) {
+            // Match timeout with bottom sheet animation duration for smoothness
             setTimeout(() => {
                 mapRef.current?.fitToCoordinates(coords, {
-                    edgePadding: { top: 100, right: 60, bottom: 400, left: 60 },
+                    edgePadding: { 
+                        top: 80, 
+                        right: 40, 
+                        bottom: 40, // consistent small buffer
+                        left: 40 
+                    },
                     animated: true,
                 });
-            }, 600);
+            }, 400);
         }
-    }, [tripData]);
+    }, [tripData, dynamicMapPadding.bottom]); // Re-fit when trip loads OR when sheet snaps to new height
 
     useEffect(() => {
         if (showCreateOptions) {
@@ -431,61 +529,107 @@ const HomeScreen = () => {
                 provider={PROVIDER_GOOGLE}
                 style={styles.map}
                 userInterfaceStyle="light"
-                customMapStyle={getCustomMapStyle(mapZoomLevel)}
+                mapPadding={dynamicMapPadding}
+                customMapStyle={CUSTOM_MAP_STYLE}
                 initialRegion={{
-                    latitude: -20.0, // Centered perfectly on the Caribbean/Central America to match screenshot framing above the bottom sheet
+                    latitude: -20.0,
                     longitude: -80.0,
                     latitudeDelta: 75.0,
                     longitudeDelta: 75.0,
                 }}
                 onRegionChangeComplete={(region) => {
-                    // Approximate zoom level calculation from longitudeDelta
-                    // Zoom 0 = entire world, zoom 20 = highly zoomed in
-                    setMapZoomLevel(Math.round(Math.log2(360 / region.longitudeDelta)));
+                    const zoom = Math.round(Math.log2(360 / region.longitudeDelta));
+                    mapZoomRef.current = zoom;
+                    mapRegionRef.current = region;
+
+                    // Hysteresis for flag↔cluster swap with crossfade animation
+                    if (showFlags && zoom >= 6) {
+                        flagOpacity.value = withTiming(0, { duration: 300 });
+                        clusterOpacity.value = withTiming(1, { duration: 300 });
+                        setShowFlags(false);
+                        setClusterRegion(region); // Trigger cluster calculation
+                    } else if (!showFlags && zoom < 5) {
+                        flagOpacity.value = withTiming(1, { duration: 300 });
+                        clusterOpacity.value = withTiming(0, { duration: 300 });
+                        setShowFlags(true);
+                    } else if (!showFlags) {
+                        // Only update cluster region when clusters are visible
+                        setClusterRegion(region);
+                    }
+
+                    const labelsVisible = zoom >= 10;
+                    if (labelsVisible !== showItineraryLabels) setShowItineraryLabels(labelsVisible);
                 }}
             >
 
-                {/* ── My Spots: colored country polygons + spot count badges ── */}
+                {/* ── My Spots: Country flag markers (zoomed out, with crossfade) ── */}
                 {showCountryMap && countryMapData.map((item) => (
-                    <Geojson
-                        key={`country-${item.countryName}`}
-                        geojson={{ type: 'FeatureCollection', features: [item.feature] }}
-                        fillColor={item.color + '80'}
-                        strokeColor={item.color}
-                        strokeWidth={2.5}
-                    />
-                ))}
-                {showCountryMap && mapZoomLevel < 5.5 && countryMapData.map((item) => (
                     <Marker
-                        key={`badge-${item.countryName}`}
+                        key={`flag-${item.countryName}`}
                         coordinate={item.centroid}
                         anchor={{ x: 0.5, y: 0.5 }}
                         tracksViewChanges={false}
                     >
-                        <View style={styles.countryBadge}>
-                            <View style={[styles.countryBadgeCircle, { backgroundColor: item.color }]}>
-                                <Text style={styles.countryBadgeCount}>{item.spotCount}</Text>
+                        <Animated.View style={[styles.flagMarkerContainer, flagAnimatedStyle]}>
+                            <View style={styles.flagMarkerInner}>
+                                <Text style={styles.flagMarkerEmoji}>{item.flagEmoji}</Text>
+                                <View style={styles.flagMarkerBadge}>
+                                    <Text style={styles.flagMarkerBadgeText}>{item.spotCount}</Text>
+                                </View>
                             </View>
-                            <Text style={styles.countryBadgeLabel} numberOfLines={1}>{item.countryName}</Text>
-                        </View>
+                        </Animated.View>
                     </Marker>
                 ))}
 
-                {/* Individual Spot Dots: Only when zoomed in */}
-                {showCountryMap && mapZoomLevel >= 5.5 && individualSpotsData.map((spot) => (
-                    <Marker
-                        key={`spot-${spot._id || spot.id || spot.placeId}`}
-                        coordinate={{
-                            latitude: spot.coordinates.lat,
-                            longitude: spot.coordinates.lng,
-                        }}
-                        anchor={{ x: 0.5, y: 0.5 }}
-                        onPress={() => handleSpotPress(spot)}
-                        tracksViewChanges={false}
-                    >
-                        <View style={[styles.spotMarkerDot, { backgroundColor: spot.color }]} />
-                    </Marker>
-                ))}
+                {/* ── My Spots: Clustered individual spots (zoomed in, with crossfade) ── */}
+                {showCountryMap && !showFlags && clusters.map((feature) => {
+                    const [lng, lat] = feature.geometry.coordinates;
+                    const { cluster, cluster_id, point_count } = feature.properties;
+
+                    if (cluster) {
+                        // Cluster marker — circle with count
+                        const size = 36 + Math.min(point_count, 50) * 0.4;
+                        return (
+                            <Marker
+                                key={`cluster-${cluster_id}`}
+                                coordinate={{ latitude: lat, longitude: lng }}
+                                anchor={{ x: 0.5, y: 0.5 }}
+                                tracksViewChanges={false}
+                                onPress={() => {
+                                    const zoom = getClusterExpansionZoom(cluster_id);
+                                    mapRef.current?.animateToRegion({
+                                        latitude: lat,
+                                        longitude: lng,
+                                        latitudeDelta: 360 / Math.pow(2, zoom + 1),
+                                        longitudeDelta: 360 / Math.pow(2, zoom + 1),
+                                    }, 400);
+                                }}
+                            >
+                                <Animated.View style={[
+                                    styles.clusterMarker,
+                                    { width: size, height: size, borderRadius: size / 2 },
+                                    clusterAnimatedStyle
+                                ]}>
+                                    <Text style={styles.clusterMarkerText}>{point_count}</Text>
+                                </Animated.View>
+                            </Marker>
+                        );
+                    }
+
+                    // Individual spot marker
+                    const spot = feature.properties.spot;
+                    return (
+                        <Marker
+                            key={`spot-${feature.properties.spotId}`}
+                            coordinate={{ latitude: lat, longitude: lng }}
+                            anchor={{ x: 0.5, y: 0.5 }}
+                            onPress={() => handleSpotPress(spot)}
+                            tracksViewChanges={false}
+                        >
+                            <Animated.View style={[styles.spotMarkerDot, { backgroundColor: spot.color }, clusterAnimatedStyle]} />
+                        </Marker>
+                    );
+                })}
 
                 {/* Itinerary place markers — styled circles with numbers like frontendweb */}
                 {tripData?.itinerary?.flatMap((day, dayIndex) => {
@@ -525,28 +669,33 @@ const HomeScreen = () => {
                                             fontWeight: '700',
                                         }}>{placeIndex + 1}</Text>
                                     </View>
-                                    <Text
-                                        numberOfLines={1}
-                                        style={{
-                                            marginTop: 3,
-                                            fontSize: 10,
-                                            fontWeight: '700',
-                                            color: '#1E293B',
-                                            textAlign: 'center',
-                                            backgroundColor: 'rgba(255,255,255,0.85)',
-                                            paddingHorizontal: 5,
-                                            paddingVertical: 1,
-                                            borderRadius: 4,
-                                            overflow: 'hidden',
-                                            textShadowColor: 'rgba(255,255,255,0.9)',
-                                            textShadowOffset: { width: 0, height: 0 },
-                                            textShadowRadius: 3,
-                                        }}
-                                    >{place.name}</Text>
+                                    {visibleLabelIds.has(`marker-${day.day}-${placeIndex}`) && (
+                                        <Text
+                                            numberOfLines={1}
+                                            style={{
+                                                marginTop: 3,
+                                                fontSize: 10,
+                                                fontWeight: '700',
+                                                color: '#1E293B',
+                                                textAlign: 'center',
+                                                backgroundColor: 'rgba(255,255,255,0.85)',
+                                                paddingHorizontal: 5,
+                                                paddingVertical: 1,
+                                                borderRadius: 4,
+                                                overflow: 'hidden',
+                                                textShadowColor: 'rgba(255,255,255,0.9)',
+                                                textShadowOffset: { width: 0, height: 0 },
+                                                textShadowRadius: 3,
+                                            }}
+                                        >{place.name}</Text>
+                                    )}
                                 </View>
                             </Marker>
                         ));
                 })}
+
+
+
 
                 {/* Route outline polylines — shadow behind the coloured route */}
                 {tripData?.itinerary?.map((day, dayIndex) => {
@@ -1086,44 +1235,79 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.15,
         shadowRadius: 8,
     },
-    // Country map badge styles
-    countryBadge: {
+    // Country flag marker styles
+    flagMarkerContainer: {
         alignItems: 'center',
-        width: 90,
+        width: 100,
     },
-    countryBadgeCircle: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        borderWidth: 2.5,
+    flagMarkerInner: {
+        position: 'relative',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    flagMarkerEmoji: {
+        fontSize: 36,
+        textShadowColor: 'rgba(0,0,0,0.3)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 4,
+    },
+    flagMarkerBadge: {
+        position: 'absolute',
+        top: -4,
+        right: -8,
+        minWidth: 22,
+        height: 22,
+        borderRadius: 11,
+        backgroundColor: '#EF4444',
+        borderWidth: 2,
         borderColor: '#FFFFFF',
         alignItems: 'center',
         justifyContent: 'center',
+        paddingHorizontal: 4,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
         elevation: 5,
     },
-    countryBadgeCount: {
+    flagMarkerBadgeText: {
         color: '#FFFFFF',
-        fontSize: 13,
+        fontSize: 11,
         fontWeight: '800',
     },
-    countryBadgeLabel: {
-        marginTop: 3,
+    flagMarkerLabel: {
+        marginTop: 2,
         fontSize: 10,
         fontWeight: '700',
         color: '#1E293B',
         textAlign: 'center',
-        backgroundColor: 'rgba(255,255,255,0.85)',
+        backgroundColor: 'rgba(255,255,255,0.9)',
         paddingHorizontal: 6,
         paddingVertical: 2,
-        borderRadius: 4,
+        borderRadius: 6,
         overflow: 'hidden',
-        textShadowColor: 'rgba(255,255,255,0.9)',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+    },
+    // Cluster marker styles
+    clusterMarker: {
+        backgroundColor: 'rgba(59, 130, 246, 0.85)',
+        borderWidth: 3,
+        borderColor: 'rgba(255,255,255,0.9)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#3B82F6',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.4,
+        shadowRadius: 6,
+        elevation: 6,
+    },
+    clusterMarkerText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '800',
     },
     // Individual spot markers (zoomed in)
     spotMarkerDot: {

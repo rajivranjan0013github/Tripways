@@ -157,8 +157,32 @@ export function computeCentroid(geometry) {
 }
 
 /**
+ * Some countries have invalid or missing ISO_A2 codes in our GeoJSON (-99).
+ * This map provides a fallback to ensure flag emoji markers show correctly.
+ */
+const ISO_FALLBACKS = {
+    'France': 'FR',
+    'Norway': 'NO',
+    'Northern Cyprus': 'TR', // Using Turkey flag for Northern Cyprus
+    'Somaliland': 'SO', // Using Somalia flag for Somaliland
+    'Kosovo': 'XK', // XK is the user-assigned ISO code for Kosovo
+};
+
+/**
+ * Convert an ISO 3166-1 alpha-2 country code (e.g. "IN") to a flag emoji (e.g. "🇮🇳").
+ * Works by mapping each letter to a Regional Indicator Symbol.
+ */
+export function isoCodeToFlagEmoji(isoA2) {
+    if (!isoA2 || isoA2 === '-99' || isoA2.length !== 2) return '🏳️';
+    const code = isoA2.toUpperCase();
+    return String.fromCodePoint(
+        ...[...code].map(c => 0x1F1E6 + c.charCodeAt(0) - 65)
+    );
+}
+
+/**
  * Given the savedSpots grouped object (country → cities) and the full GeoJSON,
- * produce an array of { feature, color, centroid, spotCount, countryName }
+ * produce an array of { color, centroid, spotCount, countryName, flagEmoji }
  * for rendering on the map.
  */
 export function getCountryMapData(savedSpotsGrouped, geojsonData) {
@@ -184,24 +208,24 @@ export function getCountryMapData(savedSpotsGrouped, geojsonData) {
 
         const color = COUNTRY_COLORS[i % COUNTRY_COLORS.length];
         const centroid = computeCentroid(feature.geometry);
+        let isoA2 = feature.properties?.ISO_A2 || '';
+        
+        // Use fallback if the GeoJSON has -99 or missing code
+        if (!isoA2 || isoA2 === '-99') {
+            const adminName = feature.properties?.ADMIN;
+            if (ISO_FALLBACKS[adminName]) {
+                isoA2 = ISO_FALLBACKS[adminName];
+            }
+        }
+
+        const flagEmoji = isoCodeToFlagEmoji(isoA2);
 
         result.push({
-            feature: {
-                ...feature,
-                // Inject styling properties that <Geojson> can read
-                properties: {
-                    ...feature.properties,
-                    fill: color,
-                    'fill-opacity': 0.50,
-                    stroke: color,
-                    'stroke-width': 2.5,
-                    'stroke-opacity': 0.9,
-                },
-            },
             color,
             centroid,
             spotCount,
             countryName,
+            flagEmoji,
         });
     });
 

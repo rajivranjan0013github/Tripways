@@ -103,7 +103,8 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             setIsLoadingPlaces(false);
             setIsFromVideo(true);
             setIsFromSavedSpots(false);
-            setStep('discoverSpots');
+            setDaysSelected(false); // Make them confirm settings later
+            setStep('discoverSpots'); 
             bottomSheetInternalRef.current?.expand();
         },
         // Open Discover Spots with saved spots from a country, pre-selecting a specific city
@@ -138,7 +139,8 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             setIsLoadingPlaces(false);
             setIsFromVideo(true);
             setIsFromSavedSpots(true);
-            setStep('discoverSpots');
+            setDaysSelected(false); // Make them confirm settings later
+            setStep('discoverSpots'); 
             bottomSheetInternalRef.current?.expand();
 
             // Fetch photos for spots missing them (background, non-blocking)
@@ -160,10 +162,10 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                 }).catch(() => { });
             });
         },
-        // Open Discover Spots directly for a location (City or Country)
         openWithLocation: (locationName) => {
             setSelectedLocation({ name: locationName });
             setNumDays(4);
+            setDaysSelected(false);
             setStep('discoverSpots');
             bottomSheetInternalRef.current?.expand();
             // Trigger discovery flow
@@ -509,7 +511,6 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                     </TouchableOpacity>
                 </Animated.View>
 
-                {/* Continue Button */}
                 <TouchableOpacity
                     style={[styles.blackContinueButton, { marginTop: 24 }]}
                     onPress={() => {
@@ -526,14 +527,22 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                             );
                             return;
                         }
-                        setStep('discoverSpots');
-                        fetchDiscoverPlaces();
+                        
+                        // If we already have selected spots, plan the trip immediately.
+                        // This handles Video, Saved Spots, and manual Selection flow.
+                        if (selectedSpots.length > 0) {
+                            handlePlanTrip();
+                        } else {
+                            // First time discovery
+                            setStep('discoverSpots');
+                            fetchDiscoverPlaces();
+                        }
                     }}
                 >
                     <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                         <Path d="M5 12h14M12 5l7 7-7 7" />
                     </Svg>
-                    <Text style={styles.blackContinueText}>Continue</Text>
+                    <Text style={styles.blackContinueText}>{ selectedSpots.length > 0 ? 'Plan Trip' : 'Continue' }</Text>
                 </TouchableOpacity>
             </View>
         </Animated.View>
@@ -753,8 +762,11 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     const fetchDiscoverPlaces = async () => {
         if (!selectedLocation) return;
         setIsLoadingPlaces(true);
-        setDiscoveredPlaces([]);
-        setSelectedSpots([]);
+        
+        // Preserve any existing pre-selected spots if starting from video/saved
+        const existingSpots = (isFromVideo || isFromSavedSpots) ? discoveredPlaces : [];
+        const existingIds = new Set(existingSpots.map(s => s.id));
+
         try {
             const backendUrl = Config.BACKEND_URL || 'http://localhost:3000';
             const interests = selectedPrefs.length > 0
@@ -771,12 +783,18 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             });
             const data = await response.json();
             if (data.success && data.places) {
-                // Merge: saved spots first, then API-discovered places (deduped)
+                // Merge logic:
+                // 1. Matched saved spots in viewport (if searching from scratch)
+                // 2. Existing pre-selected spots (from video/my spots)
+                // 3. New API suggested places (excluding duplicates)
+                
                 const savedIds = new Set(matchedSavedSpots.map(s => s.placeId || s.id));
-                const apiPlaces = data.places.filter(p => !savedIds.has(p.id));
-                const merged = [...matchedSavedSpots, ...apiPlaces];
+                const apiPlaces = data.places.filter(p => !savedIds.has(p.id) && !existingIds.has(p.id));
+                
+                const merged = [...matchedSavedSpots, ...existingSpots, ...apiPlaces];
                 setDiscoveredPlaces(merged);
-                // Auto-select all places
+                
+                // Pre-select all (including the existing ones + new ones)
                 setSelectedSpots(merged.map(p => p.id));
             }
         } catch (error) {
@@ -1287,7 +1305,13 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                             )}
                             <TouchableOpacity
                                 style={[styles.addSpotsButton, (isPlanning || isLoadingPlaces) && { opacity: 0.7 }]}
-                                onPress={handlePlanTrip}
+                                onPress={() => {
+                                    if (isFromVideo || isFromSavedSpots || matchedSavedSpots.length > 0) {
+                                        setStep('preferences');
+                                    } else {
+                                        handlePlanTrip();
+                                    }
+                                }}
                                 disabled={isPlanning || isLoadingPlaces || selectedSpots.length === 0}
                             >
                                 {isPlanning ? (
