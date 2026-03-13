@@ -140,6 +140,8 @@ PODS:
     - SocketRocket
     - Yoga
   - PromisesObjC (2.4.0)
+  - PurchasesHybridCommon (17.46.1):
+    - RevenueCat (= 5.61.0)
   - RCT-Folly (2024.11.18.00):
     - boost
     - DoubleConversion
@@ -2527,6 +2529,7 @@ PODS:
     - React-perflogger (= 0.80.1)
     - React-utils (= 0.80.1)
     - SocketRocket
+  - RevenueCat (5.61.0)
   - RNBootSplash (6.3.12):
     - boost
     - DoubleConversion
@@ -2647,6 +2650,9 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - RNPurchases (9.12.0):
+    - PurchasesHybridCommon (= 17.46.1)
+    - React-Core
   - RNReanimated (3.18.0):
     - boost
     - DoubleConversion
@@ -3013,6 +3019,7 @@ DEPENDENCIES:
   - "RNFBApp (from `../node_modules/@react-native-firebase/app`)"
   - "RNFBMessaging (from `../node_modules/@react-native-firebase/messaging`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
+  - RNPurchases (from `../node_modules/react-native-purchases`)
   - RNReanimated (from `../node_modules/react-native-reanimated`)
   - RNScreens (from `../node_modules/react-native-screens`)
   - RNSVG (from `../node_modules/react-native-svg`)
@@ -3038,6 +3045,8 @@ SPEC REPOS:
     - GTMSessionFetcher
     - nanopb
     - PromisesObjC
+    - PurchasesHybridCommon
+    - RevenueCat
     - SocketRocket
 
 EXTERNAL SOURCES:
@@ -3206,6 +3215,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/@react-native-firebase/messaging"
   RNGestureHandler:
     :path: "../node_modules/react-native-gesture-handler"
+  RNPurchases:
+    :path: "../node_modules/react-native-purchases"
   RNReanimated:
     :path: "../node_modules/react-native-reanimated"
   RNScreens:
@@ -3242,6 +3253,7 @@ SPEC CHECKSUMS:
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   NitroModules: 3cb08df3664bbfb6259b106fd130aac7fa6eac6d
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
+  PurchasesHybridCommon: afaf46e9650f9399984196a6966c6d697d6122a2
   RCT-Folly: 846fda9475e61ec7bcbf8a3fe81edfcaeb090669
   RCTDeprecation: efa5010912100e944a7ac9a93a157e1def1988fe
   RCTRequired: bbc4cf999ddc4a4b076e076c74dd1d39d0254630
@@ -3311,10 +3323,12 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: afd905e84ee36e1678016ae04d7370c75ed539be
   ReactCodegen: f8d5fb047c4cd9d2caade972cad9edac22521362
   ReactCommon: 17fd88849a174bf9ce45461912291aca711410fc
+  RevenueCat: 9acbd29a62000b57d59efa16166290c4a119847b
   RNBootSplash: ce1a6f2d0a8cfe999af30c62151ab84562c30284
   RNFBApp: 262a63cf10f0f2e5436bd68360892e3557439d8d
   RNFBMessaging: 0a3227cd1dcaa7f380335f7fafe50d2b8f0d7cd8
   RNGestureHandler: 4089d198e5474209e2b77dfb503578e704dee4e6
+  RNPurchases: 1f7952aadbf745361711070e06286b9496628692
   RNReanimated: bc1ddb7a5352648bcf0d592256069833bf935a46
   RNScreens: ab490a252dd536fca261c72ab7e5538e656dcb2b
   RNSVG: 4103d88dc42f0fe33f4ec8b279c7620f36ae6634

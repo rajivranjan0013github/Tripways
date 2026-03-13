@@ -44,7 +44,7 @@ const DAY_COLORS = ['#6366F1', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4
 // Custom map style — natural map, hide clutter labels, muted roads, smaller city names
 const getCustomMapStyle = (zoomLevel) => {
     const isZoomedOut = zoomLevel < 4.5;
-    
+
     return [
         // Hide POI labels (restaurants, shops, etc.)
         { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
@@ -56,10 +56,10 @@ const getCustomMapStyle = (zoomLevel) => {
         // Hide transit labels
         { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
         // Dynamic Country labels: hide when zoomed out so they don't clash with My Spots badges
-        { 
-            featureType: 'administrative.country', 
-            elementType: 'labels', 
-            stylers: [{ visibility: isZoomedOut ? 'off' : 'on' }] 
+        {
+            featureType: 'administrative.country',
+            elementType: 'labels',
+            stylers: [{ visibility: isZoomedOut ? 'off' : 'on' }]
         },
         // City / locality labels — lighter color, thin stroke
         { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#aaaaaa' }] },
@@ -594,7 +594,7 @@ const HomeScreen = () => {
             </MapView>
 
 
-           
+
             {/* Spots Bottom Sheet */}
             <SpotsBottomSheet
                 bottomSheetRef={bottomSheetRef}

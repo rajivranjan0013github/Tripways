@@ -22,6 +22,8 @@ import {
     getMessaging,
 } from '@react-native-firebase/messaging';
 import { getApp } from '@react-native-firebase/app';
+import Purchases, { LOG_LEVEL } from 'react-native-purchases';
+import { Platform } from 'react-native';
 
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
@@ -88,6 +90,55 @@ export const handleFCMTokenUpdate = async () => {
 };
 
 function App() {
+    // Configure RevenueCat on startup
+    useEffect(() => {
+        const initPurchases = async () => {
+            try {
+                Purchases.setLogLevel(LOG_LEVEL.VERBOSE);
+                if (Platform.OS === 'ios') {
+                    Purchases.configure({ apiKey: Config.RC_IOS_KEY });
+                } else if (Platform.OS === 'android') {
+                    Purchases.configure({ apiKey: Config.RC_ANDROID_KEY });
+                }
+            } catch (e) {
+                console.warn("Failed to configure Purchases:", e);
+            }
+        };
+        initPurchases();
+    }, []);
+
+    // RevenueCat Identity Management
+    useEffect(() => {
+        const identifyPurchasesUser = async () => {
+            try {
+                const userStr = storage.getString('user');
+                if (userStr) {
+                    const parsed = JSON.parse(userStr);
+                    const uid = parsed?.email || parsed?.id || parsed?._id;
+                    if (uid) {
+                        await Purchases.logIn(String(uid));
+                    }
+                } else {
+                    await Purchases.logOut();
+                }
+            } catch (e) {
+                console.warn("Failed to log in to RevenueCat:", e);
+            }
+        };
+
+        identifyPurchasesUser();
+
+        // Listen for login/logout changes in MMKV
+        const listener = storage.addOnValueChangedListener((key) => {
+            if (key === 'user') {
+                identifyPurchasesUser();
+            }
+        });
+        return () => {
+            listener?.remove();
+        };
+    }, []);
+
     // FCM Token management - sync on startup
     useEffect(() => {
         const userStr = storage.getString('user');

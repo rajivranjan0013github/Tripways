@@ -379,30 +379,35 @@ const SpotsBottomSheet = ({
                         />
                     </View>
                     <View style={styles.searchButtonWrap}>
-                        <Animated.View style={[styles.searchButtonLayer, avatarAnimatedStyle]}>
-                            <TouchableOpacity style={styles.sheetSearchAvatar} onPress={() => setShowProfile(true)}>
-                                <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                                    <Circle cx="12" cy="7" r="4" />
-                                </Svg>
-                            </TouchableOpacity>
-                        </Animated.View>
-                        <Animated.View style={[styles.searchButtonLayer, closeAnimatedStyle]}>
-                            <TouchableOpacity
-                                style={styles.sheetSearchClose}
-                                onPress={() => {
+                        <TouchableOpacity
+                            style={styles.sheetSearchAvatar}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                                // If sheet is mostly up, act as close button
+                                if (sheetAnimatedPosition.value < thresholdY - fadeRange / 2) {
                                     setSearchText('');
                                     setSocialMode(null);
                                     searchInputRef.current?.blur();
                                     Keyboard.dismiss();
                                     bottomSheetRef.current?.snapToIndex(1);
-                                }}
-                            >
+                                } else {
+                                    // Act as avatar
+                                    setShowProfile(true);
+                                }
+                            }}
+                        >
+                            <Animated.View style={[StyleSheet.absoluteFill, avatarAnimatedStyle, { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">
+                                <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                                    <Circle cx="12" cy="7" r="4" />
+                                </Svg>
+                            </Animated.View>
+                            <Animated.View style={[StyleSheet.absoluteFill, closeAnimatedStyle, { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">
                                 <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                     <Path d="M18 6 6 18M6 6l12 12" />
                                 </Svg>
-                            </TouchableOpacity>
-                        </Animated.View>
+                            </Animated.View>
+                        </TouchableOpacity>
                     </View>
                 </View>
 

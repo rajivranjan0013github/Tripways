@@ -29,6 +29,7 @@ import { queryClient } from '../services/queryClient';
 import { useTripStore } from '../store/tripStore';
 import { useUIStore } from '../store/uiStore';
 import { setAppGroupData } from '../services/ShareIntent';
+import PremiumOverlay from './PremiumOverlay';
 
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
@@ -63,6 +64,14 @@ const MENU_ITEMS = [
         subtitle: 'FAQs, contact us',
         color: '#8B5CF6',
         bg: '#F5F3FF',
+    },
+    {
+        icon: 'crown',
+        label: 'TripWays Premium',
+        subtitle: 'Manage subscription',
+        color: '#F59E0B',
+        bg: '#FEF3C7',
+        action: 'OPEN_PREMIUM'
     },
 ];
 
@@ -103,6 +112,12 @@ const renderIcon = (icon, color) => {
                     <Path d="M12 17h.01" />
                 </Svg>
             );
+        case 'crown':
+            return (
+                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <Path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a.53.53 0 0 0 .4.29l5.16.756a.53.53 0 0 1 .294.904l-3.733 3.638a.53.53 0 0 0-.152.469l.882 5.14a.53.53 0 0 1-.77.56l-4.614-2.426a.53.53 0 0 0-.494 0L6.14 18.73a.53.53 0 0 1-.77-.56l.882-5.14a.53.53 0 0 0-.152-.469L2.367 8.924a.53.53 0 0 1 .294-.904l5.16-.756a.53.53 0 0 0 .4-.29z" />
+                </Svg>
+            );
         default:
             return null;
     }
@@ -112,6 +127,7 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
     const insets = useSafeAreaInsets();
     const [showContent, setShowContent] = React.useState(false);
     const [userData, setUserData] = React.useState(null);
+    const [premiumVisible, setPremiumVisible] = React.useState(false);
     const opacity = useSharedValue(0);
     const translateY = useSharedValue(30);
 
@@ -261,6 +277,11 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
                             key={index}
                             style={styles.menuItem}
                             activeOpacity={0.7}
+                            onPress={() => {
+                                if (item.action === 'OPEN_PREMIUM') {
+                                    setPremiumVisible(true);
+                                }
+                            }}
                         >
                             <View style={[styles.menuIcon, { backgroundColor: item.bg }]}>
                                 {renderIcon(item.icon, item.color)}
@@ -310,6 +331,8 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
                 {/* App version */}
                 <Text style={styles.versionText}>TripWays v1.0.0</Text>
             </ScrollView>
+
+            <PremiumOverlay visible={premiumVisible} onClose={() => setPremiumVisible(false)} />
         </Animated.View>
     );
 };
