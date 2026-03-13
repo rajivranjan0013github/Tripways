@@ -743,7 +743,7 @@ const HomeScreen = () => {
             </MapView>
 
 
-           
+
             {/* Spots Bottom Sheet */}
             <SpotsBottomSheet
                 bottomSheetRef={bottomSheetRef}
