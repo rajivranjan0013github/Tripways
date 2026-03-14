@@ -26,6 +26,7 @@ import {
 import { getApp } from '@react-native-firebase/app';
 import messaging from '@react-native-firebase/messaging';
 import Config from 'react-native-config';
+import { useUpdateUserProfile } from '../hooks/useUserProfile';
 
 const { width, height } = Dimensions.get('window');
 const storage = new MMKV();
@@ -57,6 +58,7 @@ const FONT_SERIF = Platform.select({
 
 export default function NotificationPermissionScreen() {
     const navigation = useNavigation();
+    const { mutateAsync: updateUserProfile } = useUpdateUserProfile();
 
     // Animation Values
     const fadeAnim = useRef(new RNAnimated.Value(0)).current;
@@ -148,11 +150,8 @@ export default function NotificationPermissionScreen() {
                         user.fcmToken = token;
                         storage.set('user', JSON.stringify(user));
 
-                        fetch(`${BACKEND_URL}/api/users/${userId}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ fcmToken: token, notificationsEnabled: true }),
-                        }).catch(e => console.warn('Failed to update FCM token on server', e));
+                        updateUserProfile({ userId, data: { fcmToken: token, notificationsEnabled: true } })
+                            .catch(e => console.warn('Failed to update FCM token on server', e));
                     }
                 }
             } catch (e) {

@@ -31,7 +31,7 @@ import {
     getMessaging,
 } from '@react-native-firebase/messaging';
 import { getApp } from '@react-native-firebase/app';
-
+import { useUpdateUserProfile } from '../hooks/useUserProfile';
 const storage = new MMKV();
 const { width, height } = Dimensions.get('window');
 
@@ -243,6 +243,8 @@ const AppleIcon = () => (
 const LoginScreen = ({ navigation }) => {
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const [isAppleLoading, setIsAppleLoading] = useState(false);
+    
+    const { mutateAsync: updateUserProfile } = useUpdateUserProfile();
 
     const handlePostLogin = async (data) => {
         if (data?.success && data?.user) {
@@ -279,11 +281,8 @@ const LoginScreen = ({ navigation }) => {
                     }
                     // Update server with FCM token (best-effort)
                     if (userId) {
-                        fetch(`${BACKEND_URL}/api/users/${userId}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ fcmToken: token }),
-                        }).catch(e => console.warn('Failed to update server FCM token', e));
+                        updateUserProfile({ userId, data: { fcmToken: token } })
+                            .catch(e => console.warn('Failed to update server FCM token', e));
                     }
                 }
             } catch (e) {

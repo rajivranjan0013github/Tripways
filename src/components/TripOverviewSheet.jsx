@@ -63,7 +63,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
     const [mode, setMode] = useState('overview'); // 'overview' or 'itinerary'
     const [selectedDay, setSelectedDay] = useState(1);
     const [expandedDays, setExpandedDays] = useState({});
-    const snapPoints = useMemo(() => ['60%'], []);
+    const snapPoints = useMemo(() => [165, '60%'], []);
     const scrollViewRef = useRef(null);
     const dayLayoutRefs = useRef({});
     const [isSavingTemplate, setIsSavingTemplate] = useState(false);
@@ -631,10 +631,6 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
         if (isLoading || itineraryDays.length === 0) {
             return (
                 <View>
-                    <View style={styles.generatingBadge}>
-                        <ActivityIndicator size="small" color="#6366F1" />
-                        <Text style={styles.generatingText}>Generating adventure...</Text>
-                    </View>
                     {renderSkeletonItems()}
                 </View>
             );
@@ -711,9 +707,8 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                 index={-1}
                 snapPoints={snapPoints}
                 enableDynamicSizing={false}
-                enablePanDownToClose={!isEditMode}
+                enablePanDownToClose={false}
                 enableContentPanningGesture={!isEditMode}
-                backdropComponent={renderBackdrop}
                 backgroundStyle={styles.sheetBackground}
                 handleIndicatorStyle={styles.handleIndicator}
                 containerStyle={{ zIndex: 100 }}

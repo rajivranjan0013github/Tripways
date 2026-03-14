@@ -29,6 +29,9 @@ import { queryClient } from '../services/queryClient';
 import { useTripStore } from '../store/tripStore';
 import { useUIStore } from '../store/uiStore';
 import { setAppGroupData } from '../services/ShareIntent';
+import { useSavedTrips } from '../hooks/useTrips';
+import { useSavedSpots } from '../hooks/useSpots';
+import { useUserStore } from '../store/userStore';
 import PremiumOverlay from './PremiumOverlay';
 
 const storage = new MMKV();
@@ -39,8 +42,8 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const MENU_ITEMS = [
     {
         icon: 'bookmark',
-        label: 'Saved Places',
-        subtitle: '12 places saved',
+        label: 'Saved Spots',
+        subtitle: '12 spots saved',
         color: '#3B82F6',
         bg: '#EFF6FF',
     },
@@ -64,14 +67,6 @@ const MENU_ITEMS = [
         subtitle: 'FAQs, contact us',
         color: '#8B5CF6',
         bg: '#F5F3FF',
-    },
-    {
-        icon: 'crown',
-        label: 'TripWays Premium',
-        subtitle: 'Manage subscription',
-        color: '#F59E0B',
-        bg: '#FEF3C7',
-        action: 'OPEN_PREMIUM'
     },
 ];
 
@@ -114,8 +109,8 @@ const renderIcon = (icon, color) => {
             );
         case 'crown':
             return (
-                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <Path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a.53.53 0 0 0 .4.29l5.16.756a.53.53 0 0 1 .294.904l-3.733 3.638a.53.53 0 0 0-.152.469l.882 5.14a.53.53 0 0 1-.77.56l-4.614-2.426a.53.53 0 0 0-.494 0L6.14 18.73a.53.53 0 0 1-.77-.56l.882-5.14a.53.53 0 0 0-.152-.469L2.367 8.924a.53.53 0 0 1 .294-.904l5.16-.756a.53.53 0 0 0 .4-.29z" />
+                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <Path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14" />
                 </Svg>
             );
         default:
@@ -128,6 +123,7 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
     const [showContent, setShowContent] = React.useState(false);
     const [userData, setUserData] = React.useState(null);
     const [premiumVisible, setPremiumVisible] = React.useState(false);
+    const isPremium = useUserStore(state => state.isPremium);
     const opacity = useSharedValue(0);
     const translateY = useSharedValue(30);
 
@@ -148,7 +144,13 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
     // Fetch user profile from backend via TanStack Query
     const userId = userData?.id || userData?._id;
     const { data: userProfileData } = useUserProfile(userId);
-    const tripCount = userProfileData?.tripCount || 0;
+    
+    // Fetch actual counts for spots and trips
+    const { data: spotsData } = useSavedSpots(userId);
+    const { data: tripsData } = useSavedTrips(userId);
+
+    const spotsCount = spotsData?.totalSpots || 0;
+    const tripsCount = tripsData?.length || 0;
 
     React.useEffect(() => {
         if (visible) {
@@ -262,39 +264,72 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
                     <Text style={styles.profileEmail}>{userEmail}</Text>
                 </View>
 
-                {/* Stats Row */}
-                <View style={styles.statsRow}>
-                    <View style={styles.statItem}>
-                        <Text style={styles.statNumber}>{tripCount}</Text>
-                        <Text style={styles.statLabel}>Trips</Text>
+                {/* Premium Card Entry */}
+                <TouchableOpacity 
+                    activeOpacity={0.9} 
+                    style={styles.premiumCardContainer}
+                    onPress={() => setPremiumVisible(true)}
+                >
+                    <View style={[
+                        styles.premiumCard, 
+                        isPremium ? styles.premiumCardActive : styles.premiumCardUpgrade
+                    ]}>
+                        <View style={styles.premiumCardContent}>
+                            <View style={styles.premiumIconBadge}>
+                                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="m2 4 3 12h14l3-12-6 7-4-7-4 7-6-7zm3 16h14" />
+                                </Svg>
+                            </View>
+                            <View style={styles.premiumTextContainer}>
+                                <Text style={styles.premiumTitle}>
+                                    {isPremium ? 'TripWays Premium Active' : 'Upgrade to Premium'}
+                                </Text>
+                                <Text style={styles.premiumSubtitle}>
+                                    {isPremium ? 'Enjoy all exclusive features' : 'Unlock unlimited trips & smart features'}
+                                </Text>
+                            </View>
+                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="m9 18 6-6-6-6" />
+                            </Svg>
+                        </View>
                     </View>
-                </View>
+                </TouchableOpacity>
 
                 {/* Menu Items */}
                 <View style={styles.menuSection}>
-                    {MENU_ITEMS.map((item, index) => (
-                        <TouchableOpacity
-                            key={index}
-                            style={styles.menuItem}
-                            activeOpacity={0.7}
-                            onPress={() => {
-                                if (item.action === 'OPEN_PREMIUM') {
-                                    setPremiumVisible(true);
-                                }
-                            }}
-                        >
-                            <View style={[styles.menuIcon, { backgroundColor: item.bg }]}>
-                                {renderIcon(item.icon, item.color)}
-                            </View>
-                            <View style={styles.menuContent}>
-                                <Text style={styles.menuLabel}>{item.label}</Text>
-                                <Text style={styles.menuSubtitle}>{item.subtitle}</Text>
-                            </View>
-                            <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="m9 18 6-6-6-6" />
-                            </Svg>
-                        </TouchableOpacity>
-                    ))}
+                    {MENU_ITEMS.map((item, index) => {
+                        // Dynamically update subtitles for Spots and Trips
+                        let displaySubtitle = item.subtitle;
+                        if (item.label === 'Saved Spots') {
+                            displaySubtitle = `${spotsCount} spots saved`;
+                        } else if (item.label === 'My Trips') {
+                            displaySubtitle = `${tripsCount} trips planned`;
+                        }
+
+                        return (
+                            <TouchableOpacity
+                                key={index}
+                                style={styles.menuItem}
+                                activeOpacity={0.7}
+                                onPress={() => {
+                                    if (item.action === 'OPEN_PREMIUM') {
+                                        setPremiumVisible(true);
+                                    }
+                                }}
+                            >
+                                <View style={[styles.menuIcon, { backgroundColor: item.bg }]}>
+                                    {renderIcon(item.icon, item.color)}
+                                </View>
+                                <View style={styles.menuContent}>
+                                    <Text style={styles.menuLabel}>{item.label}</Text>
+                                    <Text style={styles.menuSubtitle}>{displaySubtitle}</Text>
+                                </View>
+                                <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="m9 18 6-6-6-6" />
+                                </Svg>
+                            </TouchableOpacity>
+                        );
+                    })}
                 </View>
 
                 {/* Logout Button */}
@@ -401,53 +436,60 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         marginBottom: 14,
     },
-    editProfileBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 5,
-        backgroundColor: '#EFF6FF',
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 14,
-    },
     editProfileText: {
         fontSize: 13,
         fontWeight: '600',
         color: '#3B82F6',
     },
 
-    // Stats
-    statsRow: {
+    // Premium Card
+    premiumCardContainer: {
+        marginHorizontal: 20,
+        marginTop: 4,
+        borderRadius: 20,
+        overflow: 'hidden',
+        elevation: 8,
+        shadowColor: '#F59E0B',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 10,
+    },
+    premiumCard: {
+        paddingVertical: 18,
+        paddingHorizontal: 20,
+    },
+    premiumCardUpgrade: {
+        backgroundColor: '#00C3F9',
+    },
+    premiumCardActive: {
+        backgroundColor: '#0F172A',
+    },
+    premiumCardContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        marginHorizontal: 20,
-        backgroundColor: '#FFFFFF',
-        borderRadius: 18,
-        padding: 18,
-        marginTop: 14,
-        borderWidth: 1,
-        borderColor: '#F1F5F9',
     },
-    statItem: {
-        flex: 1,
+    premiumIconBadge: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
         alignItems: 'center',
+        justifyContent: 'center',
     },
-    statNumber: {
-        fontSize: 24,
+    premiumTextContainer: {
+        flex: 1,
+        marginLeft: 14,
+    },
+    premiumTitle: {
+        fontSize: 16,
         fontWeight: '800',
-        color: '#0F172A',
+        color: '#FFFFFF',
+        marginBottom: 2,
     },
-    statLabel: {
+    premiumSubtitle: {
         fontSize: 12,
         fontWeight: '600',
-        color: '#94A3B8',
-        marginTop: 2,
-    },
-    statDivider: {
-        width: 1,
-        height: 32,
-        backgroundColor: '#F1F5F9',
+        color: 'rgba(255, 255, 255, 0.8)',
     },
 
     // Menu

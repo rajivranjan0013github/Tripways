@@ -20,7 +20,7 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path, Polyline, Circle } from 'react-native-svg';
 import Purchases from 'react-native-purchases';
-import { useUserProfile } from '../hooks/useUserProfile';
+import { useUserStore } from '../store/userStore';
 import { MMKV } from 'react-native-mmkv';
 import LinearGradient from 'react-native-linear-gradient';
 
@@ -37,13 +37,9 @@ const PremiumOverlay = ({ visible, onClose }) => {
     const opacity = useSharedValue(0);
     const translateY = useSharedValue(SCREEN_HEIGHT);
 
-    // Fetch User Profile to get their current premium status
-    const userStr = storage.getString('user');
-    const userData = userStr ? JSON.parse(userStr) : null;
-    const userId = userData?.id || userData?._id;
-
-    const { data: userProfileData, refetch: refetchProfile } = useUserProfile(userId);
-    const isPremium = userProfileData?.isPremium || false;
+    // Get premium status natively from RevenueCat store
+    const isPremium = useUserStore(state => state.isPremium);
+    const setCustomerInfo = useUserStore(state => state.setCustomerInfo);
 
     useEffect(() => {
         if (visible) {
@@ -89,11 +85,10 @@ const PremiumOverlay = ({ visible, onClose }) => {
 
         try {
             setLoading(true);
-            await Purchases.purchasePackage(selectedPackage);
+            const { customerInfo } = await Purchases.purchasePackage(selectedPackage);
 
-            setTimeout(() => {
-                refetchProfile();
-            }, 1500);
+            // Natively grant premium so the UI unlocks without relying on hooks
+            setCustomerInfo(customerInfo);
 
             Alert.alert("Success", "Welcome to TripWays Premium!");
             onClose();
@@ -113,7 +108,7 @@ const PremiumOverlay = ({ visible, onClose }) => {
 
             if (Object.keys(customerInfo.entitlements.active).length > 0) {
                 Alert.alert("Success", "Purchases restored successfully!");
-                setTimeout(() => refetchProfile(), 1000);
+                setCustomerInfo(customerInfo);
                 onClose();
             } else {
                 Alert.alert("No active subscriptons", "We couldn't find any active subscriptions for your account.");

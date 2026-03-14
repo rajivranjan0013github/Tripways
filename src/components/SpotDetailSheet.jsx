@@ -1,4 +1,4 @@
-import React, { forwardRef, useMemo } from 'react';
+import React, { forwardRef, useMemo, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
 import BottomSheet, { BottomSheetScrollView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -21,12 +21,20 @@ const CATEGORY_CONFIG = {
 const SpotDetailSheet = forwardRef(({ spot, onClose }, ref) => {
     const snapPoints = useMemo(() => ['60%'], []);
 
+    useEffect(() => {
+        if (spot) {
+            ref.current?.expand();
+        } else {
+            ref.current?.close();
+        }
+    }, [spot, ref]);
+
     const renderBackdrop = (props) => (
         <BottomSheetBackdrop
             {...props}
-            // disappearsOnIndex={-1}
+            disappearsOnIndex={-1}
             appearsOnIndex={0}
-        // opacity={0.5}
+            opacity={0.5}
         />
     );
 

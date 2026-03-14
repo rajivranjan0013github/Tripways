@@ -19,7 +19,6 @@ import CreateTripSheet from '../components/CreateTripSheet';
 import TripOverviewSheet from '../components/TripOverviewSheet';
 import SpotDetailSheet from '../components/SpotDetailSheet';
 import ProfileOverlay from '../components/ProfileOverlay';
-import TripsOverlay from '../components/TripsOverlay';
 import SpotsBottomSheet from '../components/SpotsBottomSheet';
 import { setAppGroupData } from '../services/ShareIntent';
 import MySpotIcon from '../assets/My-spot';
@@ -90,7 +89,7 @@ const HomeScreen = () => {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation();
     const sharedUrlProcessed = useRef(false);
-    const tabBarHeight = 52 + insets.bottom + (Platform.OS === 'android' ? 120 : 40); // Increased buffer to fully hide on both platforms
+    const tabBarHeight = 50 + insets.bottom; // Google Maps style height (compact focus)
     const bottomSheetRef = useRef(null);
 
     const createTripSheetRef = useRef(null); // Ref for Create Trip BottomSheet
@@ -252,8 +251,7 @@ const HomeScreen = () => {
 
 
     // Whether to show the country map overlay (My Spots default view, no trip open)
-
-    const showCountryMap = activeTab === 'home' && !tripData && countryMapData.length > 0;
+    const showCountryMap = !tripData && countryMapData.length > 0;
 
     // Sync userId & backendUrl to App Group UserDefaults for the Share Extension
     useEffect(() => {
@@ -261,10 +259,6 @@ const HomeScreen = () => {
             setAppGroupData(userId, BACKEND_URL);
         }
     }, [userId]);
-
-    // Animation values
-    const overlayOpacity = useSharedValue(0);
-    const overlayTranslateY = useSharedValue(20);
 
     // Create menu animation values
     const createMenuOpacity = useSharedValue(0);
@@ -274,12 +268,7 @@ const HomeScreen = () => {
     // Tracks the real-time Y position of the spots sheet (from top of screen)
     const sheetAnimatedPosition = useSharedValue(SCREEN_HEIGHT * 0.5);
 
-    const animatedOverlayStyle = useAnimatedStyle(() => {
-        return {
-            opacity: overlayOpacity.value,
-            transform: [{ translateY: overlayTranslateY.value }],
-        };
-    });
+
 
     const animatedCreateMenuStyle = useAnimatedStyle(() => {
         return {
@@ -333,11 +322,11 @@ const HomeScreen = () => {
     // Dynamic map padding to keep markers/UI above bottom sheets
     const dynamicMapPadding = useMemo(() => {
         if (isTripOverviewOpen) {
-            return { top: 50, right: 10, bottom: SCREEN_HEIGHT * 0.6, left: 10 };
+            return { top: 50, right: 10, bottom: SCREEN_HEIGHT * 0.5, left: 10 };
         }
-        // When my spots sheet is open, we can use its index to estimate padding
-        // sheetIndex 0: 12%, 1: 50%, 2: 90%
-        const snapPadding = [0.12, 0.5, 0.9][sheetIndex] * SCREEN_HEIGHT;
+        // When my spots sheet is open, we cap the padding at the 50% snap point
+        // so the map doesn't abruptly re-center/shift when pulled to 90%
+        const snapPadding = [0.12, 0.5, 0.5][sheetIndex] * SCREEN_HEIGHT;
         return { top: 50, right: 10, bottom: snapPadding, left: 10 };
     }, [isTripOverviewOpen, sheetIndex]);
 
@@ -370,12 +359,8 @@ const HomeScreen = () => {
 
     useEffect(() => {
         if (activeTab === 'trips') {
-            overlayOpacity.value = withTiming(1, { duration: 300 });
-            overlayTranslateY.value = withTiming(0, { duration: 300 });
+            bottomSheetRef.current?.expand();
         } else {
-            overlayOpacity.value = withTiming(0, { duration: 350 });
-            overlayTranslateY.value = withTiming(20, { duration: 350 });
-
             // Only restore if no secondary sheet is open
             if (!secondarySheetOpen.current) {
                 tabBarTranslateY.value = withTiming(0, {
@@ -491,6 +476,13 @@ const HomeScreen = () => {
             }
         }
     }, [tabBarHeight, activeTab]);
+
+    const handleTripsSheetChange = useCallback((index) => {
+        secondarySheetOpen.current = index > -1;
+        if (index === -1 && activeTab === 'trips') {
+            setActiveTab('home');
+        }
+    }, [activeTab, setActiveTab]);
 
     const handleSpotPress = useCallback((spot) => {
         setSelectedSpot(spot);
@@ -744,40 +736,22 @@ const HomeScreen = () => {
 
 
 
-            {/* Spots Bottom Sheet */}
             <SpotsBottomSheet
                 bottomSheetRef={bottomSheetRef}
                 createTripSheetRef={createTripSheetRef}
+                tripOverviewSheetRef={tripOverviewSheetRef}
                 setSheetIndex={setSheetIndex}
                 sheetAnimatedPosition={sheetAnimatedPosition}
                 tabBarTranslateY={tabBarTranslateY}
                 tabBarHeight={tabBarHeight}
             />
 
-            {/* Trips Overlay */}
-            <TripsOverlay
-                animatedOverlayStyle={animatedOverlayStyle}
-                onTripOpen={() => {
-                    setActiveTab('home');
-                    setTimeout(() => {
-                        bottomSheetRef.current?.close();
-                        setTimeout(() => {
-                            tabBarTranslateY.value = withTiming(tabBarHeight, {
-                                duration: 400,
-                                easing: Easing.bezier(0.33, 1, 0.68, 1),
-                            });
-                        }, 150);
-                        setTimeout(() => {
-                            tripOverviewSheetRef.current?.expand();
-                        }, 400);
-                    }, 200);
-                }}
-            />
+
 
             {/* Create Options Menu */}
             {showCreateOptions && (
                 <TouchableOpacity
-                    style={[styles.createMenuBackdrop, { paddingBottom: 52 + insets.bottom + (Platform.OS === 'android' ? 27 : 12) }]}
+                    style={[styles.createMenuBackdrop, { paddingBottom: 50 + insets.bottom + 12 }]}
                     activeOpacity={1}
                     onPress={() => setShowCreateOptions(false)}
                 >
@@ -948,43 +922,64 @@ const HomeScreen = () => {
                 animationConfigs={sheetAnimationConfig}
             />
 
-            {/* Custom Bottom Tab Bar — floating pill */}
-            <Animated.View style={[styles.tabBarContainer, { bottom: insets.bottom + (Platform.OS === 'android' ? 15 : 0) }, animatedTabBarStyle]}>
+            {/* Custom Bottom Tab Bar — Google Maps Style */}
+            <Animated.View style={[styles.tabBarContainer, { height: 50 + insets.bottom, paddingBottom: insets.bottom, bottom: 0 }, animatedTabBarStyle]}>
+                {/* Explore Tab (Home) */}
                 <TouchableOpacity
                     style={styles.tabItem}
+                    activeOpacity={0.7}
                     onPress={() => {
                         setActiveTab('home');
                         setShowCreateOptions(false);
                     }}
                 >
-                    <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={activeTab === 'home' ? "#3B82F6" : "#71717A"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <Circle cx="12" cy="12" r="10" />
-                        <Path d="m16.24 7.76-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z" fill={activeTab === 'home' ? "#3B82F6" : "none"} />
-                    </Svg>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={styles.plusButton}
-                    onPress={() => setShowCreateOptions(!showCreateOptions)}
-                >
-                    <Animated.View style={animatedPlusStyle}>
-                        <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M12 5v14M5 12h14" />
+                    <View style={[styles.pillContainer, activeTab === 'home' && styles.pillActive]}>
+                        <Svg width="24" height="24" viewBox="0 0 24 24" fill={activeTab === 'home' ? "#024f5c" : "none"} stroke={activeTab === 'home' ? "none" : "#444746"} strokeWidth={activeTab === 'home' ? "0" : "2"} strokeLinecap="round" strokeLinejoin="round">
+                            {activeTab === 'home' ? (
+                                <Path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
+                            ) : (
+                                <>
+                                    <Path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" />
+                                    <Circle cx="12" cy="9" r="2.5" />
+                                </>
+                            )}
                         </Svg>
-                    </Animated.View>
+                    </View>
+                    <Text style={[styles.tabLabel, activeTab === 'home' && styles.tabLabelActive]}>Explore</Text>
                 </TouchableOpacity>
 
+                {/* Contribute Tab (Create) - Centered, No Label */}
                 <TouchableOpacity
                     style={styles.tabItem}
+                    activeOpacity={0.7}
+                    onPress={() => setShowCreateOptions(!showCreateOptions)}
+                >
+                    <View style={styles.pillContainer}>
+                        <Animated.View style={animatedPlusStyle}>
+                            <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={showCreateOptions ? "#024f5c" : "#444746"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <Circle cx="12" cy="12" r="10" />
+                                <Path d="M12 8v8M8 12h8" />
+                            </Svg>
+                        </Animated.View>
+                    </View>
+                    <Text style={styles.tabLabel}>Create</Text>
+                </TouchableOpacity>
+
+                {/* You Tab (Trips) */}
+                <TouchableOpacity
+                    style={styles.tabItem}
+                    activeOpacity={0.7}
                     onPress={() => {
                         setActiveTab('trips');
                         setShowCreateOptions(false);
                     }}
                 >
-                    <Svg width="20" height="20" viewBox="0 0 24 24" fill={activeTab === 'trips' ? "#3B82F6" : "none"} stroke={activeTab === 'trips' ? "#3B82F6" : "#71717A"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <Rect x="2" y="7" width="20" height="14" rx="2" />
-                        <Path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-                    </Svg>
+                    <View style={[styles.pillContainer, activeTab === 'trips' && styles.pillActive]}>
+                        <Svg width="24" height="24" viewBox="0 0 24 24" fill={activeTab === 'trips' ? "#024f5c" : "none"} stroke={activeTab === 'trips' ? "#024f5c" : "#444746"} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                            <Path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+                        </Svg>
+                    </View>
+                    <Text style={[styles.tabLabel, activeTab === 'trips' && styles.tabLabelActive]}>My Trips</Text>
                 </TouchableOpacity>
             </Animated.View>
 
@@ -1121,34 +1116,53 @@ const styles = StyleSheet.create({
     },
     tabBarContainer: {
         position: 'absolute',
-        left: 90,
-        right: 90,
-        height: 52,
-        backgroundColor: 'rgba(255,255,255,0.95)',
+        left: 0,
+        right: 0,
+        backgroundColor: '#eaedeeff',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-around',
-        paddingHorizontal: 20,
-        borderRadius: 26,
+        paddingHorizontal: 8,
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 6 },
-        shadowOpacity: 0.10,
-        shadowRadius: 16,
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
         zIndex: 10,
         elevation: 10,
-        borderWidth: 1,
-        borderColor: 'rgba(0,0,0,0.06)',
+        paddingTop : 5
     },
     tabItem: {
-        width: 30,
-        height: 30,
+        flex: 1,
+        height: '100%',
         alignItems: 'center',
         justifyContent: 'center',
     },
+    pillContainer: {
+        width: 56,
+        height: 28,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 2,
+        overflow: 'hidden',
+    },
+    pillActive: {
+        backgroundColor: '#C2E7FF',
+        borderRadius: 14,
+    },
+    tabLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#444746',
+    },
+    tabLabelActive: {
+        color: '#444746',
+        fontWeight: '700',
+    },
     plusButton: {
-        width: 34,
-        height: 34,
-        borderRadius: 17,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         backgroundColor: '#3F3F46',
         alignItems: 'center',
         justifyContent: 'center',

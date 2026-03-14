@@ -24,6 +24,7 @@ import {
 import { getApp } from '@react-native-firebase/app';
 import Purchases, { LOG_LEVEL } from 'react-native-purchases';
 import { Platform } from 'react-native';
+import { useUserStore } from './src/store/userStore';
 
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
@@ -107,7 +108,7 @@ function App() {
         initPurchases();
     }, []);
 
-    // RevenueCat Identity Management
+    // RevenueCat Identity Management & Subscription Sync
     useEffect(() => {
         const identifyPurchasesUser = async () => {
             try {
@@ -115,14 +116,33 @@ function App() {
                 if (userStr) {
                     const parsed = JSON.parse(userStr);
                     const uid = parsed?.email || parsed?.id || parsed?._id;
+
                     if (uid) {
-                        await Purchases.logIn(String(uid));
+                        try {
+                            const { customerInfo } = await Purchases.logIn(String(uid));
+                            
+                            // Update the global store directly from RevenueCat customer object
+                            useUserStore.getState().setCustomerInfo(customerInfo);
+                            
+                            // Also update local storage so it persists between reloads
+                            const isPremiumRC = typeof customerInfo.entitlements.active['premium'] !== 'undefined';
+                            if (parsed.isPremium !== isPremiumRC) {
+                                parsed.isPremium = isPremiumRC;
+                                storage.set('user', JSON.stringify(parsed));
+                            }
+                        } catch (e) {
+                             console.warn("Purchases login failed:", e);
+                        }
                     }
                 } else {
-                    await Purchases.logOut();
+                    const isAnonymous = await Purchases.isAnonymous();
+                    if (!isAnonymous) {
+                        await Purchases.logOut();
+                    }
+                    useUserStore.getState().setCustomerInfo(null);
                 }
             } catch (e) {
-                console.warn("Failed to log in to RevenueCat:", e);
+                console.warn("Failed to check RevenueCat identity:", e);
             }
         };
 
