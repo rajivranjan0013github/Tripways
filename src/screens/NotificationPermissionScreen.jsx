@@ -56,6 +56,17 @@ const FONT_SERIF = Platform.select({
     default: 'System',
 });
 
+// ──────────────────────────────────────────────────
+// Background Elements
+// ──────────────────────────────────────────────────
+const Cloud = ({ x, y, scale = 1, opacity = 0.6 }) => (
+    <View style={{ position: 'absolute', left: x, top: y, transform: [{ scale }], opacity }}>
+        <Svg width="100" height="60" viewBox="0 0 100 60" fill="white">
+            <Path d="M25 35c-8.28 0-15 6.72-15 15 0 8.28 6.72 15 15 15h50c8.28 0 15-6.72 15-15s-6.72-15-15-15c0-5.52-4.48-10-10-10s-10 4.48-10 10c-2.76-2.76-6.43-4.5-10.5-4.5s-7.74 1.74-10.5 4.5z" />
+        </Svg>
+    </View>
+);
+
 export default function NotificationPermissionScreen() {
     const navigation = useNavigation();
     const { mutateAsync: updateUserProfile } = useUpdateUserProfile();
@@ -179,6 +190,16 @@ export default function NotificationPermissionScreen() {
                     blurRadius={Platform.OS === 'ios' ? 10 : 8}
                 />
                 <View style={styles.bgOverlay} />
+                
+                {/* Floating Clouds */}
+                <Cloud x={width * 0.1} y={height * 0.05} scale={0.8} opacity={0.4} />
+                <Cloud x={width * 0.6} y={height * 0.08} scale={1.2} opacity={0.3} />
+                <Cloud x={width * 0.3} y={height * 0.15} scale={0.6} opacity={0.5} />
+                <Cloud x={width * 0.75} y={height * 0.02} scale={0.7} opacity={0.2} />
+                <Cloud x={width * 0.05} y={height * 0.22} scale={0.9} opacity={0.3} />
+                <Cloud x={width * 0.82} y={height * 0.18} scale={1.1} opacity={0.25} />
+                <Cloud x={width * 0.45} y={height * 0.04} scale={0.75} opacity={0.35} />
+                <Cloud x={width * -0.05} y={height * 0.1} scale={1.3} opacity={0.2} />
             </View>
 
             <RNAnimated.View
@@ -203,8 +224,8 @@ export default function NotificationPermissionScreen() {
                     />
                     <View style={styles.iconCircle}>
                         <Svg
-                            width="40"
-                            height="40"
+                            width="60"
+                            height="60"
                             viewBox="0 0 24 24"
                             fill="none"
                             stroke="#FFFFFF"
@@ -322,37 +343,37 @@ const styles = StyleSheet.create({
     iconWrapper: {
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 32,
+        marginBottom: 60,
     },
     iconPulseRing: {
         position: 'absolute',
-        width: 100,
-        height: 100,
-        borderRadius: 50,
+        width: 160,
+        height: 160,
+        borderRadius: 80,
         backgroundColor: '#3378c7',
     },
     iconCircle: {
-        width: 80,
-        height: 80,
-        borderRadius: 40,
+        width: 120,
+        height: 120,
+        borderRadius: 60,
         backgroundColor: '#3378c7',
         alignItems: 'center',
         justifyContent: 'center',
         shadowColor: '#3378c7',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
-        shadowRadius: 12,
-        elevation: 10,
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.35,
+        shadowRadius: 16,
+        elevation: 12,
     },
     notificationDot: {
         position: 'absolute',
-        top: 22,
-        right: 24,
-        width: 10,
-        height: 10,
-        borderRadius: 5,
+        top: 30,
+        right: 35,
+        width: 14,
+        height: 14,
+        borderRadius: 7,
         backgroundColor: '#EF4444',
-        borderWidth: 2,
+        borderWidth: 2.5,
         borderColor: '#3378c7',
     },
     textContainer: {

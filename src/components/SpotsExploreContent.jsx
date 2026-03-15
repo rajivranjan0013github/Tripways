@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Image, ScrollView, StyleSheet, Keyboard, Dimensions, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Image, StyleSheet, Keyboard, Dimensions, Platform } from 'react-native';
+import { ScrollView } from 'react-native-gesture-handler';
 import { BottomSheetScrollView, BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import Animated, { withTiming, Easing } from 'react-native-reanimated';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';

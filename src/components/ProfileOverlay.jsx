@@ -124,8 +124,20 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
     const [userData, setUserData] = React.useState(null);
     const [premiumVisible, setPremiumVisible] = React.useState(false);
     const isPremium = useUserStore(state => state.isPremium);
+    const customerInfo = useUserStore(state => state.customerInfo);
     const opacity = useSharedValue(0);
     const translateY = useSharedValue(30);
+
+    // Format premium details
+    const activeEntitlements = customerInfo?.entitlements?.active || {};
+    const premiumEntitlement = activeEntitlements[Object.keys(activeEntitlements)[0]];
+    const expiryDate = premiumEntitlement?.expirationDate;
+    const formattedDate = expiryDate ? new Date(expiryDate).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+    }) : null;
+    const isWillRenew = premiumEntitlement?.willRenew;
 
     // Load user data from MMKV
     React.useEffect(() => {
@@ -260,7 +272,14 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
                             <Text style={styles.avatarLargeText}>{userInitials}</Text>
                         </View>
                     )}
-                    <Text style={styles.profileName}>{userName}</Text>
+                    <View style={styles.nameRow}>
+                        <Text style={styles.profileName}>{userName}</Text>
+                        {isPremium && (
+                            <View style={styles.proBadge}>
+                                <Text style={styles.proBadgeText}>PRO</Text>
+                            </View>
+                        )}
+                    </View>
                     <Text style={styles.profileEmail}>{userEmail}</Text>
                 </View>
 
@@ -285,7 +304,11 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
                                     {isPremium ? 'TripWays Premium Active' : 'Upgrade to Premium'}
                                 </Text>
                                 <Text style={styles.premiumSubtitle}>
-                                    {isPremium ? 'Enjoy all exclusive features' : 'Unlock unlimited trips & smart features'}
+                                    {isPremium 
+                                        ? (formattedDate 
+                                            ? `${isWillRenew ? 'Renews' : 'Expires'} on ${formattedDate}`
+                                            : 'Enjoy all exclusive features')
+                                        : 'Unlock unlimited trips & smart features'}
                                 </Text>
                             </View>
                             <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -429,6 +452,22 @@ const styles = StyleSheet.create({
         fontWeight: '800',
         color: '#0F172A',
         marginBottom: 2,
+    },
+    nameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    proBadge: {
+        backgroundColor: '#F59E0B', // Amber/Gold color
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+    },
+    proBadgeText: {
+        color: '#FFFFFF',
+        fontSize: 10,
+        fontWeight: '900',
     },
     profileEmail: {
         fontSize: 13,

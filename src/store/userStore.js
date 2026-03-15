@@ -5,7 +5,10 @@ export const useUserStore = create((set) => ({
     customerInfo: null,
     
     setCustomerInfo: (info) => {
-        const hasPremium = info?.entitlements?.active['premium'] !== undefined;
+        const hasActiveSubscription = info?.activeSubscriptions?.length > 0;
+        const hasActiveEntitlement = Object.keys(info?.entitlements?.active || {}).length > 0;
+        const hasPremium = hasActiveSubscription || hasActiveEntitlement;
+        
         set({ 
             customerInfo: info,
             isPremium: hasPremium 
