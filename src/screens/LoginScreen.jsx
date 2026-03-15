@@ -346,7 +346,9 @@ const LoginScreen = ({ navigation }) => {
                     {/* Apple Sign-In — iOS only */}
                     {Platform.OS === 'ios' && (
                         isAppleLoading ? (
-                            <ActivityIndicator size="large" color="#000000" style={{ marginBottom: 14 }} />
+                            <View style={styles.loadingContainer}>
+                                <ActivityIndicator size="large" color="#000000" />
+                            </View>
                         ) : (
                             <TouchableOpacity
                                 style={[styles.signInButton, styles.appleButton]}
@@ -366,7 +368,9 @@ const LoginScreen = ({ navigation }) => {
 
                     {/* Google Sign-In */}
                     {isGoogleLoading ? (
-                        <ActivityIndicator size="large" color="#00BEE0" />
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="large" color="#00BEE0" />
+                        </View>
                     ) : (
                         <TouchableOpacity
                             style={[styles.signInButton, styles.googleButton]}
@@ -458,6 +462,13 @@ const styles = StyleSheet.create({
     ctaContainer: {
         paddingHorizontal: 32,
         alignItems: 'center',
+    },
+    loadingContainer: {
+        width: '90%',
+        minHeight: 56,
+        marginBottom: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     signInButton: {
         width: '90%',

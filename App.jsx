@@ -120,6 +120,8 @@ function App() {
                     if (uid) {
                         try {
                             const { customerInfo } = await Purchases.logIn(String(uid));
+                            console.log(customerInfo);
+                            
                             
                             // Update the global store directly from RevenueCat customer object
                             useUserStore.getState().setCustomerInfo(customerInfo);
