@@ -202,19 +202,16 @@ function App() {
         // Foreground messages
         const unsubscribeMessage = onMessage(getMessaging(getApp()), async remoteMessage => {
             // Messages received while app is open — could show in-app toast
-            console.log('Foreground notification:', remoteMessage?.notification?.title);
         });
 
         // Background tap (app was in background)
         const unsubscribeOpenedApp = onNotificationOpenedApp(getMessaging(getApp()), remoteMessage => {
-            console.log('Notification opened app:', remoteMessage?.notification?.title);
             // Could navigate to specific screen based on remoteMessage.data
         });
 
         // Quit-state tap (app was closed)
         getInitialNotification(getMessaging(getApp())).then(remoteMessage => {
             if (remoteMessage) {
-                console.log('App opened from notification:', remoteMessage?.notification?.title);
             }
         });
 

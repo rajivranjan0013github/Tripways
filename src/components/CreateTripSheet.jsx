@@ -751,7 +751,6 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                     }
                 }
             }
-            console.log(`📌 Found ${matches.length} saved spot(s) within viewport bounds`);
             setMatchedSavedSpots(matches);
         } catch (err) {
             console.warn('Viewport bounds lookup failed:', err.message);

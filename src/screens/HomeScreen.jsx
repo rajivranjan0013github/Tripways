@@ -106,7 +106,7 @@ const HomeScreen = () => {
         setSelectedSpot, socialMode, setSocialMode } = useUIStore();
 
     const { tripData, setTripData, isTripLoading, setTripLoading,
-        isSavingTrip, setIsSavingTrip } = useTripStore();
+        isSavingTrip, setIsSavingTrip, clearTrip } = useTripStore();
 
     // --- Local-only UI state (not shared across components) ---
     const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -465,6 +465,7 @@ const HomeScreen = () => {
             });
         } else {
             setEditMode(false);
+            clearTrip(); // Reset tripData → showCountryMap becomes true → flags reappear
             tabBarTranslateY.value = withTiming(0, {
                 duration: 400,
                 easing: Easing.bezier(0.33, 1, 0.68, 1)
@@ -473,9 +474,19 @@ const HomeScreen = () => {
                 setTimeout(() => {
                     bottomSheetRef.current?.snapToIndex(1);
                 }, 150);
+                // Zoom map back to show all country flags
+                setTimeout(() => {
+                    if (countryMapData.length > 0) {
+                        const coords = countryMapData.map(c => c.centroid);
+                        mapRef.current?.fitToCoordinates(coords, {
+                            edgePadding: { top: 80, right: 40, bottom: SCREEN_HEIGHT * 0.5, left: 40 },
+                            animated: true,
+                        });
+                    }
+                }, 400);
             }
         }
-    }, [tabBarHeight, activeTab]);
+    }, [tabBarHeight, activeTab, countryMapData]);
 
     const handleTripsSheetChange = useCallback((index) => {
         secondarySheetOpen.current = index > -1;
