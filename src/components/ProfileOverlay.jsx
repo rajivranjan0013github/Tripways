@@ -55,13 +55,6 @@ const MENU_ITEMS = [
         bg: '#ECFDF5',
     },
     {
-        icon: 'star',
-        label: 'Reviews',
-        subtitle: '8 reviews written',
-        color: '#F59E0B',
-        bg: '#FFFBEB',
-    },
-    {
         icon: 'help',
         label: 'Help & Support',
         subtitle: 'FAQs, contact us',

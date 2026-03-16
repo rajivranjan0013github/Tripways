@@ -1,5 +1,5 @@
 import React, { forwardRef, useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image, ActivityIndicator, Linking } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from 'react-native-reanimated';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView, TouchableOpacity as RNGHTouchableOpacity } from 'react-native-gesture-handler';
@@ -426,7 +426,31 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
         );
     };
 
-    const renderTravelConnector = (index, travelInfo) => (
+    const handleTravelDirections = (fromSpot, toSpot) => {
+        const fromLat = fromSpot?.coordinates?.lat;
+        const fromLng = fromSpot?.coordinates?.lng;
+        const toLat = toSpot?.coordinates?.lat;
+        const toLng = toSpot?.coordinates?.lng;
+        if (toLat == null || toLng == null) return;
+        const destLabel = encodeURIComponent(toSpot.fullName || toSpot.name || 'Destination');
+        const hasOrigin = fromLat != null && fromLng != null;
+        const url = Platform.select({
+            ios: hasOrigin
+                ? `maps://app?saddr=${fromLat},${fromLng}&daddr=${toLat},${toLng}`
+                : `maps://app?daddr=${toLat},${toLng}&q=${destLabel}`,
+            android: hasOrigin
+                ? `google.navigation:q=${toLat},${toLng}&origin=${fromLat},${fromLng}`
+                : `google.navigation:q=${toLat},${toLng}`,
+        });
+        Linking.openURL(url).catch(() => {
+            const webUrl = hasOrigin
+                ? `https://www.google.com/maps/dir/?api=1&origin=${fromLat},${fromLng}&destination=${toLat},${toLng}`
+                : `https://www.google.com/maps/dir/?api=1&destination=${toLat},${toLng}`;
+            Linking.openURL(webUrl);
+        });
+    };
+
+    const renderTravelConnector = (index, travelInfo, fromSpot, toSpot) => (
         <View key={`connector-${index}`} style={styles.travelConnectorContainer}>
             <View style={styles.dotsColumn}>
                 <View style={styles.dot} />
@@ -473,7 +497,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                             {travelInfo.time} • {travelInfo.distance}
                         </Text>
                     </View>
-                    <TouchableOpacity style={styles.directionsButton}>
+                    <TouchableOpacity style={styles.directionsButton} onPress={() => handleTravelDirections(fromSpot, toSpot)}>
                         <Text style={styles.directionsText}>Directions</Text>
                     </TouchableOpacity>
                 </View>
@@ -593,7 +617,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                             {dayData.spots.map((spot, idx) => (
                                 <View key={`item-${idx}`}>
                                     {renderSpotCard(spot, idx, dayData.day)}
-                                    {idx < dayData.spots.length - 1 && renderTravelConnector(idx, dayData.travelInfo[idx])}
+                                    {idx < dayData.spots.length - 1 && renderTravelConnector(idx, dayData.travelInfo[idx], dayData.spots[idx], dayData.spots[idx + 1])}
                                 </View>
                             ))}
                         </Animated.View>

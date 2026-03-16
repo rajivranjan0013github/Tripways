@@ -1,5 +1,5 @@
 import React, { forwardRef, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Linking, Platform } from 'react-native';
 import BottomSheet, { BottomSheetScrollView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import Svg, { Path, Circle } from 'react-native-svg';
 
@@ -23,7 +23,13 @@ const SpotDetailSheet = forwardRef(({ spot, onClose }, ref) => {
 
     useEffect(() => {
         if (spot) {
-            ref.current?.expand();
+            // Small delay to let BottomSheet lay out the new content before expanding.
+            // Without this, the first-ever expand() can fire before the sheet
+            // has calculated the content height, resulting in an empty sheet.
+            const timer = setTimeout(() => {
+                ref.current?.expand();
+            }, 100);
+            return () => clearTimeout(timer);
         } else {
             ref.current?.close();
         }
@@ -39,6 +45,22 @@ const SpotDetailSheet = forwardRef(({ spot, onClose }, ref) => {
     );
 
     const config = spot ? (CATEGORY_CONFIG[spot.category] || CATEGORY_CONFIG['Attractions']) : CATEGORY_CONFIG['Attractions'];
+
+    const handleGetDirections = () => {
+        if (!spot?.coordinates) return;
+        const lat = spot.coordinates.lat;
+        const lng = spot.coordinates.lng;
+        if (lat == null || lng == null) return;
+        const label = encodeURIComponent(spot.fullName || spot.name || 'Spot');
+        const url = Platform.select({
+            ios: `maps://app?daddr=${lat},${lng}&q=${label}`,
+            android: `google.navigation:q=${lat},${lng}`,
+        });
+        Linking.openURL(url).catch(() => {
+            // Fallback to Google Maps web URL
+            Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
+        });
+    };
 
     return (
         <BottomSheet
@@ -101,7 +123,7 @@ const SpotDetailSheet = forwardRef(({ spot, onClose }, ref) => {
 
                         {/* Actions */}
                         <View style={styles.actionsContainer}>
-                            <TouchableOpacity style={styles.directionsButton}>
+                            <TouchableOpacity style={styles.directionsButton} onPress={handleGetDirections}>
                                 <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <Path d="M9 11l3 3L22 4" />
                                     <Path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />

@@ -51,6 +51,7 @@ export const useSavedSpots = (userId) => {
                     grouped: normalizedGrouped,
                     totalSpots: data.totalSpots || 0,
                     placeIds,
+                    spots: data.spots || [],
                 };
             }
             return { grouped: {}, totalSpots: 0, placeIds: new Set() };

@@ -24,7 +24,7 @@ import { setAppGroupData } from '../services/ShareIntent';
 import MySpotIcon from '../assets/My-spot';
 import countriesGeoJson from '../assets/countries.geo.json';
 import { getCountryMapData, COUNTRY_COLORS as MAP_COUNTRY_COLORS } from '../utils/countryMapUtils';
-import { useMapClusters } from '../hooks/useMapClusters';
+// useMapClusters no longer needed — replaced with city-wise grouping
 
 // Zustand stores
 import { useUIStore } from '../store/uiStore';
@@ -41,8 +41,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Day colors matching the frontendweb reference
 const DAY_COLORS = ['#6366F1', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
 
-// Single static map style — never changes, so Google Maps never re-applies tiles.
-// Country labels are always off because flag emoji markers serve as country labels.
+// Single static map style — never changes at runtime to avoid tile reload flicker.
+// City and country labels are always off; flag emoji markers serve as labels.
 const CUSTOM_MAP_STYLE = [
     { featureType: 'poi', elementType: 'labels', stylers: [{ visibility: 'off' }] },
     { featureType: 'road', elementType: 'labels', stylers: [{ visibility: 'off' }] },
@@ -50,10 +50,8 @@ const CUSTOM_MAP_STYLE = [
     { featureType: 'road.highway', elementType: 'geometry', stylers: [{ saturation: -70 }, { lightness: 25 }] },
     { featureType: 'transit', elementType: 'labels', stylers: [{ visibility: 'off' }] },
     { featureType: 'administrative.country', elementType: 'labels', stylers: [{ visibility: 'off' }] },
-    { featureType: 'administrative.locality', elementType: 'labels.text.fill', stylers: [{ color: '#aaaaaa' }] },
-    { featureType: 'administrative.locality', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
-    { featureType: 'administrative.neighborhood', elementType: 'labels.text.fill', stylers: [{ color: '#cccccc' }] },
-    { featureType: 'administrative.neighborhood', elementType: 'labels.text.stroke', stylers: [{ color: '#ffffff' }, { weight: 1 }] },
+    { featureType: 'administrative.locality', elementType: 'labels', stylers: [{ visibility: 'off' }] },
+    { featureType: 'administrative.neighborhood', elementType: 'labels', stylers: [{ visibility: 'off' }] },
 ];
 
 /**
@@ -115,11 +113,13 @@ const HomeScreen = () => {
     // Zoom level + map region stored in refs to avoid re-renders on every pan/zoom.
     const mapZoomRef = useRef(3);
     const mapRegionRef = useRef(null);
-    // Only threshold-crossing booleans trigger re-renders when they actually change.
-    const [showFlags, setShowFlags] = useState(true);           // true = show flag markers, false = show clusters
     const [showItineraryLabels, setShowItineraryLabels] = useState(false); // >= 10
-    // clusterRegion is a state that ONLY updates when clusters are visible, to trigger cluster recalculation.
-    const [clusterRegion, setClusterRegion] = useState(null);
+    const [mapZoom, setMapZoom] = useState(3); // Current zoom as state for collision recalc
+
+    // Simple boolean for flag vs cluster view — opacity handles the visual transition.
+    const showFlagsRef = useRef(true);
+    // Whether to show individual spots vs city clusters (higher zoom = individual)
+    const [showIndividualSpots, setShowIndividualSpots] = useState(false);
 
     // Animated crossfade for flag ↔ cluster transition
     const flagOpacity = useSharedValue(1);
@@ -160,33 +160,79 @@ const HomeScreen = () => {
         return getCountryMapData(savedSpots, countriesGeoJson);
     }, [savedSpots]);
 
-    // Flatten all spots with their assigned country colors for individual marker display
-    const individualSpotsData = useMemo(() => {
+    // Build city-level cluster data from the grouped spots structure
+    const cityClusterData = useMemo(() => {
         if (!savedSpots || Object.keys(savedSpots).length === 0) return [];
-        const spots = [];
-        // Important: we must use the same index-to-color mapping as countryMapData for consistency
-        Object.entries(savedSpots).forEach(([countryName, cities], countryIndex) => {
+        const cities = [];
+        Object.entries(savedSpots).forEach(([countryName, countryCities], countryIndex) => {
             const countryColor = MAP_COUNTRY_COLORS[countryIndex % MAP_COUNTRY_COLORS.length];
-            Object.values(cities || {}).forEach(cityData => {
-                (cityData.spots || []).forEach(spot => {
-                    if (spot.coordinates?.lat && spot.coordinates?.lng) {
-                        spots.push({
-                            ...spot,
-                            color: countryColor,
-                        });
-                    }
+            Object.entries(countryCities || {}).forEach(([cityName, cityData]) => {
+                // Skip Unknown city names
+                if (!cityName || cityName === 'Unknown') return;
+                const spots = (cityData.spots || []).filter(s => s.coordinates?.lat && s.coordinates?.lng);
+                if (spots.length === 0) return;
+                // Centroid = average of all spot coordinates in this city
+                const centroid = {
+                    latitude: spots.reduce((sum, s) => sum + s.coordinates.lat, 0) / spots.length,
+                    longitude: spots.reduce((sum, s) => sum + s.coordinates.lng, 0) / spots.length,
+                };
+                cities.push({
+                    key: `${countryName}-${cityName}`,
+                    cityName,
+                    countryName,
+                    spotCount: spots.length,
+                    centroid,
+                    color: countryColor,
+                    spots: spots.map(s => ({ ...s, color: countryColor })),
                 });
             });
         });
-        return spots;
+        return cities;
     }, [savedSpots]);
 
-    // Supercluster-powered clustering for individual spots
-    const { clusters, getClusterExpansionZoom } = useMapClusters(
-        showCountryMap && !showFlags ? individualSpotsData : [],
-        clusterRegion,
-        mapZoomRef.current
-    );
+    // Flatten all spots with their assigned country colors for individual marker display
+    const individualSpotsData = useMemo(() => {
+        return cityClusterData.flatMap(city => city.spots);
+    }, [cityClusterData]);
+
+    // Collision avoidance for city cluster markers — prevent overlap
+    const visibleCityClusters = useMemo(() => {
+        if (cityClusterData.length === 0) return [];
+        const zoom = mapZoomRef.current;
+        // Degrees per pixel at this zoom (Web Mercator approximation)
+        const degLngPerPx = 360 / (256 * Math.pow(2, zoom));
+        // Minimum gap in pixels between city cluster markers
+        const MIN_GAP_PX = 80;
+        const minGapDeg = MIN_GAP_PX * degLngPerPx;
+
+        const visible = [];
+        const placed = []; // { lat, lng } of already placed markers
+
+        // Sort by spot count descending so larger cities win placement priority
+        const sorted = [...cityClusterData].sort((a, b) => b.spotCount - a.spotCount);
+
+        for (const city of sorted) {
+            const lat = city.centroid.latitude;
+            const lng = city.centroid.longitude;
+            let tooClose = false;
+            for (const other of placed) {
+                const dLat = Math.abs(lat - other.lat);
+                const dLng = Math.abs(lng - other.lng);
+                // Adjust for latitude (cos correction)
+                const latRad = (lat * Math.PI) / 180;
+                const adjustedDLat = dLat / Math.cos(latRad);
+                if (adjustedDLat < minGapDeg && dLng < minGapDeg) {
+                    tooClose = true;
+                    break;
+                }
+            }
+            if (!tooClose) {
+                visible.push(city);
+                placed.push({ lat, lng });
+            }
+        }
+        return visible;
+    }, [cityClusterData, mapZoom]);
 
     // --- Logic for Marker Label Collision Avoidance ---
     // Calculates which labels should be shown based on zoom and relative screen distance
@@ -474,9 +520,17 @@ const HomeScreen = () => {
                 setTimeout(() => {
                     bottomSheetRef.current?.snapToIndex(1);
                 }, 150);
-                // Zoom map back to show all country flags
+                // Zoom map back to show the latest saved spot, or all country flags if none
                 setTimeout(() => {
-                    if (countryMapData.length > 0) {
+                    const latestSpot = spotsData?.spots?.[0];
+                    if (latestSpot && latestSpot.coordinates?.lat) {
+                        mapRef.current?.animateToRegion({
+                            latitude: latestSpot.coordinates.lat,
+                            longitude: latestSpot.coordinates.lng,
+                            latitudeDelta: 10.0,
+                            longitudeDelta: 10.0,
+                        }, 400);
+                    } else if (countryMapData.length > 0) {
                         const coords = countryMapData.map(c => c.centroid);
                         mapRef.current?.fitToCoordinates(coords, {
                             edgePadding: { top: 80, right: 40, bottom: SCREEN_HEIGHT * 0.5, left: 40 },
@@ -486,7 +540,7 @@ const HomeScreen = () => {
                 }, 400);
             }
         }
-    }, [tabBarHeight, activeTab, countryMapData]);
+    }, [tabBarHeight, activeTab, countryMapData, spotsData]);
 
     const handleTripsSheetChange = useCallback((index) => {
         secondarySheetOpen.current = index > -1;
@@ -522,6 +576,28 @@ const HomeScreen = () => {
         }
     }, [tabBarHeight, activeTab]);
 
+    // Calculate initial region based on the latest saved spot, or fallback to default
+    const initialMapRegion = useMemo(() => {
+        const latestSpot = spotsData?.spots?.[0];
+        if (latestSpot && latestSpot.coordinates?.lat && latestSpot.coordinates?.lng) {
+            return {
+                latitude: latestSpot.coordinates.lat,
+                longitude: latestSpot.coordinates.lng,
+                latitudeDelta: 10.0,
+                longitudeDelta: 10.0,
+            };
+        }
+        // Fallback (Panama Canal area zoomed out)
+        return {
+            latitude: -20.0,
+            longitude: -80.0,
+            latitudeDelta: 75.0,
+            longitudeDelta: 75.0,
+        };
+    }, [spotsData]);
+
+
+
     return (
         <View style={styles.container}>
             <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
@@ -534,30 +610,29 @@ const HomeScreen = () => {
                 userInterfaceStyle="light"
                 mapPadding={dynamicMapPadding}
                 customMapStyle={CUSTOM_MAP_STYLE}
-                initialRegion={{
-                    latitude: -20.0,
-                    longitude: -80.0,
-                    latitudeDelta: 75.0,
-                    longitudeDelta: 75.0,
-                }}
+                initialRegion={initialMapRegion}
                 onRegionChangeComplete={(region) => {
                     const zoom = Math.round(Math.log2(360 / region.longitudeDelta));
                     mapZoomRef.current = zoom;
                     mapRegionRef.current = region;
+                    if (zoom !== mapZoom) setMapZoom(zoom);
 
-                    // Hysteresis for flag↔cluster swap with crossfade animation
-                    if (showFlags && zoom >= 6) {
+
+                    // Hysteresis for flag↔cluster crossfade (zoom 4 = show clusters, zoom 3 = back to flags)
+                    if (showFlagsRef.current && zoom >= 4) {
+                        showFlagsRef.current = false;
                         flagOpacity.value = withTiming(0, { duration: 300 });
                         clusterOpacity.value = withTiming(1, { duration: 300 });
-                        setShowFlags(false);
-                        setClusterRegion(region); // Trigger cluster calculation
-                    } else if (!showFlags && zoom < 5) {
+                    } else if (!showFlagsRef.current && zoom < 3) {
+                        showFlagsRef.current = true;
                         flagOpacity.value = withTiming(1, { duration: 300 });
                         clusterOpacity.value = withTiming(0, { duration: 300 });
-                        setShowFlags(true);
-                    } else if (!showFlags) {
-                        // Only update cluster region when clusters are visible
-                        setClusterRegion(region);
+                    }
+
+                    // Show individual spots at zoom >= 8, city clusters below
+                    const shouldShowIndividual = zoom >= 8;
+                    if (shouldShowIndividual !== showIndividualSpots) {
+                        setShowIndividualSpots(shouldShowIndividual);
                     }
 
                     const labelsVisible = zoom >= 10;
@@ -565,7 +640,7 @@ const HomeScreen = () => {
                 }}
             >
 
-                {/* ── My Spots: Country flag markers (zoomed out, with crossfade) ── */}
+                {/* ── My Spots: Country flag markers (always mounted, opacity-controlled) ── */}
                 {showCountryMap && countryMapData.map((item) => (
                     <Marker
                         key={`flag-${item.countryName}`}
@@ -584,55 +659,52 @@ const HomeScreen = () => {
                     </Marker>
                 ))}
 
-                {/* ── My Spots: Clustered individual spots (zoomed in, with crossfade) ── */}
-                {showCountryMap && !showFlags && clusters.map((feature) => {
-                    const [lng, lat] = feature.geometry.coordinates;
-                    const { cluster, cluster_id, point_count } = feature.properties;
-
-                    if (cluster) {
-                        // Cluster marker — circle with count
-                        const size = 36 + Math.min(point_count, 50) * 0.4;
-                        return (
-                            <Marker
-                                key={`cluster-${cluster_id}`}
-                                coordinate={{ latitude: lat, longitude: lng }}
-                                anchor={{ x: 0.5, y: 0.5 }}
-                                tracksViewChanges={false}
-                                onPress={() => {
-                                    const zoom = getClusterExpansionZoom(cluster_id);
-                                    mapRef.current?.animateToRegion({
-                                        latitude: lat,
-                                        longitude: lng,
-                                        latitudeDelta: 360 / Math.pow(2, zoom + 1),
-                                        longitudeDelta: 360 / Math.pow(2, zoom + 1),
-                                    }, 400);
-                                }}
-                            >
-                                <Animated.View style={[
-                                    styles.clusterMarker,
-                                    { width: size, height: size, borderRadius: size / 2 },
-                                    clusterAnimatedStyle
-                                ]}>
-                                    <Text style={styles.clusterMarkerText}>{point_count}</Text>
-                                </Animated.View>
-                            </Marker>
-                        );
-                    }
-
-                    // Individual spot marker
-                    const spot = feature.properties.spot;
+                {/* ── My Spots: City cluster markers (mid zoom, opacity-controlled) ── */}
+                {showCountryMap && !showIndividualSpots && visibleCityClusters.map((city) => {
+                    const size = 38 + Math.min(city.spotCount, 20) * 0.6;
                     return (
                         <Marker
-                            key={`spot-${feature.properties.spotId}`}
-                            coordinate={{ latitude: lat, longitude: lng }}
-                            anchor={{ x: 0.5, y: 0.5 }}
-                            onPress={() => handleSpotPress(spot)}
+                            key={`city-${city.key}`}
+                            coordinate={city.centroid}
+                            anchor={{ x: 0.5, y: 0.85 }}
                             tracksViewChanges={false}
+                            onPress={() => {
+                                mapRef.current?.animateToRegion({
+                                    latitude: city.centroid.latitude,
+                                    longitude: city.centroid.longitude,
+                                    latitudeDelta: 0.5,
+                                    longitudeDelta: 0.5,
+                                }, 400);
+                            }}
                         >
-                            <Animated.View style={[styles.spotMarkerDot, { backgroundColor: spot.color }, clusterAnimatedStyle]} />
+                            <Animated.View style={[styles.cityClusterContainer, clusterAnimatedStyle]}>
+                                <View style={[
+                                    styles.cityClusterCircle,
+                                    { width: size, height: size, borderRadius: size / 2, backgroundColor: city.color }
+                                ]}>
+                                    <Text style={styles.cityClusterCount}>{city.spotCount}</Text>
+                                </View>
+                                <Text style={styles.cityClusterLabel} numberOfLines={1}>{city.cityName}</Text>
+                            </Animated.View>
                         </Marker>
                     );
                 })}
+
+                {/* ── My Spots: Individual spot markers (high zoom, opacity-controlled) ── */}
+                {showCountryMap && showIndividualSpots && individualSpotsData.map((spot, idx) => (
+                    <Marker
+                        key={`spot-${spot._id || spot.placeId || idx}`}
+                        coordinate={{ latitude: spot.coordinates.lat, longitude: spot.coordinates.lng }}
+                        anchor={{ x: 0.5, y: 0.3 }}
+                        onPress={() => handleSpotPress(spot)}
+                        tracksViewChanges={false}
+                    >
+                        <Animated.View style={[styles.spotMarkerContainer, clusterAnimatedStyle]}>
+                            <View style={[styles.spotMarkerDot, { backgroundColor: spot.color }]} />
+                            <Text style={styles.spotMarkerLabel} numberOfLines={1}>{spot.name}</Text>
+                        </Animated.View>
+                    </Marker>
+                ))}
 
                 {/* Itinerary place markers — styled circles with numbers like frontendweb */}
                 {tripData?.itinerary?.flatMap((day, dayIndex) => {
@@ -1334,18 +1406,72 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '800',
     },
+    // City cluster marker styles — colored circle with count + city name below
+    cityClusterContainer: {
+        alignItems: 'center',
+        width: 80,
+    },
+    cityClusterCircle: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 3,
+        borderColor: 'rgba(255,255,255,0.95)',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+        elevation: 6,
+    },
+    cityClusterCount: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '800',
+        textShadowColor: 'rgba(0,0,0,0.2)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
+    },
+    cityClusterLabel: {
+        marginTop: 3,
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#1E293B',
+        textAlign: 'center',
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 6,
+        overflow: 'hidden',
+        maxWidth: 78,
+    },
     // Individual spot markers (zoomed in)
+    spotMarkerContainer: {
+        alignItems: 'center',
+        width: 90,
+    },
     spotMarkerDot: {
         width: 14,
         height: 14,
         borderRadius: 7,
-        borderWidth: 2,
+        borderWidth: 2.5,
         borderColor: '#FFFFFF',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.3,
         shadowRadius: 3,
         elevation: 4,
+    },
+    spotMarkerLabel: {
+        marginTop: 3,
+        fontSize: 10,
+        fontWeight: '600',
+        color: '#334155',
+        textAlign: 'center',
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        paddingHorizontal: 5,
+        paddingVertical: 1.5,
+        borderRadius: 5,
+        overflow: 'hidden',
+        maxWidth: 88,
     },
 });
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Image, StyleSheet, Keyboard, Dimensions, Platform } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
-import { BottomSheetScrollView, BottomSheetFlatList } from '@gorhom/bottom-sheet';
+import { BottomSheetView, BottomSheetScrollView, BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import Animated, { withTiming, Easing } from 'react-native-reanimated';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 
@@ -167,22 +167,36 @@ const SpotsExploreContent = ({
                     )}
                 </View>
             ) : (
-                <BottomSheetFlatList data={mySpotsCountries} keyExtractor={(item) => item.country} style={styles.mySpotsList} contentContainerStyle={styles.mySpotsListContent} showsVerticalScrollIndicator={false} nestedScrollEnabled bounces={false} ListHeaderComponent={<View style={styles.mySpotsHeader}><Text style={styles.mySpotsTitle}>My Spots</Text>{totalSpotsCount > 0 && <Text style={styles.mySpotsSubtitle}>{totalSpotsCount} Spots Saved</Text>}</View>} ListEmptyComponent={<View style={styles.emptySpots}><Image source={require('../assets/spots.png')} style={styles.emptySpotsImage} /><Text style={styles.emptySpotsText}>No saved spots yet</Text><Text style={styles.emptySpotsHint}>Save spots from your trips to see them here</Text></View>} renderItem={({ item }) => {
-                    const { country, cities, cityCount, spotCount } = item;
-                    return (
-                        <View style={styles.countrySection}>
-                            <View style={styles.countryHeader}><Text style={styles.countryTitle}>{country}</Text><Text style={styles.countrySubtitle}>{cityCount} {cityCount === 1 ? 'City' : 'Cities'} • {spotCount} {spotCount === 1 ? 'Spot' : 'Spots'}</Text></View>
-                            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cityCardsRow}>
-                                {Object.entries(cities).map(([city, cityData]) => {
-                                    const cityKey = `${country}::${city}`;
-                                    return (
-                                        <TouchableOpacity key={cityKey} activeOpacity={0.85} onPress={() => { bottomSheetRef.current?.close(); tabBarTranslateY.value = withTiming(tabBarHeight, { duration: 400, easing: Easing.bezier(0.33, 1, 0.68, 1) }); setTimeout(() => { createTripSheetRef.current?.openWithSavedSpots(country, city, cities); }, 350); }} style={styles.cityCard}>{cityData.cityPhoto ? <Image source={{ uri: cityData.cityPhoto }} style={styles.cityCardImage} /> : <View style={styles.cityCardImagePlaceholder}><Text style={styles.cityCardEmoji}>🏙️</Text></View>}<View style={styles.cityCardInfo}><Text style={styles.cityCardTitle} numberOfLines={1}>{city}</Text><Text style={styles.cityCardSubtitle}>{cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}</Text></View></TouchableOpacity>
-                                    );
-                                })}
-                            </ScrollView>
+                <BottomSheetScrollView style={styles.mySpotsList} contentContainerStyle={styles.mySpotsListContent} showsVerticalScrollIndicator={false}>
+                    <View style={styles.mySpotsHeader}>
+                        <Text style={styles.mySpotsTitle}>My Spots</Text>
+                        {totalSpotsCount > 0 && <Text style={styles.mySpotsSubtitle}>{totalSpotsCount} Spots Saved</Text>}
+                    </View>
+                    {mySpotsCountries.length === 0 ? (
+                        <View style={styles.emptySpots}>
+                            <Image source={require('../assets/spots.png')} style={styles.emptySpotsImage} />
+                            <Text style={styles.emptySpotsText}>No saved spots yet</Text>
+                            <Text style={styles.emptySpotsHint}>Save spots from your trips to see them here</Text>
                         </View>
-                    );
-                }} />
+                    ) : (
+                        mySpotsCountries.map((item) => {
+                            const { country, cities, cityCount, spotCount } = item;
+                            return (
+                                <View key={country} style={styles.countrySection}>
+                                    <View style={styles.countryHeader}><Text style={styles.countryTitle}>{country}</Text><Text style={styles.countrySubtitle}>{cityCount} {cityCount === 1 ? 'City' : 'Cities'} • {spotCount} {spotCount === 1 ? 'Spot' : 'Spots'}</Text></View>
+                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cityCardsRow}>
+                                        {Object.entries(cities).map(([city, cityData]) => {
+                                            const cityKey = `${country}::${city}`;
+                                            return (
+                                                <TouchableOpacity key={cityKey} activeOpacity={0.85} onPress={() => { bottomSheetRef.current?.close(); tabBarTranslateY.value = withTiming(tabBarHeight, { duration: 400, easing: Easing.bezier(0.33, 1, 0.68, 1) }); setTimeout(() => { createTripSheetRef.current?.openWithSavedSpots(country, city, cities); }, 350); }} style={styles.cityCard}>{cityData.cityPhoto ? <Image source={{ uri: cityData.cityPhoto }} style={styles.cityCardImage} /> : <View style={styles.cityCardImagePlaceholder}><Text style={styles.cityCardEmoji}>🏙️</Text></View>}<View style={styles.cityCardInfo}><Text style={styles.cityCardTitle} numberOfLines={1}>{city}</Text><Text style={styles.cityCardSubtitle}>{cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}</Text></View></TouchableOpacity>
+                                            );
+                                        })}
+                                    </ScrollView>
+                                </View>
+                            );
+                        })
+                    )}
+                </BottomSheetScrollView>
             )}
         </View>
     );
