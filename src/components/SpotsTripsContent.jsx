@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Image, ImageBackground, ActivityIndicator, StyleSheet, Dimensions, Platform } from 'react-native';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { ScrollView } from 'react-native-gesture-handler';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -31,11 +32,11 @@ const SpotsTripsContent = ({
             {templatesLoading ? (
                 <ActivityIndicator size="small" color="#64748B" style={{ marginTop: 20 }} />
             ) : (
-                <BottomSheetScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.guidesScroll}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.guidesScroll}>
                     {templateTrips.map((guide, idx) => (
                         <TouchableOpacity key={guide._id || idx} style={[styles.guideCard, !guide.coverImage && { backgroundColor: GUIDE_FALLBACK_COLORS[idx % GUIDE_FALLBACK_COLORS.length] }]} activeOpacity={0.8} onPress={() => handleGuidePress(guide._id)}>{guide.coverImage ? <ImageBackground source={{ uri: guide.coverImage }} style={styles.guideCardBg} imageStyle={{ borderRadius: 18 }}><View style={styles.guideCardOverlay}><Text style={styles.guideTitle}>{guide.title}</Text><Text style={styles.guideSpots}>{guide.spots} Spots</Text></View></ImageBackground> : <View style={styles.guideCardOverlay}><Text style={styles.guideTitle}>{guide.title}</Text><Text style={styles.guideSpots}>{guide.spots} Spots</Text></View>}</TouchableOpacity>
                     ))}
-                </BottomSheetScrollView>
+                </ScrollView>
             )}
 
             <Text style={[styles.sectionTitle, { marginTop: 24 }]}>My Trips</Text>

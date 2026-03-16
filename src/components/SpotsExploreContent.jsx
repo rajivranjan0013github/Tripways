@@ -24,6 +24,7 @@ const SpotsExploreContent = ({
     setSelectedSpotPlaceId,
     mySpotsCountries,
     totalSpotsCount,
+    spotsLoading,
     sheetAnimatedPosition,
     thresholdY,
     fadeRange,
@@ -167,7 +168,7 @@ const SpotsExploreContent = ({
                     )}
                 </View>
             ) : (
-                <BottomSheetFlatList data={mySpotsCountries} keyExtractor={(item) => item.country} style={styles.mySpotsList} contentContainerStyle={styles.mySpotsListContent} showsVerticalScrollIndicator={false} nestedScrollEnabled bounces={false} ListHeaderComponent={<View style={styles.mySpotsHeader}><Text style={styles.mySpotsTitle}>My Spots</Text>{totalSpotsCount > 0 && <Text style={styles.mySpotsSubtitle}>{totalSpotsCount} Spots Saved</Text>}</View>} ListEmptyComponent={<View style={styles.emptySpots}><Image source={require('../assets/spots.png')} style={styles.emptySpotsImage} /><Text style={styles.emptySpotsText}>No saved spots yet</Text><Text style={styles.emptySpotsHint}>Save spots from your trips to see them here</Text></View>} renderItem={({ item }) => {
+                <BottomSheetFlatList data={mySpotsCountries} keyExtractor={(item) => item.country} style={styles.mySpotsList} contentContainerStyle={styles.mySpotsListContent} showsVerticalScrollIndicator={false} nestedScrollEnabled bounces={false} ListHeaderComponent={<View style={styles.mySpotsHeader}><Text style={styles.mySpotsTitle}>My Spots</Text>{totalSpotsCount > 0 && <Text style={styles.mySpotsSubtitle}>{totalSpotsCount} Spots Saved</Text>}</View>} ListEmptyComponent={spotsLoading ? (<View style={{ marginTop: 20 }}><View style={styles.skeletonCountryHeader}><View style={styles.skeletonTitle} /><View style={styles.skeletonSubtitle} /></View><View style={{ flexDirection: 'row', paddingLeft: 5 }}><View style={styles.skeletonCard} /><View style={styles.skeletonCard} /></View></View>) : (<View style={styles.emptySpots}><Image source={require('../assets/spots.png')} style={styles.emptySpotsImage} /><Text style={styles.emptySpotsText}>No saved spots yet</Text><Text style={styles.emptySpotsHint}>Save spots from your trips to see them here</Text></View>)} renderItem={({ item }) => {
                     const { country, cities, cityCount, spotCount } = item;
                     return (
                         <View style={styles.countrySection}>
@@ -445,6 +446,30 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#CBD5E1',
         marginTop: 4,
+    },
+    skeletonCountryHeader: {
+        marginBottom: 12,
+        paddingHorizontal: 5,
+    },
+    skeletonTitle: {
+        width: 120,
+        height: 24,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 4,
+        marginBottom: 8,
+    },
+    skeletonSubtitle: {
+        width: 80,
+        height: 14,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 4,
+    },
+    skeletonCard: {
+        width: 150,
+        height: 160,
+        backgroundColor: '#F1F5F9',
+        borderRadius: 14,
+        marginRight: 12,
     },
 });
 

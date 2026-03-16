@@ -80,7 +80,7 @@ const SpotsBottomSheet = ({
     // TanStack Query
     const userId = getUserId();
     const queryClient = useQueryClient();
-    const { data: spotsQueryData } = useSavedSpots(userId);
+    const { data: spotsQueryData, isLoading: spotsLoading } = useSavedSpots(userId);
     const { mutateAsync: saveSpot } = useSaveSpot(userId);
     const savedSpots = spotsQueryData?.grouped || {};
     const savedPlaceIds = spotsQueryData?.placeIds || new Set();
@@ -461,6 +461,7 @@ const SpotsBottomSheet = ({
                     setSelectedSpotPlaceId={setSelectedSpotPlaceId}
                     mySpotsCountries={mySpotsCountries}
                     totalSpotsCount={totalSpotsCount}
+                    spotsLoading={spotsLoading}
                     sheetAnimatedPosition={sheetAnimatedPosition}
                     thresholdY={thresholdY}
                     fadeRange={fadeRange}

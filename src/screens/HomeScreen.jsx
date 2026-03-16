@@ -999,6 +999,7 @@ const HomeScreen = () => {
                 visible={showProfile}
                 onClose={() => setShowProfile(false)}
                 navigation={navigation}
+                bottomSheetRef={bottomSheetRef}
             />
 
             <SpotDetailSheet

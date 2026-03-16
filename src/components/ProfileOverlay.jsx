@@ -118,13 +118,14 @@ const renderIcon = (icon, color) => {
     }
 };
 
-const ProfileOverlay = ({ visible, onClose, navigation }) => {
+const ProfileOverlay = ({ visible, onClose, navigation, bottomSheetRef }) => {
     const insets = useSafeAreaInsets();
     const [showContent, setShowContent] = React.useState(false);
     const [userData, setUserData] = React.useState(null);
     const [premiumVisible, setPremiumVisible] = React.useState(false);
     const isPremium = useUserStore(state => state.isPremium);
     const customerInfo = useUserStore(state => state.customerInfo);
+    const setActiveTab = useUIStore(state => state.setActiveTab);
     const opacity = useSharedValue(0);
     const translateY = useSharedValue(30);
 
@@ -337,6 +338,18 @@ const ProfileOverlay = ({ visible, onClose, navigation }) => {
                                 onPress={() => {
                                     if (item.action === 'OPEN_PREMIUM') {
                                         setPremiumVisible(true);
+                                    } else if (item.label === 'Saved Spots') {
+                                        setActiveTab('home');
+                                        onClose();
+                                        setTimeout(() => {
+                                            bottomSheetRef?.current?.snapToIndex(2);
+                                        }, 300);
+                                    } else if (item.label === 'My Trips') {
+                                        setActiveTab('trips');
+                                        onClose();
+                                        setTimeout(() => {
+                                            bottomSheetRef?.current?.snapToIndex(2);
+                                        }, 300);
                                     }
                                 }}
                             >
