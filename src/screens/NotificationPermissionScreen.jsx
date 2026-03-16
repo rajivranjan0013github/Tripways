@@ -11,6 +11,7 @@ import {
     Easing,
     PermissionsAndroid,
     StatusBar,
+    InteractionManager,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
@@ -137,37 +138,42 @@ export default function NotificationPermissionScreen() {
         // Navigate immediately
         navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
 
-        // If granted, register device and get FCM token in background
+        // If granted, register device and get FCM token in background,
+        // but push it entirely off the main thread until the navigation transition finishes.
         if (granted) {
-            try {
-                await registerDeviceForRemoteMessages(getMessaging(getApp()));
-            } catch (e) {
-                console.warn('Failed to register device for remote messages', e);
-            }
-
-            try {
-                await subscribeToTopic(getMessaging(getApp()), 'all_users');
-            } catch (e) {
-                console.warn('Failed to subscribe to topic all_users', e);
-            }
-
-            try {
-                const token = await getToken(getMessaging(getApp()));
-                const userStr = storage.getString('user');
-                if (userStr && token) {
-                    const user = JSON.parse(userStr);
-                    const userId = user?.id || user?._id;
-                    if (userId) {
-                        user.fcmToken = token;
-                        storage.set('user', JSON.stringify(user));
-
-                        updateUserProfile({ userId, data: { fcmToken: token, notificationsEnabled: true } })
-                            .catch(e => console.warn('Failed to update FCM token on server', e));
+            InteractionManager.runAfterInteractions(() => {
+                setTimeout(async () => {
+                    try {
+                        await registerDeviceForRemoteMessages(getMessaging(getApp()));
+                    } catch (e) {
+                        console.warn('Failed to register device for remote messages', e);
                     }
-                }
-            } catch (e) {
-                console.warn('Failed to get FCM token', e);
-            }
+
+                    try {
+                        await subscribeToTopic(getMessaging(getApp()), 'all_users');
+                    } catch (e) {
+                        console.warn('Failed to subscribe to topic all_users', e);
+                    }
+
+                    try {
+                        const token = await getToken(getMessaging(getApp()));
+                        const userStr = storage.getString('user');
+                        if (userStr && token) {
+                            const user = JSON.parse(userStr);
+                            const userId = user?.id || user?._id;
+                            if (userId) {
+                                user.fcmToken = token;
+                                storage.set('user', JSON.stringify(user));
+
+                                updateUserProfile({ userId, data: { fcmToken: token, notificationsEnabled: true } })
+                                    .catch(e => console.warn('Failed to update FCM token on server', e));
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('Failed to get FCM token', e);
+                    }
+                }, 500); // 500ms allows the Home screen to completely mount without stuttering
+            });
         }
     }, [navigation, requestUserPermission]);
 
@@ -187,9 +193,12 @@ export default function NotificationPermissionScreen() {
                     source={require('../assets/onboarding1.png')}
                     style={styles.bgImage}
                     resizeMode="cover"
-                    blurRadius={Platform.OS === 'ios' ? 10 : 8}
+                    blurRadius={Platform.OS === 'ios' ? 4 : 3}
                 />
-                <View style={styles.bgOverlay} />
+                <LinearGradient
+                    colors={['#FFFFFF00', '#FFFFFF44']}
+                    style={styles.bgOverlay}
+                />
                 
                 {/* Floating Clouds */}
                 <Cloud x={width * 0.1} y={height * 0.05} scale={0.8} opacity={0.4} />
@@ -200,6 +209,13 @@ export default function NotificationPermissionScreen() {
                 <Cloud x={width * 0.82} y={height * 0.18} scale={1.1} opacity={0.25} />
                 <Cloud x={width * 0.45} y={height * 0.04} scale={0.75} opacity={0.35} />
                 <Cloud x={width * -0.05} y={height * 0.1} scale={1.3} opacity={0.2} />
+
+                {/* Fade to white gradient at bottom to prevent sharp lines and text overlap issues */}
+                <LinearGradient
+                    colors={['#FFFFFF00', '#FFFFFFCC', '#FFFFFFFF']}
+                    locations={[0, 0.6, 1]}
+                    style={styles.fadeBottom}
+                />
             </View>
 
             <RNAnimated.View
@@ -317,13 +333,15 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#FFFFFF',
+        flexGrow: 1,
     },
     bgContainer: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
-        height: height * 0.45,
+        height: height * 0.4,
+        backgroundColor: '#FFFFFF', // Add this to ensure no black shows through the blur
     },
     bgImage: {
         width: '100%',
@@ -332,7 +350,13 @@ const styles = StyleSheet.create({
     },
     bgOverlay: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    },
+    fadeBottom: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 60,
     },
     content: {
         flex: 1,

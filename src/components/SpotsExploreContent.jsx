@@ -24,6 +24,7 @@ const SpotsExploreContent = ({
     setSelectedSpotPlaceId,
     mySpotsCountries,
     totalSpotsCount,
+    spotsLoading,
     savedViewMode,
     setSavedViewMode,
     importedVideos,
@@ -605,6 +606,30 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#CBD5E1',
         marginTop: 4,
+    },
+    skeletonCountryHeader: {
+        marginBottom: 12,
+        paddingHorizontal: 5,
+    },
+    skeletonTitle: {
+        width: 120,
+        height: 24,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 4,
+        marginBottom: 8,
+    },
+    skeletonSubtitle: {
+        width: 80,
+        height: 14,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 4,
+    },
+    skeletonCard: {
+        width: 150,
+        height: 160,
+        backgroundColor: '#F1F5F9',
+        borderRadius: 14,
+        marginRight: 12,
     },
 });
 

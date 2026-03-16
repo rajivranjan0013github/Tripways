@@ -83,7 +83,7 @@ const SpotsBottomSheet = ({
     // TanStack Query
     const userId = getUserId();
     const queryClient = useQueryClient();
-    const { data: spotsQueryData } = useSavedSpots(userId);
+    const { data: spotsQueryData, isLoading: spotsLoading } = useSavedSpots(userId);
     const { mutateAsync: saveSpot } = useSaveSpot(userId);
     const { data: importsQueryData } = useImportedVideos(userId);
     const savedSpots = useMemo(() => spotsQueryData?.grouped || {}, [spotsQueryData?.grouped]);
@@ -493,6 +493,7 @@ const SpotsBottomSheet = ({
                     setSelectedSpotPlaceId={setSelectedSpotPlaceId}
                     mySpotsCountries={mySpotsCountries}
                     totalSpotsCount={totalSpotsCount}
+                    spotsLoading={spotsLoading}
                     savedViewMode={savedViewMode}
                     setSavedViewMode={setSavedViewMode}
                     importedVideos={importedVideos}

@@ -1,7 +1,7 @@
 import { signUpWithGoogle, signUpWithApple } from 'react-native-credentials-manager';
 import { NativeModules, Platform as RNPlatform } from 'react-native';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -12,14 +12,10 @@ import {
     Platform,
     ActivityIndicator,
     Linking,
+    Image,
 } from 'react-native';
 import Svg, {
     Path,
-    Defs,
-    LinearGradient,
-    Stop,
-    G,
-    Rect,
 } from 'react-native-svg';
 import { MMKV } from 'react-native-mmkv';
 import Config from 'react-native-config';
@@ -99,120 +95,20 @@ async function appleSignUp() {
 }
 
 // ──────────────────────────────────────────────────
-// SVG Background (preserved from original)
+// Background Image
 // ──────────────────────────────────────────────────
 
-const RealisticPalmTree = ({ x, y, scale, rotation = 0 }) => {
-    const paths = useMemo(() => {
-        const frondElements = [];
-        const frondAngles = [
-            -70, -45, -20, 0, 25, 45, 65, 85, 110, 135, 160, 190, 215, 235, 250
-        ];
-
-        frondAngles.forEach((angle, idx) => {
-            const len = 140 + Math.random() * 40 - Math.abs(angle - 90) * 0.4;
-            const rad = (angle * Math.PI) / 180;
-            const droop = 0.5 + Math.random() * 0.5;
-            const leafletCount = 35;
-
-            for (let i = 0; i < leafletCount; i++) {
-                const t = i / leafletCount;
-                if (t < 0.1) continue;
-
-                const stemX = len * t * Math.cos(rad);
-                const stemY = len * t * Math.sin(rad) + len * droop * t * t;
-                const leafLen = (50 * (1 - t) + 10) * (0.8 + Math.random() * 0.4);
-
-                const l1Angle = rad + 0.4 + (Math.random() * 0.2);
-                const l1dx = leafLen * Math.cos(l1Angle);
-                const l1dy = leafLen * Math.sin(l1Angle) + (leafLen * 0.8);
-
-                const l2Angle = rad - 0.4 - (Math.random() * 0.2);
-                const l2dx = leafLen * Math.cos(l2Angle);
-                const l2dy = leafLen * Math.sin(l2Angle) + (leafLen * 0.8);
-
-                const pathData = `M ${Math.round(stemX)} ${Math.round(stemY)} Q ${Math.round(stemX + l1dx * 0.5)} ${Math.round(stemY + l1dy * 0.5)} ${Math.round(stemX + l1dx)} ${Math.round(stemY + l1dy)} M ${Math.round(stemX)} ${Math.round(stemY)} Q ${Math.round(stemX + l2dx * 0.5)} ${Math.round(stemY + l2dy * 0.5)} ${Math.round(stemX + l2dx)} ${Math.round(stemY + l2dy)}`;
-
-                frondElements.push(
-                    <Path
-                        key={`${angle}-${i}`}
-                        d={pathData}
-                        stroke="#3F4A5E"
-                        strokeWidth={1.5 - t * 0.8}
-                        fill="none"
-                        strokeLinecap="round"
-                    />
-                );
-            }
-
-            frondElements.push(
-                <Path
-                    key={`stem-${angle}`}
-                    d={`M 0 0 Q ${Math.round(len * 0.5 * Math.cos(rad))} ${Math.round(len * 0.5 * Math.sin(rad))} ${Math.round(len * Math.cos(rad))} ${Math.round(len * Math.sin(rad) + len * droop)}`}
-                    stroke="#3F4A5E"
-                    strokeWidth={4 * (1 - (idx * 0.01))}
-                    fill="none"
-                />
-            );
-        });
-
-        return frondElements;
-    }, []);
-
+const ExactBackground = () => {
     return (
-        <G transform={`translate(${x}, ${y}) scale(${scale}) rotate(${rotation})`}>
-            <Path
-                d="M 12 0 C 18 -60 12 -180 -18 -320 C -2 -180 12 -60 22 0 Z"
-                fill="#3F4A5E"
+        <View style={StyleSheet.absoluteFill}>
+            <Image
+                source={require('../assets/login-bg2.webp')}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="cover"
             />
-            <G transform="translate(-16, -310)">
-                {paths}
-            </G>
-        </G>
+        </View>
     );
 };
-
-const ExactBackground = () => (
-    <View style={StyleSheet.absoluteFill}>
-        <Svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-            <Defs>
-                <LinearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
-                    <Stop offset="0" stopColor="#35B5FE" />
-                    <Stop offset="0.6" stopColor="#A2DCF6" />
-                    <Stop offset="1" stopColor="#D5EDF6" />
-                </LinearGradient>
-            </Defs>
-
-            <Rect x="0" y="0" width={width} height={height} fill="url(#skyGrad)" />
-
-            <Path
-                d={`M -10 ${height * 0.58} C ${width * 0.25} ${height * 0.5}, ${width * 0.35} ${height * 0.38}, ${width * 0.6} ${height * 0.35} C ${width * 0.75} ${height * 0.33}, ${width * 0.85} ${height * 0.25}, ${width + 10} ${height * 0.24}`}
-                fill="none"
-                stroke="#FFFFFF"
-                strokeWidth={1.5}
-            />
-
-            <Path
-                d={`M 0 ${height * 0.59} C ${width * 0.2} ${height * 0.6}, ${width * 0.2} ${height * 0.7}, ${width * 0.2} ${height * 0.75} C ${width * 0.2} ${height * 0.85}, ${width * 0.65} ${height * 0.8}, ${width * 0.75} ${height * 0.82} L ${width * 0.8} ${height} L 0 ${height} Z`}
-                fill="#F3F8FA"
-            />
-
-            <Path
-                d={`M 0 ${height * 0.845} Q ${width * 0.25} ${height * 0.845} ${width * 0.45} ${height * 0.89} L ${width * 0.45} ${height} L 0 ${height} Z`}
-                fill="#2BB3FE"
-            />
-
-            <Path
-                d={`M -20 ${height * 0.91} C ${width * 0.25} ${height * 0.9}, ${width * 0.55} ${height * 0.85}, ${width + 10} ${height * 0.78} L ${width + 10} ${height} L -20 ${height} Z`}
-                fill="#3F4A5E"
-            />
-
-            <RealisticPalmTree x={width * 0.9} y={height * 0.65} scale={0.8} rotation={-8} />
-            <RealisticPalmTree x={width * 0.82} y={height * 0.88} scale={1.1} rotation={-5} />
-            <RealisticPalmTree x={width * 0.94} y={height * 1.05} scale={0.7} rotation={-12} />
-        </Svg>
-    </View>
-);
 
 // ──────────────────────────────────────────────────
 // Google & Apple SVG Icons
@@ -243,7 +139,7 @@ const AppleIcon = () => (
 const LoginScreen = ({ navigation }) => {
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const [isAppleLoading, setIsAppleLoading] = useState(false);
-    
+
     const { mutateAsync: updateUserProfile } = useUpdateUserProfile();
 
     const handlePostLogin = async (data) => {
@@ -415,7 +311,7 @@ const LoginScreen = ({ navigation }) => {
 // ──────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#35B5FE' },
+    container: { flex: 1, backgroundColor: 'transparent' },
     overlay: {
         flex: 1,
         justifyContent: 'space-between',
