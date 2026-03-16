@@ -13,7 +13,8 @@ import {
     FlatList,
     Platform,
     Keyboard,
-    Modal
+    Modal,
+    Linking
 } from 'react-native';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Animated, {
@@ -25,6 +26,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { ScrollView } from 'react-native-gesture-handler';
+import Video from 'react-native-video';
 
 // Zustand stores
 import { useUIStore } from '../store/uiStore';
@@ -39,6 +41,7 @@ import { detectPlatformFromUrl, getSharedUrl } from '../services/ShareIntent';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useSavedTrips } from '../hooks/useTrips';
 import { useTemplateTrips } from '../hooks/useTemplateTrips';
+import { useImportedVideos, useImportedVideoDetail } from '../hooks/useImports';
 import SpotsTripsContent from './SpotsTripsContent';
 import SpotsExploreContent from './SpotsExploreContent';
 import Config from 'react-native-config';
@@ -82,9 +85,12 @@ const SpotsBottomSheet = ({
     const queryClient = useQueryClient();
     const { data: spotsQueryData } = useSavedSpots(userId);
     const { mutateAsync: saveSpot } = useSaveSpot(userId);
-    const savedSpots = spotsQueryData?.grouped || {};
+    const { data: importsQueryData } = useImportedVideos(userId);
+    const savedSpots = useMemo(() => spotsQueryData?.grouped || {}, [spotsQueryData?.grouped]);
     const savedPlaceIds = spotsQueryData?.placeIds || new Set();
     const totalSpotsCount = spotsQueryData?.totalSpots || 0;
+    const importedVideos = useMemo(() => importsQueryData?.imports || [], [importsQueryData?.imports]);
+    const totalImportsCount = importsQueryData?.totalImports || 0;
     const mySpotsCountries = useMemo(() => (
         Object.entries(savedSpots).map(([country, cities]) => ({
             country,
@@ -101,9 +107,11 @@ const SpotsBottomSheet = ({
     const [searchText, setSearchText] = useState('');
     const [searchFocused, setSearchFocused] = useState(false);
     const [videoProcessing, setVideoProcessing] = useState(false);
-
+    const [savedViewMode, setSavedViewMode] = useState('spots');
     const [videoProgress, setVideoProgress] = useState('');
     const [selectedSpotPlaceId, setSelectedSpotPlaceId] = useState(null);
+    const [selectedImportId, setSelectedImportId] = useState(null);
+    const [videoPlaying, setVideoPlaying] = useState(false);
     const [showAddedBadge, setShowAddedBadge] = useState(false);
     const [savingSpotId, setSavingSpotId] = useState(null);
     const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -118,6 +126,7 @@ const SpotsBottomSheet = ({
     const navigation = useNavigation();
     const { data: spotSearchResults = [], isLoading: spotSearchLoading } = useSpotSearch(searchText);
     const { data: selectedSpotDetail = null, isLoading: spotDetailLoading } = useSpotDetail(selectedSpotPlaceId);
+    const { data: selectedImportDetail = null, isLoading: importDetailLoading } = useImportedVideoDetail(selectedImportId);
 
     // Bottom Sheet configs
     const snapPoints = useMemo(() => [165, '60%', '92%'], []);
@@ -226,7 +235,7 @@ const SpotsBottomSheet = ({
                 if (url) handleSharedUrl(url);
             });
         }
-    }, [route.params?.sharedUrl]);
+    }, [bottomSheetRef, navigation, route.params?.sharedUrl, setSocialMode]);
 
     // Listen for new share intents when app comes back to foreground
     useEffect(() => {
@@ -246,7 +255,7 @@ const SpotsBottomSheet = ({
             }
         });
         return () => listener.remove();
-    }, []);
+    }, [bottomSheetRef, setSocialMode]);
 
     // Process video URL for places extraction
     useEffect(() => {
@@ -258,14 +267,19 @@ const SpotsBottomSheet = ({
             setVideoProcessing(true);
             setVideoProgress('Starting...');
             try {
+                let activeImportMeta = null;
                 const response = await fetch(`${BACKEND_URL}/api/extract-video-places`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ videoUrl: trimmed }),
+                    body: JSON.stringify({
+                        videoUrl: trimmed,
+                        userId,
+                        platform: socialMode,
+                    }),
                 });
 
                 const reader = response.body.getReader();
-                const decoder = new TextDecoder();
+                const decoder = new global.TextDecoder();
                 let buffer = '';
                 let placesData = null;
                 const accumulatedPlaces = [];
@@ -292,6 +306,9 @@ const SpotsBottomSheet = ({
                             const parsed = JSON.parse(eventData);
                             if (eventType === 'progress') {
                                 setVideoProgress(parsed.message || 'Processing...');
+                            } else if (eventType === 'import') {
+                                activeImportMeta = parsed;
+                                queryClient.invalidateQueries({ queryKey: ['imports', userId] });
                             } else if (eventType === 'place_batch') {
                                 if (parsed.places) {
                                     accumulatedPlaces.push(...parsed.places);
@@ -322,9 +339,18 @@ const SpotsBottomSheet = ({
                         });
                     }, 150);
                     setTimeout(() => {
+                        queryClient.invalidateQueries({ queryKey: ['imports', userId] });
                         createTripSheetRef.current?.openWithVideoPlaces(
                             placesData.destination,
-                            placesData.places
+                            placesData.places,
+                            {
+                                importId: placesData.importId || activeImportMeta?.importId || null,
+                                title: placesData.title || '',
+                                caption: placesData.caption || '',
+                                originalUrl: placesData.originalUrl || trimmed,
+                                thumbnailUrl: placesData.thumbnailUrl || null,
+                                cloudflareVideoUrl: placesData.cloudflareVideoUrl || null,
+                            }
                         );
                     }, 400);
                 } else {
@@ -341,7 +367,7 @@ const SpotsBottomSheet = ({
         };
 
         processVideoUrl();
-    }, [searchText, socialMode]);
+    }, [bottomSheetRef, createTripSheetRef, queryClient, searchText, setSocialMode, socialMode, tabBarHeight, tabBarTranslateY, userId, videoProcessing]);
 
     // Track keyboard height so floating badge can stay above it.
     useEffect(() => {
@@ -429,6 +455,12 @@ const SpotsBottomSheet = ({
         []
     );
 
+    const selectedImportSummary = useMemo(
+        () => importedVideos.find((item) => item._id === selectedImportId) || null,
+        [importedVideos, selectedImportId]
+    );
+    const activeImport = selectedImportDetail || selectedImportSummary;
+
     return (
         <BottomSheet
             ref={bottomSheetRef}
@@ -461,6 +493,11 @@ const SpotsBottomSheet = ({
                     setSelectedSpotPlaceId={setSelectedSpotPlaceId}
                     mySpotsCountries={mySpotsCountries}
                     totalSpotsCount={totalSpotsCount}
+                    savedViewMode={savedViewMode}
+                    setSavedViewMode={setSavedViewMode}
+                    importedVideos={importedVideos}
+                    totalImportsCount={totalImportsCount}
+                    onImportPress={(item) => setSelectedImportId(item._id)}
                     sheetAnimatedPosition={sheetAnimatedPosition}
                     thresholdY={thresholdY}
                     fadeRange={fadeRange}
@@ -597,6 +634,116 @@ const SpotsBottomSheet = ({
                 </TouchableOpacity>
             </Modal>
 
+            <Modal
+                visible={!!selectedImportId}
+                transparent
+                animationType="slide"
+                onRequestClose={() => { setSelectedImportId(null); setVideoPlaying(false); }}
+            >
+                <TouchableOpacity
+                    style={styles.detailOverlay}
+                    activeOpacity={1}
+                    onPress={() => { setSelectedImportId(null); setVideoPlaying(false); }}
+                >
+                    <View style={styles.detailCard} onStartShouldSetResponder={() => true}>
+                        <TouchableOpacity style={styles.detailCloseBtn} onPress={() => { setSelectedImportId(null); setVideoPlaying(false); }}>
+                            <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M18 6 6 18M6 6l12 12" />
+                            </Svg>
+                        </TouchableOpacity>
+
+                        {importDetailLoading || !activeImport ? (
+                            <View style={styles.detailLoading}>
+                                <ActivityIndicator size="large" color="#3B82F6" />
+                                <Text style={{ color: '#94A3B8', marginTop: 12, fontSize: 14, fontWeight: '500' }}>Loading import details…</Text>
+                            </View>
+                        ) : (
+                            <ScrollView style={styles.importDetailScroll} contentContainerStyle={styles.importDetailContent}>
+                                {activeImport.cloudflareVideoUrl ? (
+                                    <TouchableOpacity
+                                        activeOpacity={0.9}
+                                        style={styles.videoPlayerContainer}
+                                        onPress={() => setVideoPlaying(p => !p)}
+                                    >
+                                        <Video
+                                            source={{ uri: activeImport.cloudflareVideoUrl }}
+                                            style={styles.detailVideo}
+                                            paused={!videoPlaying}
+                                            resizeMode="cover"
+                                            repeat
+                                            controls={false}
+                                            poster={activeImport.thumbnailUrl || undefined}
+                                            posterResizeMode="cover"
+                                        />
+                                        {!videoPlaying && (
+                                            <View style={styles.videoPlayOverlay}>
+                                                <View style={styles.videoPlayButton}>
+                                                    <Svg width="28" height="28" viewBox="0 0 24 24" fill="#fff">
+                                                        <Path d="M8 5v14l11-7z" />
+                                                    </Svg>
+                                                </View>
+                                            </View>
+                                        )}
+                                    </TouchableOpacity>
+                                ) : activeImport.thumbnailUrl ? (
+                                    <Image source={{ uri: activeImport.thumbnailUrl }} style={styles.detailImage} />
+                                ) : (
+                                    <View style={[styles.detailImage, styles.importHeroFallback]}>
+                                        <Text style={styles.importHeroFallbackText}>{activeImport.platform === 'tiktok' ? 'TikTok' : 'Reel'}</Text>
+                                    </View>
+                                )}
+
+                                <View style={styles.detailInfo}>
+                                    <View style={styles.importDetailTopRow}>
+                                        <Text style={styles.importPlatformPillLarge}>
+                                            {activeImport.platform === 'tiktok' ? 'TikTok' : activeImport.platform === 'instagram' ? 'Instagram Reel' : 'Imported Video'}
+                                        </Text>
+                                        <Text style={styles.importStatusTextLarge}>{activeImport.status}</Text>
+                                    </View>
+
+                                    <Text style={styles.detailName}>{activeImport.title || activeImport.destination || 'Imported video'}</Text>
+                                    {!!activeImport.caption && <Text style={styles.detailSummary}>{activeImport.caption}</Text>}
+
+                                    <View style={styles.importMetricsRow}>
+                                        <View style={styles.importMetricCard}>
+                                            <Text style={styles.importMetricValue}>{activeImport.totalExtractedPlaces || 0}</Text>
+                                            <Text style={styles.importMetricLabel}>Extracted</Text>
+                                        </View>
+                                        <View style={styles.importMetricCard}>
+                                            <Text style={styles.importMetricValue}>{activeImport.savedSpotCount || 0}</Text>
+                                            <Text style={styles.importMetricLabel}>Saved</Text>
+                                        </View>
+                                    </View>
+
+                                  
+
+                                  
+                                    {Array.isArray(activeImport.locations) && activeImport.locations.length > 0 && (
+                                        <>
+                                            <Text style={styles.importSectionTitle}>Extracted Locations</Text>
+                                            {activeImport.locations.map((location, index) => (
+                                                <View key={`${location.country}-${location.city}-${index}`} style={styles.importLocationCard}>
+                                                    <Text style={styles.importLocationTitle}>{location.city || 'Unknown city'}, {location.country || 'Unknown country'}</Text>
+                                                    <Text style={styles.importLocationSubtitle}>{(location.spots || []).join(', ')}</Text>
+                                                </View>
+                                            ))}
+                                        </>
+                                    )}
+
+                                    <View style={styles.importActionRow}>
+                                        {!!activeImport.originalUrl && (
+                                            <TouchableOpacity style={[styles.importActionButton, styles.importActionButtonSecondary]} onPress={() => Linking.openURL(activeImport.originalUrl)}>
+                                                <Text style={[styles.importActionButtonText, styles.importActionButtonTextSecondary]}>Open original link</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+                                </View>
+                            </ScrollView>
+                        )}
+                    </View>
+                </TouchableOpacity>
+            </Modal>
+
 
             {/* "Spot Added" Badge */}
             <SpotAddedBadge visible={showAddedBadge} keyboardHeight={keyboardHeight} />
@@ -619,7 +766,7 @@ const SpotAddedBadge = ({ visible, inModal = false, keyboardHeight = 0 }) => {
             opacity.value = withTiming(0, { duration: 250 });
             translateY.value = withTiming(20, { duration: 250 });
         }
-    }, [visible]);
+    }, [opacity, translateY, visible]);
 
     const animatedStyle = useAnimatedStyle(() => ({
         opacity: opacity.value,
@@ -722,6 +869,33 @@ const styles = StyleSheet.create({
         width: '100%',
         height: 200,
     },
+    videoPlayerContainer: {
+        width: 250,
+        height: 250 * (16 / 9), // 444
+        backgroundColor: '#000',
+        borderRadius: 16,
+        overflow: 'hidden',
+        position: 'relative',
+        alignSelf: 'center',
+        marginVertical: 10,
+    },
+    detailVideo: {
+        ...StyleSheet.absoluteFillObject,
+    },
+    videoPlayOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.35)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    videoPlayButton: {
+        width: 56,
+        height: 56,
+        borderRadius: 28,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
     detailLoading: {
         padding: 60,
         alignItems: 'center',
@@ -729,6 +903,129 @@ const styles = StyleSheet.create({
     },
     detailInfo: {
         padding: 20,
+    },
+    importDetailScroll: {
+        maxHeight: SCREEN_HEIGHT * 0.78,
+    },
+    importDetailContent: {
+        paddingBottom: 28,
+    },
+    importHeroFallback: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#E2E8F0',
+    },
+    importHeroFallbackText: {
+        fontSize: 24,
+        fontWeight: '800',
+        color: '#334155',
+    },
+    importDetailTopRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10,
+        gap: 12,
+    },
+    importPlatformPillLarge: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: '#334155',
+        backgroundColor: '#E2E8F0',
+        overflow: 'hidden',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
+    },
+    importStatusTextLarge: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: '#64748B',
+        textTransform: 'capitalize',
+    },
+    importMetricsRow: {
+        flexDirection: 'row',
+        gap: 10,
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    importMetricCard: {
+        flex: 1,
+        borderRadius: 16,
+        backgroundColor: '#F8FAFC',
+        borderWidth: 1,
+        borderColor: '#EEF2F7',
+        paddingVertical: 14,
+        alignItems: 'center',
+    },
+    importMetricValue: {
+        fontSize: 22,
+        fontWeight: '800',
+        color: '#0F172A',
+    },
+    importMetricLabel: {
+        marginTop: 4,
+        fontSize: 12,
+        color: '#64748B',
+        fontWeight: '700',
+    },
+    importSectionTitle: {
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#64748B',
+        textTransform: 'uppercase',
+        marginTop: 18,
+        marginBottom: 8,
+        letterSpacing: 0.4,
+    },
+    importBodyText: {
+        fontSize: 14,
+        lineHeight: 20,
+        color: '#334155',
+    },
+    importLocationCard: {
+        backgroundColor: '#F8FAFC',
+        borderWidth: 1,
+        borderColor: '#EEF2F7',
+        borderRadius: 14,
+        padding: 12,
+        marginBottom: 8,
+    },
+    importLocationTitle: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: '#0F172A',
+        marginBottom: 4,
+    },
+    importLocationSubtitle: {
+        fontSize: 13,
+        lineHeight: 18,
+        color: '#64748B',
+    },
+    importActionRow: {
+        flexDirection: 'row',
+        gap: 10,
+        marginTop: 20,
+        flexWrap: 'wrap',
+    },
+    importActionButton: {
+        backgroundColor: '#0F172A',
+        borderRadius: 14,
+        paddingHorizontal: 16,
+        paddingVertical: 13,
+    },
+    importActionButtonSecondary: {
+        backgroundColor: '#FFFFFF',
+        borderWidth: 1,
+        borderColor: '#CBD5E1',
+    },
+    importActionButtonText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '800',
+    },
+    importActionButtonTextSecondary: {
+        color: '#334155',
     },
     detailName: {
         fontSize: 22,

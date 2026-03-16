@@ -24,6 +24,11 @@ const SpotsExploreContent = ({
     setSelectedSpotPlaceId,
     mySpotsCountries,
     totalSpotsCount,
+    savedViewMode,
+    setSavedViewMode,
+    importedVideos,
+    totalImportsCount,
+    onImportPress,
     sheetAnimatedPosition,
     thresholdY,
     fadeRange,
@@ -169,30 +174,74 @@ const SpotsExploreContent = ({
             ) : (
                 <BottomSheetScrollView style={styles.mySpotsList} contentContainerStyle={styles.mySpotsListContent} showsVerticalScrollIndicator={false}>
                     <View style={styles.mySpotsHeader}>
-                        <Text style={styles.mySpotsTitle}>My Spots</Text>
-                        {totalSpotsCount > 0 && <Text style={styles.mySpotsSubtitle}>{totalSpotsCount} Spots Saved</Text>}
+                        <View style={styles.savedModeSwitch}>
+                            <TouchableOpacity style={[styles.savedModeChip, savedViewMode === 'spots' && styles.savedModeChipActive]} activeOpacity={0.8} onPress={() => setSavedViewMode('spots')}>
+                                <Text style={[styles.savedModeChipText, savedViewMode === 'spots' && styles.savedModeChipTextActive]}>My Spots</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.savedModeChip, savedViewMode === 'imports' && styles.savedModeChipActive]} activeOpacity={0.8} onPress={() => setSavedViewMode('imports')}>
+                                <Text style={[styles.savedModeChipText, savedViewMode === 'imports' && styles.savedModeChipTextActive]}>Imported</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <Text style={styles.mySpotsTitle}>{savedViewMode === 'spots' ? 'My Spots' : 'Imported Reels & TikToks'}</Text>
+                        <Text style={styles.mySpotsSubtitle}>
+                            {savedViewMode === 'spots'
+                                ? `${totalSpotsCount} ${totalSpotsCount === 1 ? 'Spot' : 'Spots'} Saved`
+                                : `${totalImportsCount} ${totalImportsCount === 1 ? 'Import' : 'Imports'} Saved`}
+                        </Text>
                     </View>
-                    {mySpotsCountries.length === 0 ? (
+                    {savedViewMode === 'spots' ? (
+                        mySpotsCountries.length === 0 ? (
+                            <View style={styles.emptySpots}>
+                                <Image source={require('../assets/spots.png')} style={styles.emptySpotsImage} />
+                                <Text style={styles.emptySpotsText}>No saved spots yet</Text>
+                                <Text style={styles.emptySpotsHint}>Save spots from your trips to see them here</Text>
+                            </View>
+                        ) : (
+                            mySpotsCountries.map((item) => {
+                                const { country, cities, cityCount, spotCount } = item;
+                                return (
+                                    <View key={country} style={styles.countrySection}>
+                                        <View style={styles.countryHeader}><Text style={styles.countryTitle}>{country}</Text><Text style={styles.countrySubtitle}>{cityCount} {cityCount === 1 ? 'City' : 'Cities'} • {spotCount} {spotCount === 1 ? 'Spot' : 'Spots'}</Text></View>
+                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cityCardsRow}>
+                                            {Object.entries(cities).map(([city, cityData]) => {
+                                                const cityKey = `${country}::${city}`;
+                                                return (
+                                                    <TouchableOpacity key={cityKey} activeOpacity={0.85} onPress={() => { bottomSheetRef.current?.close(); tabBarTranslateY.value = withTiming(tabBarHeight, { duration: 400, easing: Easing.bezier(0.33, 1, 0.68, 1) }); setTimeout(() => { createTripSheetRef.current?.openWithSavedSpots(country, city, cities); }, 350); }} style={styles.cityCard}>{cityData.cityPhoto ? <Image source={{ uri: cityData.cityPhoto }} style={styles.cityCardImage} /> : <View style={styles.cityCardImagePlaceholder}><Text style={styles.cityCardEmoji}>🏙️</Text></View>}<View style={styles.cityCardInfo}><Text style={styles.cityCardTitle} numberOfLines={1}>{city}</Text><Text style={styles.cityCardSubtitle}>{cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}</Text></View></TouchableOpacity>
+                                                );
+                                            })}
+                                        </ScrollView>
+                                    </View>
+                                );
+                            })
+                        )
+                    ) : importedVideos.length === 0 ? (
                         <View style={styles.emptySpots}>
                             <Image source={require('../assets/spots.png')} style={styles.emptySpotsImage} />
-                            <Text style={styles.emptySpotsText}>No saved spots yet</Text>
-                            <Text style={styles.emptySpotsHint}>Save spots from your trips to see them here</Text>
+                            <Text style={styles.emptySpotsText}>No imported videos yet</Text>
+                            <Text style={styles.emptySpotsHint}>Import a reel or TikTok to keep the video, caption, and extracted places here</Text>
                         </View>
                     ) : (
-                        mySpotsCountries.map((item) => {
-                            const { country, cities, cityCount, spotCount } = item;
+                        importedVideos.map((item) => {
+                            const importTitle = item.title || item.destination || 'Untitled import';
                             return (
-                                <View key={country} style={styles.countrySection}>
-                                    <View style={styles.countryHeader}><Text style={styles.countryTitle}>{country}</Text><Text style={styles.countrySubtitle}>{cityCount} {cityCount === 1 ? 'City' : 'Cities'} • {spotCount} {spotCount === 1 ? 'Spot' : 'Spots'}</Text></View>
-                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cityCardsRow}>
-                                        {Object.entries(cities).map(([city, cityData]) => {
-                                            const cityKey = `${country}::${city}`;
-                                            return (
-                                                <TouchableOpacity key={cityKey} activeOpacity={0.85} onPress={() => { bottomSheetRef.current?.close(); tabBarTranslateY.value = withTiming(tabBarHeight, { duration: 400, easing: Easing.bezier(0.33, 1, 0.68, 1) }); setTimeout(() => { createTripSheetRef.current?.openWithSavedSpots(country, city, cities); }, 350); }} style={styles.cityCard}>{cityData.cityPhoto ? <Image source={{ uri: cityData.cityPhoto }} style={styles.cityCardImage} /> : <View style={styles.cityCardImagePlaceholder}><Text style={styles.cityCardEmoji}>🏙️</Text></View>}<View style={styles.cityCardInfo}><Text style={styles.cityCardTitle} numberOfLines={1}>{city}</Text><Text style={styles.cityCardSubtitle}>{cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}</Text></View></TouchableOpacity>
-                                            );
-                                        })}
-                                    </ScrollView>
-                                </View>
+                                <TouchableOpacity key={item._id} style={styles.importCard} activeOpacity={0.85} onPress={() => onImportPress(item)}>
+                                    {item.thumbnailUrl ? (
+                                        <Image source={{ uri: item.thumbnailUrl }} style={styles.importCardImage} />
+                                    ) : (
+                                        <View style={styles.importCardImagePlaceholder}>
+                                            <Text style={styles.importCardImageEmoji}>{item.platform === 'tiktok' ? '♪' : '▣'}</Text>
+                                        </View>
+                                    )}
+                                    <View style={styles.importCardInfo}>
+                                        <View style={styles.importCardTopRow}>
+                                            <Text style={styles.importPlatformPill}>{item.platform === 'tiktok' ? 'TikTok' : item.platform === 'instagram' ? 'Reel' : 'Video'}</Text>
+                                            <Text style={styles.importStatusText}>{item.status}</Text>
+                                        </View>
+                                        <Text style={styles.importCardTitle} numberOfLines={2}>{importTitle}</Text>
+                                        {!!item.caption && <Text style={styles.importCardCaption} numberOfLines={2}>{item.caption}</Text>}
+                                        <Text style={styles.importCardMeta}>{item.totalExtractedPlaces || 0} extracted • {item.savedSpotCount || 0} saved</Text>
+                                    </View>
+                                </TouchableOpacity>
                             );
                         })
                     )}
@@ -323,7 +372,32 @@ const styles = StyleSheet.create({
         paddingBottom: 120,
     },
     mySpotsHeader: {
-        marginBottom: 4,
+        marginBottom: 10,
+    },
+    savedModeSwitch: {
+        flexDirection: 'row',
+        alignSelf: 'flex-start',
+        backgroundColor: '#EEF2F7',
+        borderRadius: 999,
+        padding: 4,
+        marginBottom: 12,
+        gap: 6,
+    },
+    savedModeChip: {
+        paddingHorizontal: 14,
+        paddingVertical: 9,
+        borderRadius: 999,
+    },
+    savedModeChipActive: {
+        backgroundColor: '#FFFFFF',
+    },
+    savedModeChipText: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#64748B',
+    },
+    savedModeChipTextActive: {
+        color: '#0F172A',
     },
     mySpotsTitle: {
         fontSize: 18,
@@ -395,6 +469,78 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: '#94A3B8',
         marginTop: 1,
+    },
+    importCard: {
+        flexDirection: 'row',
+        backgroundColor: '#F8FAFC',
+        borderRadius: 18,
+        padding: 10,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#EEF2F7',
+    },
+    importCardImage: {
+        width: 104,
+        height: 128,
+        borderRadius: 14,
+        backgroundColor: '#E2E8F0',
+    },
+    importCardImagePlaceholder: {
+        width: 104,
+        height: 128,
+        borderRadius: 14,
+        backgroundColor: '#E2E8F0',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    importCardImageEmoji: {
+        fontSize: 28,
+        color: '#475569',
+    },
+    importCardInfo: {
+        flex: 1,
+        marginLeft: 12,
+        justifyContent: 'space-between',
+    },
+    importCardTopRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    importPlatformPill: {
+        fontSize: 11,
+        fontWeight: '800',
+        color: '#334155',
+        backgroundColor: '#E2E8F0',
+        overflow: 'hidden',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 999,
+    },
+    importStatusText: {
+        fontSize: 11,
+        color: '#64748B',
+        fontWeight: '700',
+        textTransform: 'capitalize',
+    },
+    importCardTitle: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: '#0F172A',
+        lineHeight: 21,
+    },
+    importCardCaption: {
+        fontSize: 13,
+        color: '#64748B',
+        lineHeight: 18,
+        marginTop: 6,
+    },
+    importCardMeta: {
+        fontSize: 12,
+        color: '#94A3B8',
+        marginTop: 10,
+        fontWeight: '700',
     },
     spotSearchRow: {
         flexDirection: 'row',

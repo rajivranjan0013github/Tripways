@@ -318,7 +318,19 @@ class ShareViewController: UIViewController {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let body: [String: Any] = ["videoUrl": sharedUrl]
+        // Include userId so the backend creates an ImportedVideo record
+        let defaults = UserDefaults(suiteName: appGroupId)
+        var body: [String: Any] = ["videoUrl": sharedUrl]
+        if let userId = defaults?.string(forKey: "userId") {
+            body["userId"] = userId
+        }
+        // Detect platform from URL
+        let lower = sharedUrl.lowercased()
+        if lower.contains("instagram.com") || lower.contains("instagr.am") {
+            body["platform"] = "instagram"
+        } else if lower.contains("tiktok.com") || lower.contains("vm.tiktok.com") {
+            body["platform"] = "tiktok"
+        }
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         let session = URLSession(configuration: .default, delegate: nil, delegateQueue: nil)
@@ -489,7 +501,6 @@ class ShareViewController: UIViewController {
         spinner.stopAnimating()
 
         if count > 0 {
-            updateStatus("\(count) places found in \(destination.isEmpty ? "this video" : destination)")
             UIView.animate(withDuration: 0.3) {
                 self.addSpotsBar.alpha = 1
             }

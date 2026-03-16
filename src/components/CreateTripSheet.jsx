@@ -17,6 +17,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import WheelPicker from '@quidone/react-native-wheel-picker';
 import { Calendar } from 'react-native-calendars';
+import { useQueryClient } from '@tanstack/react-query';
 import Config from 'react-native-config';
 import { MMKV } from 'react-native-mmkv';
 
@@ -38,6 +39,7 @@ const FONT_SERIF = Platform.select({
 
 const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated, onPlanningStarted }, ref) => {
     const insets = useSafeAreaInsets();
+    const queryClient = useQueryClient();
 
     // Read saved spots from TanStack Query instead of prop
     const storedUser = useMemo(() => {
@@ -71,6 +73,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     const [isFromSavedSpots, setIsFromSavedSpots] = useState(false);
     const [isSavingSpots, setIsSavingSpots] = useState(false);
     const [matchedSavedSpots, setMatchedSavedSpots] = useState([]);
+    const [videoImportMeta, setVideoImportMeta] = useState(null);
     const inputRef = useRef(null);
     const bottomSheetInternalRef = useRef(null);
 
@@ -87,6 +90,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             setSelectedLocation({ name: trip.destination });
             setNumDays(trip.days || 4);
             setSelectedPrefs((trip.interests || []).map(i => i.charAt(0).toUpperCase() + i.slice(1)));
+            setVideoImportMeta(null);
             setStep('discoverSpots');
             bottomSheetInternalRef.current?.expand();
             // Trigger fetch after state is set
@@ -95,7 +99,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             }, 100);
         },
         // Open with places already extracted from a video URL
-        openWithVideoPlaces: (destination, places) => {
+        openWithVideoPlaces: (destination, places, importMeta = null) => {
             setSelectedLocation({ name: destination });
             setNumDays(4);
             setDiscoveredPlaces(places);
@@ -103,6 +107,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             setIsLoadingPlaces(false);
             setIsFromVideo(true);
             setIsFromSavedSpots(false);
+            setVideoImportMeta(importMeta);
             setDaysSelected(false); // Make them confirm settings later
             setStep('discoverSpots'); 
             bottomSheetInternalRef.current?.expand();
@@ -139,6 +144,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             setIsLoadingPlaces(false);
             setIsFromVideo(true);
             setIsFromSavedSpots(true);
+            setVideoImportMeta(null);
             setDaysSelected(false); // Make them confirm settings later
             setStep('discoverSpots'); 
             bottomSheetInternalRef.current?.expand();
@@ -166,6 +172,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             setSelectedLocation({ name: locationName });
             setNumDays(4);
             setDaysSelected(false);
+            setVideoImportMeta(null);
             setStep('discoverSpots');
             bottomSheetInternalRef.current?.expand();
             // Trigger discovery flow
@@ -1272,12 +1279,16 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                                 userRatingCount: p.userRatingCount,
                                                 photoUrl: p.photoUrl,
                                                 coordinates: p.coordinates,
-                                                source: 'discovery',
+                                                source: videoImportMeta?.importId ? 'video' : 'discovery',
                                             }));
                                             const response = await fetch(`${BACKEND_URL}/api/spots`, {
                                                 method: 'POST',
                                                 headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ userId, spots: spotsToSave }),
+                                                body: JSON.stringify({
+                                                    userId,
+                                                    importId: videoImportMeta?.importId || null,
+                                                    spots: spotsToSave,
+                                                }),
                                             });
                                             const data = await response.json();
                                             if (data.success) {
@@ -1286,6 +1297,10 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                                     selectedSpots.includes(p.id) ? { ...p, _isSavedSpot: true } : p
                                                 ));
                                                 setSelectedSpots([]);
+                                                if (videoImportMeta?.importId) {
+                                                    queryClient.invalidateQueries({ queryKey: ['imports', csUserId] });
+                                                    queryClient.invalidateQueries({ queryKey: ['import', videoImportMeta.importId] });
+                                                }
                                             }
                                         } catch (e) { console.warn('Save spots failed:', e); }
                                         setIsSavingSpots(false);
