@@ -60,14 +60,16 @@ const linking = {
     },
     // Subscribe to incoming URLs (iOS URL scheme + Android Linking)
     subscribe(listener) {
-        // Listen for tripways:// links from iOS Share Extension
+        // Listen for tripways:// links (External deep links)
         const linkingSub = Linking.addEventListener('url', ({ url }) => {
+            console.log('AppNavigator: Linking event received', url);
             listener(url);
         });
 
-        // Listen for share intents (Android foreground & App Group check on active)
+        // Listen for share intents (Android real-time events & iOS check on active)
         const shareUnsub = onShareIntent((sharedUrl) => {
-            // Convert to a deep link URL so React Navigation can parse it
+            console.log('AppNavigator: Share intent received', sharedUrl);
+            // Convert to a deep link URL so React Navigation can parse it via the config above
             const deepLink = `tripways://share?sharedUrl=${encodeURIComponent(sharedUrl)}`;
             listener(deepLink);
         });

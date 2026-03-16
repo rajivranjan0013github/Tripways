@@ -86,7 +86,6 @@ function decodePolyline(encoded) {
 const HomeScreen = () => {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation();
-    const sharedUrlProcessed = useRef(false);
     const tabBarHeight = 50 + insets.bottom; // Google Maps style height (compact focus)
     const bottomSheetRef = useRef(null);
 

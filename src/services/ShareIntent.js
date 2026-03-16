@@ -1,19 +1,38 @@
-import { NativeModules, Platform, AppState, Linking } from 'react-native';
+import { NativeModules, Platform, AppState, Linking, DeviceEventEmitter } from 'react-native';
 
 const { ShareIntentModule } = NativeModules;
+
+/**
+ * Extracts the first URL found in a text string.
+ */
+export function extractUrl(text) {
+    if (!text) return null;
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const matches = text.match(urlRegex);
+    return matches ? matches[0] : null;
+}
 
 /**
  * Check for a shared URL string that was sent via Android Intent or iOS Share Extension.
  */
 export async function getSharedUrl() {
     if (!ShareIntentModule) return null;
+    
+    // On Android, the dedicated ShareActivity overlay handles initial intents via props 
+    // and new intents via DeviceEventEmitter in ShareMenuScreen.jsx.
+    // The main app should not aggressively poll for it to avoid duplications.
+    if (Platform.OS === 'android') return null;
 
     try {
-        const url = await ShareIntentModule.getSharedUrl();
-        if (url) {
+        const rawUrl = await ShareIntentModule.getSharedUrl();
+        if (rawUrl) {
+            // Android often sends text + URL (e.g. from YouTube or TikTok)
+            // Extract just the URL part
+            const cleanUrl = extractUrl(rawUrl) || rawUrl;
+            
             // Once we read it, tell the native module to clear it so we don't process it twice
             await ShareIntentModule.clearSharedUrl();
-            return url;
+            return cleanUrl;
         }
         return null;
     } catch (e) {
@@ -81,6 +100,23 @@ export function onShareIntent(callback) {
         }
     });
     unsubscribers.push(() => linkingListener.remove());
+
+    // Listen for real-time share intent events on Android
+    // NOTE: Android now uses the separate ShareActivity -> ShareMenuScreen overlay.
+    // The main app should NOT listen to this event directly, to avoid duplicate processing.
+    // ShareMenuScreen.jsx handles it independently.
+    /* 
+    if (Platform.OS === 'android') {
+        const eventSub = DeviceEventEmitter.addListener('onShareIntentReceived', (sharedText) => {
+            console.log('ShareIntent: Native event received', sharedText);
+            const url = extractUrl(sharedText);
+            if (url) {
+                callback(url);
+            }
+        });
+        unsubscribers.push(() => eventSub.remove());
+    }
+    */
 
     return () => unsubscribers.forEach(fn => fn());
 }

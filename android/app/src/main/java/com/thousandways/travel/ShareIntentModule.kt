@@ -7,6 +7,7 @@ import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext), ActivityEventListener {
 
@@ -30,7 +31,7 @@ class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBas
         val action = intent?.action
         val type = intent?.type
 
-        if (Intent.ACTION_SEND == action && type == "text/plain") {
+        if (Intent.ACTION_SEND == action && type != null && type.startsWith("text/")) {
             val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
             if (sharedText != null) {
                 // Clear the intent so we don't process it again on next launch
@@ -49,6 +50,16 @@ class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBas
         promise.resolve(true)
     }
 
+    @ReactMethod
+    fun finishActivity() {
+        val activity = currentActivity
+        if (activity != null) {
+            // Because ShareActivity has its own taskAffinity, we finish the whole task
+            // so it cleanly returns the user to the app they shared from.
+            activity.finishAndRemoveTask()
+        }
+    }
+
     override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
         // Not used
     }
@@ -58,6 +69,18 @@ class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBas
         val activity = currentActivity
         if (activity != null) {
             activity.intent = intent
+        }
+
+        // Notify JS immediately if this is a share intent
+        val action = intent.action
+        val type = intent.type
+        if (Intent.ACTION_SEND == action && type != null && type.startsWith("text/")) {
+            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
+            if (sharedText != null) {
+                reactApplicationContext
+                    .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                    .emit("onShareIntentReceived", sharedText)
+            }
         }
     }
 }

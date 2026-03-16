@@ -45,6 +45,7 @@ import { useImportedVideos, useImportedVideoDetail } from '../hooks/useImports';
 import SpotsTripsContent from './SpotsTripsContent';
 import SpotsExploreContent from './SpotsExploreContent';
 import Config from 'react-native-config';
+import { fetchStream } from '../services/fetchStream';
 
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -119,7 +120,7 @@ const SpotsBottomSheet = ({
 
     // Refs
     const searchInputRef = useRef(null);
-    const sharedUrlProcessed = useRef(false);
+    const lastProcessedUrlRef = useRef(null);
 
     // Hooks
     const route = useRoute();
@@ -213,8 +214,8 @@ const SpotsBottomSheet = ({
     // ── Handle shared URL from share intent (Instagram/TikTok share) ──
     useEffect(() => {
         const handleSharedUrl = (url) => {
-            if (!url || sharedUrlProcessed.current) return;
-            sharedUrlProcessed.current = true;
+            if (!url) return;
+            console.log('SpotsBottomSheet: Processing shared URL', url);
             const platform = detectPlatformFromUrl(url) || 'instagram';
             setSocialMode(platform);
             setSearchText(url);
@@ -226,84 +227,41 @@ const SpotsBottomSheet = ({
 
         if (route.params?.sharedUrl) {
             handleSharedUrl(route.params.sharedUrl);
+            // Clear the param so we don't process it again on re-render
             navigation.setParams({ sharedUrl: null });
-            return;
-        }
-
-        if (!sharedUrlProcessed.current) {
-            getSharedUrl().then(url => {
-                if (url) handleSharedUrl(url);
-            });
         }
     }, [bottomSheetRef, navigation, route.params?.sharedUrl, setSocialMode]);
 
-    // Listen for new share intents when app comes back to foreground
-    useEffect(() => {
-        const listener = require('react-native').AppState.addEventListener('change', async (state) => {
-            if (state === 'active') {
-                const url = await getSharedUrl();
-                if (url) {
-                    sharedUrlProcessed.current = false;
-                    const platform = detectPlatformFromUrl(url) || 'instagram';
-                    setSocialMode(platform);
-                    setSearchText(url);
-                    setSearchFocused(true);
-                    setTimeout(() => {
-                        bottomSheetRef.current?.snapToIndex(2);
-                    }, 300);
-                }
-            }
-        });
-        return () => listener.remove();
-    }, [bottomSheetRef, setSocialMode]);
 
     // Process video URL for places extraction
     useEffect(() => {
         if (!socialMode || !searchText || videoProcessing) return;
         const trimmed = searchText.trim();
         if (!trimmed.startsWith('http')) return;
+        if (lastProcessedUrlRef.current === trimmed) return;
 
         const processVideoUrl = async () => {
+            lastProcessedUrlRef.current = trimmed;
             setVideoProcessing(true);
             setVideoProgress('Starting...');
             try {
                 let activeImportMeta = null;
-                const response = await fetch(`${BACKEND_URL}/api/extract-video-places`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        videoUrl: trimmed,
-                        userId,
-                        platform: socialMode,
-                    }),
-                });
-
-                const reader = response.body.getReader();
-                const decoder = new global.TextDecoder();
-                let buffer = '';
                 let placesData = null;
                 const accumulatedPlaces = [];
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    buffer += decoder.decode(value, { stream: true });
-                    const parts = buffer.split('\n\n');
-                    buffer = parts.pop();
-
-                    for (const eventBlock of parts) {
-                        if (!eventBlock.trim()) continue;
-                        const lines = eventBlock.split('\n');
-                        let eventType = '';
-                        let eventData = '';
-                        for (const line of lines) {
-                            if (line.startsWith('event: ')) eventType = line.slice(7);
-                            if (line.startsWith('data: ')) eventData = line.slice(6);
-                        }
-                        if (!eventType || !eventData) continue;
-                        try {
-                            const parsed = JSON.parse(eventData);
+                await new Promise((resolve, reject) => {
+                    fetchStream(
+                        `${BACKEND_URL}/api/extract-video-places`,
+                        {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                videoUrl: trimmed,
+                                userId,
+                                platform: socialMode,
+                            })
+                        },
+                        (eventType, parsed) => {
                             if (eventType === 'progress') {
                                 setVideoProgress(parsed.message || 'Processing...');
                             } else if (eventType === 'import') {
@@ -317,13 +275,13 @@ const SpotsBottomSheet = ({
                             } else if (eventType === 'places') {
                                 placesData = parsed;
                             } else if (eventType === 'error') {
-                                throw new Error(parsed.message || 'Unknown error');
+                                reject(new Error(parsed.message || 'Unknown error'));
                             }
-                        } catch (e) {
-                            if (e.message && !e.message.includes('JSON')) throw e;
-                        }
-                    }
-                }
+                        },
+                        () => resolve(),
+                        (error) => reject(error)
+                    );
+                });
 
                 if (placesData && placesData.places && placesData.places.length > 0) {
                     setSearchText('');
