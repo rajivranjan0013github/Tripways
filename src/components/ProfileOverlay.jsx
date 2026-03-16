@@ -13,6 +13,8 @@ import {
     Dimensions,
     Image,
     Platform,
+    Linking,
+    Alert,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -181,48 +183,91 @@ const ProfileOverlay = ({ visible, onClose, navigation, bottomSheetRef }) => {
     }));
 
     const handleLogout = () => {
-        try {
-            // 1. Clear local session storage
-            storage.delete('user');
-            storage.delete('isNewUser');
+        Alert.alert(
+            'Log Out',
+            'Are you sure you want to log out?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Log Out',
+                    style: 'destructive',
+                    onPress: () => {
+                        try {
+                            // 1. Clear local session storage
+                            storage.delete('user');
+                            storage.delete('isNewUser');
 
-            // 2. Clear React Query cache (Saved Places, Trips, Profile)
-            queryClient.clear();
+                            // 2. Clear React Query cache (Saved Places, Trips, Profile)
+                            queryClient.clear();
 
-            // 3. Reset Zustand stores
-            useTripStore.getState().clearTrip();
-            useUIStore.getState().resetUI();
+                            // 3. Reset Zustand stores
+                            useTripStore.getState().clearTrip();
+                            useUIStore.getState().resetUI();
 
-            // 4. Clear App Group context for Share Extension
-            if (Platform.OS === 'ios') {
-                setAppGroupData('', '');
-            }
-        } catch (e) {
-            console.warn('Failed to clear state on logout:', e);
-        }
+                            // 4. Clear App Group context for Share Extension
+                            if (Platform.OS === 'ios') {
+                                setAppGroupData('', '');
+                            }
+                        } catch (e) {
+                            console.warn('Failed to clear state on logout:', e);
+                        }
 
-        onClose();
-        if (navigation) {
-            navigation.reset({
-                index: 0,
-                routes: [{ name: 'Login' }],
-            });
-        }
+                        onClose();
+                        if (navigation) {
+                            navigation.reset({
+                                index: 0,
+                                routes: [{ name: 'Login' }],
+                            });
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     const handleDeleteAccount = async () => {
-        const userId = userData?.id || userData?._id;
-        if (!userId) return;
+        Alert.alert(
+            'Delete Account',
+            'This action is permanent and will delete all your data. Are you sure?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        const userId = userData?.id || userData?._id;
+                        if (!userId) return;
 
-        try {
-            await fetch(`${BACKEND_URL}/api/users/${userId}`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-            });
-        } catch (e) {
-            console.warn('Failed to delete account on server:', e);
-        }
-        handleLogout();
+                        try {
+                            await fetch(`${BACKEND_URL}/api/users/${userId}`, {
+                                method: 'DELETE',
+                                headers: { 'Content-Type': 'application/json' },
+                            });
+                        } catch (e) {
+                            console.warn('Failed to delete account on server:', e);
+                        }
+                        
+                        // Perform local logout logic after deletion
+                        try {
+                            storage.delete('user');
+                            storage.delete('isNewUser');
+                            queryClient.clear();
+                            useTripStore.getState().clearTrip();
+                            useUIStore.getState().resetUI();
+                            if (Platform.OS === 'ios') setAppGroupData('', '');
+                        } catch (e) {}
+
+                        onClose();
+                        if (navigation) {
+                            navigation.reset({
+                                index: 0,
+                                routes: [{ name: 'Login' }],
+                            });
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     // Get user initials for avatar
@@ -373,11 +418,11 @@ const ProfileOverlay = ({ visible, onClose, navigation, bottomSheetRef }) => {
 
                 {/* Privacy & Terms */}
                 <View style={styles.legalRow}>
-                    <TouchableOpacity activeOpacity={0.7}>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => Linking.openURL('https://rajivranjan0013github.github.io/tripways-privacy/privacy-policy.html')}>
                         <Text style={styles.legalText}>Privacy Policy</Text>
                     </TouchableOpacity>
                     <View style={styles.legalDot} />
-                    <TouchableOpacity activeOpacity={0.7}>
+                    <TouchableOpacity activeOpacity={0.7} onPress={() => Linking.openURL('https://rajivranjan0013github.github.io/tripways-privacy/terms-service.html')}>
                         <Text style={styles.legalText}>Terms of Service</Text>
                     </TouchableOpacity>
                 </View>

@@ -63,7 +63,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
     const [mode, setMode] = useState('overview'); // 'overview' or 'itinerary'
     const [selectedDay, setSelectedDay] = useState(1);
     const [expandedDays, setExpandedDays] = useState({});
-    const snapPoints = useMemo(() => [165, '60%'], []);
+    const snapPoints = useMemo(() => [185, '60%'], []);
     const scrollViewRef = useRef(null);
     const dayLayoutRefs = useRef({});
     const [isSavingTemplate, setIsSavingTemplate] = useState(false);
@@ -298,8 +298,8 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                     if (leg) {
                         travelInfo.push({
                             mode: 'driving',
-                            time: leg.durationMinutes >= 60 
-                                ? `${Math.floor(leg.durationMinutes / 60)}h ${leg.durationMinutes % 60}m` 
+                            time: leg.durationMinutes >= 60
+                                ? `${Math.floor(leg.durationMinutes / 60)}h ${leg.durationMinutes % 60}m`
                                 : `${leg.durationMinutes} min`,
                             distance: `${leg.distanceKm} km`,
                         });
@@ -453,9 +453,9 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
     const renderTravelConnector = (index, travelInfo, fromSpot, toSpot) => (
         <View key={`connector-${index}`} style={styles.travelConnectorContainer}>
             <View style={styles.dotsColumn}>
-                <View style={styles.dot} />
-                <View style={styles.dot} />
-                <View style={styles.dot} />
+                {[...Array(10)].map((_, i) => (
+                    <View key={i} style={styles.dot} />
+                ))}
             </View>
             {travelInfo && (
                 <View style={styles.travelInfoRow}>
@@ -498,6 +498,9 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                         </Text>
                     </View>
                     <TouchableOpacity style={styles.directionsButton} onPress={() => handleTravelDirections(fromSpot, toSpot)}>
+                        <Svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4 }}>
+                            <Path d="M3 11l19-9-9 19-2-8-8-2z" />
+                        </Svg>
                         <Text style={styles.directionsText}>Directions</Text>
                     </TouchableOpacity>
                 </View>
@@ -559,7 +562,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                                         const idx = getIndex();
                                         return (
                                             <ScaleDecorator activeScale={0.98}>
-                                                <View style={{ marginBottom: 8 }}>
+                                                <View style={{ marginBottom: 12 }}>
                                                     {renderSpotCard(item, idx, dayData.day, { drag, isActive })}
                                                 </View>
                                             </ScaleDecorator>
@@ -744,7 +747,10 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                     {mode === 'overview' && (
                         <View>
                             <View style={styles.titleRow}>
-                                <Text style={styles.tripTitle}>{numDays}-Day {locationName} Trip</Text>
+                                <View style={styles.titleContent}>
+                                    <Text style={styles.tripTitle} numberOfLines={2}>{numDays}-Day {locationName} Trip</Text>
+                                    <Text style={styles.duration}>📅 {numDays} days {numDays - 1} nights • <Text style={{ color: '#0F172A' }}>Choose dates {'>'}</Text></Text>
+                                </View>
                                 <TouchableOpacity style={styles.shareIconButton}>
                                     <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                         <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -753,7 +759,6 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                                     </Svg>
                                 </TouchableOpacity>
                             </View>
-                            <Text style={styles.duration}>📅 {numDays} days {numDays - 1} nights • <Text style={{ color: '#0F172A' }}>Choose dates {'>'}</Text></Text>
                             {isTemplateTripView && (
                                 <TouchableOpacity
                                     style={styles.saveTemplateButton}
@@ -937,6 +942,11 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 36,
         borderTopRightRadius: 36,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+        elevation: 20,
     },
     handleIndicator: {
         backgroundColor: '#CBD5E1',
@@ -952,21 +962,24 @@ const styles = StyleSheet.create({
     },
     header: {
         paddingHorizontal: 24,
-        paddingTop: 0,
-        marginTop: 0
+        // marginTop: -10
     },
     titleRow: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 4,
+        gap: 16,
+        marginBottom: 16,
+    },
+    titleContent: {
+        flex: 1,
+        marginTop: -5
     },
     tripTitle: {
-        fontSize: 26,
+        fontSize: 24,
         fontWeight: '800',
         color: '#0F172A',
         letterSpacing: -0.5,
-        flex: 1,
     },
     shareIconButton: {
         width: 44,
@@ -991,11 +1004,10 @@ const styles = StyleSheet.create({
         color: '#FFFFFF',
     },
     duration: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '500',
         color: '#94A3B8',
-        marginBottom: 16,
-        marginTop: 4,
+        marginTop: 6,
     },
 
     // Tab styles - Full width for overview mode
@@ -1043,6 +1055,7 @@ const styles = StyleSheet.create({
     scrollContent: {
         flex: 1,
         paddingHorizontal: 20,
+        paddingTop: 10,
     },
 
     // Overview styles
@@ -1179,9 +1192,9 @@ const styles = StyleSheet.create({
         color: '#475569',
     },
     dotsColumn: {
-        alignItems: 'center',
+        width: 24,
+        alignItems: 'flex-end',
         gap: 4,
-        marginTop: 8,
     },
     spotImage: {
         width: 48,
@@ -1244,8 +1257,10 @@ const styles = StyleSheet.create({
         color: '#64748B',
     },
     directionsButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
         backgroundColor: '#F1F5F9',
-        paddingHorizontal: 12,
+        paddingHorizontal: 10,
         paddingVertical: 4,
         borderRadius: 10,
         borderWidth: 1,
@@ -1261,9 +1276,11 @@ const styles = StyleSheet.create({
     travelConnectorContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 2,
+        paddingVertical: 0,
+        marginVertical: -16, // Bridge the top and bottom card padding (12+12)
         paddingLeft: 12,
-        gap: 12,
+        gap: 4,
+        zIndex: 5,
     },
     travelInfoRow: {
         flex: 1,
@@ -1275,7 +1292,7 @@ const styles = StyleSheet.create({
     travelInfoGroup: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 0,
     },
     travelModeBadge: {
         width: 28,
@@ -1285,7 +1302,7 @@ const styles = StyleSheet.create({
     },
     dot: {
         width: 2,
-        height: 3,
+        height: 4,
         borderRadius: 2,
         backgroundColor: '#CBD5E1',
     },

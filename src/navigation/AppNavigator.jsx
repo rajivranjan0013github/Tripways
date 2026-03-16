@@ -4,12 +4,13 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Linking } from 'react-native';
+import { Linking, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import RNBootSplash from 'react-native-bootsplash';
 import { MMKV } from 'react-native-mmkv';
 
+import AnimatedSplash from '../components/AnimatedSplash';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
@@ -84,6 +85,7 @@ const linking = {
 const AppNavigator = () => {
     const [initialRoute, setInitialRoute] = useState('Onboarding');
     const [isReady, setIsReady] = useState(false);
+    const [isSplashVisible, setIsSplashVisible] = useState(true);
 
     // Initial setup
     useEffect(() => {
@@ -94,11 +96,12 @@ const AppNavigator = () => {
     if (!isReady) return null;
 
     return (
-        <NavigationContainer
-            linking={linking}
-            onReady={() => {
-                // Hide native splash once navigation tree is ready
-                try {
+        <View style={{ flex: 1 }}>
+            <NavigationContainer
+                linking={linking}
+                onReady={() => {
+                    // Start JS bootSplash animation
+                    try {
                     RNBootSplash.hide({ fade: true });
                 } catch { }
             }}
@@ -147,7 +150,12 @@ const AppNavigator = () => {
                     }}
                 />
             </Stack.Navigator>
-        </NavigationContainer>
+            </NavigationContainer>
+            
+            {isSplashVisible && (
+                <AnimatedSplash onAnimationEnd={() => setIsSplashVisible(false)} />
+            )}
+        </View>
     );
 };
 

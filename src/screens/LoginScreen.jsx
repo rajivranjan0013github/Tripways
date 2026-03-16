@@ -288,14 +288,14 @@ const LoginScreen = ({ navigation }) => {
                         By continuing, you agree to our{' '}
                         <Text
                             style={styles.termsLink}
-                            onPress={() => Linking.openURL('https://tripways.app/terms')}
+                            onPress={() => Linking.openURL('https://rajivranjan0013github.github.io/tripways-privacy/terms-service.html')}
                         >
                             Terms of Service
                         </Text>{' '}
                         &{' '}
                         <Text
                             style={styles.termsLink}
-                            onPress={() => Linking.openURL('https://tripways.app/privacy')}
+                            onPress={() => Linking.openURL('https://rajivranjan0013github.github.io/tripways-privacy/privacy-policy.html')}
                         >
                             Privacy Policy
                         </Text>
