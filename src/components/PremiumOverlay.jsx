@@ -274,11 +274,11 @@ const PremiumOverlay = ({ visible, onClose }) => {
 
                     {/* Footer Links */}
                     <View style={styles.footerLinks}>
-                        <TouchableOpacity onPress={() => Linking.openURL('https://tripways.com/terms')}>
+                        <TouchableOpacity onPress={() => Linking.openURL('https://rajivranjan0013github.github.io/tripways-privacy/terms-service.html')}>
                             <Text style={styles.footerLink}>Terms of use</Text>
                         </TouchableOpacity>
                         <Text style={styles.footerDivider}>|</Text>
-                        <TouchableOpacity onPress={() => Linking.openURL('https://tripways.com/privacy')}>
+                        <TouchableOpacity onPress={() => Linking.openURL('https://rajivranjan0013github.github.io/tripways-privacy/privacy-policy.html')}>
                             <Text style={styles.footerLink}>Privacy Policy</Text>
                         </TouchableOpacity>
                         <Text style={styles.footerDivider}>|</Text>
