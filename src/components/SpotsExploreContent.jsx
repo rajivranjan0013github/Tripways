@@ -3,7 +3,9 @@ import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Image, Styl
 import { ScrollView } from 'react-native-gesture-handler';
 import { BottomSheetView, BottomSheetScrollView, BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import Animated, { withTiming, Easing } from 'react-native-reanimated';
-import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import Svg, { Path, Circle, Rect, Polyline, Line, Check, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
+import LinearGradient from 'react-native-linear-gradient';
+import { useUserStore } from '../store/userStore';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -42,11 +44,14 @@ const SpotsExploreContent = ({
     tabBarTranslateY,
     setShowProfile
 }) => {
+    const isPremium = useUserStore((state) => state.isPremium);
+    
     return (
         <View style={styles.sheetContent}>
             {/* Search Row */}
-            <View style={styles.sheetSearchRow}>
-                <View style={styles.sheetSearchBar}>
+            {savedViewMode === 'spots' && (
+                <View style={styles.sheetSearchRow}>
+                    <View style={styles.sheetSearchBar}>
                     {socialMode === 'instagram' ? (
                         <Svg width="17" height="17" viewBox="0 0 24 24" fill="none">
                             <Rect x="2" y="2" width="20" height="20" rx="5" stroke="#E1306C" strokeWidth="2" />
@@ -95,19 +100,34 @@ const SpotsExploreContent = ({
                         }}
                     >
                         <Animated.View style={[StyleSheet.absoluteFill, avatarAnimatedStyle, { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">
-                            <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <Svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="url(#grad)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <Defs>
+                                    <SvgLinearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <Stop offset="0%" stopColor="#8B5CF6" />
+                                        <Stop offset="50%" stopColor="#D946EF" />
+                                        <Stop offset="100%" stopColor="#F43F5E" />
+                                    </SvgLinearGradient>
+                                </Defs>
                                 <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                                 <Circle cx="12" cy="7" r="4" />
                             </Svg>
                         </Animated.View>
                         <Animated.View style={[StyleSheet.absoluteFill, closeAnimatedStyle, { alignItems: 'center', justifyContent: 'center' }]} pointerEvents="none">
-                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="url(#grad2)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <Defs>
+                                    <SvgLinearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <Stop offset="0%" stopColor="#8B5CF6" />
+                                        <Stop offset="50%" stopColor="#D946EF" />
+                                        <Stop offset="100%" stopColor="#F43F5E" />
+                                    </SvgLinearGradient>
+                                </Defs>
                                 <Path d="M18 6 6 18M6 6l12 12" />
                             </Svg>
                         </Animated.View>
                     </TouchableOpacity>
                 </View>
             </View>
+            )}
             {/* Exploration Content */}
             {searchFocused && searchText.length === 0 && !socialMode ? (
                 <BottomSheetScrollView style={styles.socialSearchContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -173,22 +193,74 @@ const SpotsExploreContent = ({
                     )}
                 </View>
             ) : (
-                <BottomSheetScrollView style={styles.mySpotsList} contentContainerStyle={styles.mySpotsListContent} showsVerticalScrollIndicator={false}>
+                <BottomSheetScrollView style={styles.mySpotsList} contentContainerStyle={[styles.mySpotsListContent, savedViewMode !== 'spots' && { paddingTop: 24 }]} showsVerticalScrollIndicator={false}>
                     <View style={styles.mySpotsHeader}>
-                        <View style={styles.savedModeSwitch}>
-                            <TouchableOpacity style={[styles.savedModeChip, savedViewMode === 'spots' && styles.savedModeChipActive]} activeOpacity={0.8} onPress={() => setSavedViewMode('spots')}>
-                                <Text style={[styles.savedModeChipText, savedViewMode === 'spots' && styles.savedModeChipTextActive]}>My Spots</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={[styles.savedModeChip, savedViewMode === 'imports' && styles.savedModeChipActive]} activeOpacity={0.8} onPress={() => setSavedViewMode('imports')}>
-                                <Text style={[styles.savedModeChipText, savedViewMode === 'imports' && styles.savedModeChipTextActive]}>Imported</Text>
-                            </TouchableOpacity>
-                        </View>
-                        <Text style={styles.mySpotsTitle}>{savedViewMode === 'spots' ? 'My Spots' : 'Imported Reels & TikToks'}</Text>
-                        <Text style={styles.mySpotsSubtitle}>
-                            {savedViewMode === 'spots'
-                                ? `${totalSpotsCount} ${totalSpotsCount === 1 ? 'Spot' : 'Spots'} Saved`
-                                : `${totalImportsCount} ${totalImportsCount === 1 ? 'Import' : 'Imports'} Saved`}
-                        </Text>
+                        {savedViewMode === 'spots' ? (
+                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <View>
+                                    <Text style={styles.mySpotsTitle}>My Spots</Text>
+                                    <Text style={styles.mySpotsSubtitle}>
+                                        {totalSpotsCount} {totalSpotsCount === 1 ? 'Spot' : 'Spots'} Saved
+                                    </Text>
+                                </View>
+                                <TouchableOpacity 
+                                    style={styles.importedBtn} 
+                                    activeOpacity={0.8} 
+                                    onPress={() => setSavedViewMode('imports')}
+                                >
+                                    <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+                                        <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                        <Polyline points="7 10 12 15 17 10" />
+                                        <Line x1="12" y1="15" x2="12" y2="3" />
+                                    </Svg>
+                                    <View style={styles.importedBtnBadge}>
+                                        <LinearGradient
+                                            colors={['#8B5CF6', '#D946EF', '#F43F5E']}
+                                            start={{ x: 0, y: 0 }}
+                                            end={{ x: 1, y: 1 }}
+                                            style={[StyleSheet.absoluteFill, { borderRadius: 8 }]}
+                                        />
+                                        <Text style={styles.importedBtnBadgeText}>{totalImportsCount}</Text>
+                                    </View>
+                                    <Text style={styles.importedBtnText}> Imported</Text>
+                                </TouchableOpacity>
+                            </View>
+                        ) : (
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <TouchableOpacity 
+                                    style={styles.backBtn} 
+                                    activeOpacity={0.8} 
+                                    onPress={() => setSavedViewMode('spots')}
+                                >
+                                    <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="m15 18-6-6 6-6"/>
+                                    </Svg>
+                                </TouchableOpacity>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.mySpotsTitle}>Imported Reels & TikToks</Text>
+                                    {!isPremium ? (
+                                        <View style={styles.freeLimitContainer}>
+                                            <View style={styles.freeLimitProgressTrack}>
+                                                <View style={[styles.freeLimitProgressBar, { width: `${Math.min((totalImportsCount / 5) * 100, 100)}%` }]} />
+                                            </View>
+                                            <Text style={styles.freeLimitText}>
+                                                {totalImportsCount >= 5 ? '5 / 5 free imports used' : `${totalImportsCount} / 5 free imports saved`}
+                                            </Text>
+                                        </View>
+                                    ) : (
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                                            <View style={styles.premiumBadgeIcon}>
+                                                <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                    <Path d="M20 6 9 17l-5-5"/>
+                                                </Svg>
+                                            </View>
+                                            <Text style={styles.premiumText}>Unlimited Imports</Text>
+                                            <Text style={styles.premiumCountText}> • {totalImportsCount} Saved</Text>
+                                        </View>
+                                    )}
+                                </View>
+                            </View>
+                        )}
                     </View>
                     {savedViewMode === 'spots' ? (
                         mySpotsCountries.length === 0 ? (
@@ -240,7 +312,7 @@ const SpotsExploreContent = ({
                                         </View>
                                         <Text style={styles.importCardTitle} numberOfLines={2}>{importTitle}</Text>
                                         {!!item.caption && <Text style={styles.importCardCaption} numberOfLines={2}>{item.caption}</Text>}
-                                        <Text style={styles.importCardMeta}>{item.totalExtractedPlaces || 0} extracted • {item.savedSpotCount || 0} saved</Text>
+                                        <Text style={styles.importCardMeta}>{item.totalExtractedPlaces || 0} extracted </Text>
                                     </View>
                                 </TouchableOpacity>
                             );
@@ -375,30 +447,47 @@ const styles = StyleSheet.create({
     mySpotsHeader: {
         marginBottom: 10,
     },
-    savedModeSwitch: {
+    importedBtn: {
         flexDirection: 'row',
-        alignSelf: 'flex-start',
-        backgroundColor: '#EEF2F7',
-        borderRadius: 999,
-        padding: 4,
-        marginBottom: 12,
-        gap: 6,
-    },
-    savedModeChip: {
-        paddingHorizontal: 14,
-        paddingVertical: 9,
-        borderRadius: 999,
-    },
-    savedModeChipActive: {
+        alignItems: 'center',
         backgroundColor: '#FFFFFF',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 24,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
     },
-    savedModeChipText: {
+    importedBtnText: {
         fontSize: 13,
         fontWeight: '700',
-        color: '#64748B',
+        color: '#1E293B',
     },
-    savedModeChipTextActive: {
-        color: '#0F172A',
+    importedBtnBadge: {
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 8,
+        marginRight: 6,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    importedBtnBadgeText: {
+        fontSize: 13,
+        fontWeight: '900',
+        color: '#FFFFFF',
+    },
+    backBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#F1F5F9',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
     },
     mySpotsTitle: {
         fontSize: 18,
@@ -630,6 +719,46 @@ const styles = StyleSheet.create({
         backgroundColor: '#F1F5F9',
         borderRadius: 14,
         marginRight: 12,
+    },
+    freeLimitContainer: {
+        marginTop: 6,
+        paddingRight: 32, 
+    },
+    freeLimitProgressTrack: {
+        height: 6,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 3,
+        overflow: 'hidden',
+        marginBottom: 6,
+    },
+    freeLimitProgressBar: {
+        height: '100%',
+        backgroundColor: '#3B82F6',
+        borderRadius: 3,
+    },
+    freeLimitText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748B',
+    },
+    premiumBadgeIcon: {
+        width: 14,
+        height: 14,
+        borderRadius: 7,
+        backgroundColor: '#10B981',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 6,
+    },
+    premiumText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#10B981',
+    },
+    premiumCountText: {
+        fontSize: 12,
+        fontWeight: '500',
+        color: '#94A3B8',
     },
 });
 

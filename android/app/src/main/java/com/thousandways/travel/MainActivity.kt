@@ -14,7 +14,7 @@ class MainActivity : ReactActivity() {
   }
 
   // When app is already open and receives a new share intent
-  override fun onNewIntent(intent: Intent?) {
+  override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
   }

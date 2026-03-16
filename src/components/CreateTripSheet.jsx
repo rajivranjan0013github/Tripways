@@ -15,7 +15,10 @@ import Animated, {
     Easing,
     interpolate,
 } from 'react-native-reanimated';
+import { Animated as RNAnimated } from 'react-native';
 import WheelPicker from '@quidone/react-native-wheel-picker';
+import { ScrollContentOffsetContext } from '@quidone/react-native-wheel-picker/src/base/contexts/ScrollContentOffsetContext';
+import { PickerItemHeightContext } from '@quidone/react-native-wheel-picker/src/base/contexts/PickerItemHeightContext';
 import { Calendar } from 'react-native-calendars';
 import { useQueryClient } from '@tanstack/react-query';
 import Config from 'react-native-config';
@@ -36,6 +39,40 @@ const FONT_SERIF = Platform.select({
     android: 'CormorantGaramond-SemiBoldItalic',
     default: 'System',
 });
+
+const CustomWheelPickerItem = ({ item, index, numDays }) => {
+    const offset = React.useContext(ScrollContentOffsetContext);
+    const height = React.useContext(PickerItemHeightContext);
+
+    // If contexts aren't available, fallback to simple styling
+    if (!offset || !height) {
+        return (
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', height: 80 }}>
+                <Text style={[styles.pickerText, item.value === numDays ? styles.pickerTextActive : styles.pickerTextInactive]}>
+                    {item.label}
+                </Text>
+            </View>
+        );
+    }
+
+    const itemOffset = index * height;
+    
+    // We interpolate the color. Active is #000000, Inactive is rgba(15, 23, 42, 0.4)
+    // React Native's Animated.Value interpolation for color works well here
+    const color = offset.interpolate({
+        inputRange: [itemOffset - height, itemOffset, itemOffset + height],
+        outputRange: ['rgba(15, 23, 42, 0.4)', '#000000', 'rgba(15, 23, 42, 0.4)'],
+        extrapolate: 'clamp',
+    });
+
+    return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', height: height }}>
+            <RNAnimated.Text style={[styles.pickerText, { color }]}>
+                {item.label}
+            </RNAnimated.Text>
+        </View>
+    );
+};
 
 const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated, onPlanningStarted }, ref) => {
     const insets = useSafeAreaInsets();
@@ -597,24 +634,28 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                             <WheelPicker
                                 data={Array.from({ length: 30 }, (_, i) => ({ value: i + 1, label: (i + 1).toString() }))}
                                 value={numDays}
+                                extraValues={[numDays]}
                                 onValueChanged={({ item }) => setNumDays(item.value)}
                                 width={SCREEN_WIDTH}
                                 height={320}
                                 itemHeight={80}
-                                itemTextStyle={[styles.pickerText, styles.pickerTextInactive]}
-                                selectedItemTextStyle={[styles.pickerText, styles.pickerTextActive]}
+                                renderItem={({ item, index }) => (
+                                    <CustomWheelPickerItem item={item} index={index} numDays={numDays} />
+                                )}
                             />
                         </GestureHandlerRootView>
                     ) : (
                         <WheelPicker
                             data={Array.from({ length: 30 }, (_, i) => ({ value: i + 1, label: (i + 1).toString() }))}
                             value={numDays}
+                            extraValues={[numDays]}
                             onValueChanged={({ item }) => setNumDays(item.value)}
                             width={SCREEN_WIDTH}
                             height={320}
                             itemHeight={80}
-                            itemTextStyle={[styles.pickerText, styles.pickerTextInactive]}
-                            selectedItemTextStyle={[styles.pickerText, styles.pickerTextActive]}
+                            renderItem={({ item, index }) => (
+                                <CustomWheelPickerItem item={item} index={index} numDays={numDays} />
+                            )}
                         />
                     )}
                 </View>
@@ -973,6 +1014,15 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             <View style={styles.discoverHeader}>
                 <View style={styles.discoverTitleRow}>
                     <Text style={styles.discoverTitle}>Discover spots</Text>
+                    <TouchableOpacity 
+                        style={styles.discoverCloseBtn}
+                        activeOpacity={0.7}
+                        onPress={() => bottomSheetInternalRef.current?.close()}
+                    >
+                        <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <Path d="M18 6 6 18M6 6l12 12" />
+                        </Svg>
+                    </TouchableOpacity>
                 </View>
 
                 {isLoadingPlaces ? (
@@ -2009,6 +2059,14 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         marginBottom: 10,
         marginTop: -10
+    },
+    discoverCloseBtn: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#F1F5F9',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     // Skeleton Placeholder Styles
     skeletonCategoryChip: {

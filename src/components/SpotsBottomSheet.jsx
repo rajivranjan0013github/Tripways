@@ -710,10 +710,7 @@ const SpotsBottomSheet = ({
                                             <Text style={styles.importMetricValue}>{activeImport.totalExtractedPlaces || 0}</Text>
                                             <Text style={styles.importMetricLabel}>Extracted</Text>
                                         </View>
-                                        <View style={styles.importMetricCard}>
-                                            <Text style={styles.importMetricValue}>{activeImport.savedSpotCount || 0}</Text>
-                                            <Text style={styles.importMetricLabel}>Saved</Text>
-                                        </View>
+                                       
                                     </View>
 
                                   
@@ -731,13 +728,7 @@ const SpotsBottomSheet = ({
                                         </>
                                     )}
 
-                                    <View style={styles.importActionRow}>
-                                        {!!activeImport.originalUrl && (
-                                            <TouchableOpacity style={[styles.importActionButton, styles.importActionButtonSecondary]} onPress={() => Linking.openURL(activeImport.originalUrl)}>
-                                                <Text style={[styles.importActionButtonText, styles.importActionButtonTextSecondary]}>Open original link</Text>
-                                            </TouchableOpacity>
-                                        )}
-                                    </View>
+                                  
                                 </View>
                             </ScrollView>
                         )}
