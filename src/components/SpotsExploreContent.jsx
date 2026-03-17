@@ -308,11 +308,10 @@ const SpotsExploreContent = ({
                                     <View style={styles.importCardInfo}>
                                         <View style={styles.importCardTopRow}>
                                             <Text style={styles.importPlatformPill}>{item.platform === 'tiktok' ? 'TikTok' : item.platform === 'instagram' ? 'Reel' : 'Video'}</Text>
-                                            <Text style={styles.importStatusText}>{item.status}</Text>
+                                            <Text style={styles.importCardMeta}>{item.totalExtractedPlaces || 0} extracted </Text>
                                         </View>
                                         <Text style={styles.importCardTitle} numberOfLines={2}>{importTitle}</Text>
                                         {!!item.caption && <Text style={styles.importCardCaption} numberOfLines={2}>{item.caption}</Text>}
-                                        <Text style={styles.importCardMeta}>{item.totalExtractedPlaces || 0} extracted </Text>
                                     </View>
                                 </TouchableOpacity>
                             );
@@ -563,73 +562,72 @@ const styles = StyleSheet.create({
     importCard: {
         flexDirection: 'row',
         backgroundColor: '#F8FAFC',
-        borderRadius: 18,
-        padding: 10,
-        marginBottom: 12,
+        borderRadius: 14,
+        padding: 8,
+        marginBottom: 8,
         borderWidth: 1,
         borderColor: '#EEF2F7',
     },
     importCardImage: {
-        width: 104,
-        height: 128,
-        borderRadius: 14,
+        width: 64,
+        height: 80,
+        borderRadius: 10,
         backgroundColor: '#E2E8F0',
     },
     importCardImagePlaceholder: {
-        width: 104,
-        height: 128,
-        borderRadius: 14,
+        width: 64,
+        height: 80,
+        borderRadius: 10,
         backgroundColor: '#E2E8F0',
         alignItems: 'center',
         justifyContent: 'center',
     },
     importCardImageEmoji: {
-        fontSize: 28,
+        fontSize: 20,
         color: '#475569',
     },
     importCardInfo: {
         flex: 1,
-        marginLeft: 12,
+        marginLeft: 10,
         justifyContent: 'space-between',
     },
     importCardTopRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 4,
     },
     importPlatformPill: {
-        fontSize: 11,
+        fontSize: 9,
         fontWeight: '800',
         color: '#334155',
         backgroundColor: '#E2E8F0',
         overflow: 'hidden',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
+        paddingHorizontal: 6,
+        paddingVertical: 3,
         borderRadius: 999,
     },
     importStatusText: {
-        fontSize: 11,
+        fontSize: 10,
         color: '#64748B',
         fontWeight: '700',
         textTransform: 'capitalize',
     },
     importCardTitle: {
-        fontSize: 16,
+        fontSize: 13,
         fontWeight: '800',
         color: '#0F172A',
-        lineHeight: 21,
+        lineHeight: 18,
     },
     importCardCaption: {
-        fontSize: 13,
+        fontSize: 11,
         color: '#64748B',
-        lineHeight: 18,
-        marginTop: 6,
+        lineHeight: 14,
+        marginTop: 2,
     },
     importCardMeta: {
-        fontSize: 12,
+        fontSize: 10,
         color: '#94A3B8',
-        marginTop: 10,
         fontWeight: '700',
     },
     spotSearchRow: {
