@@ -114,6 +114,7 @@ const HomeScreen = () => {
     // Zoom level + map region stored in refs to avoid re-renders on every pan/zoom.
     const mapZoomRef = useRef(3);
     const mapRegionRef = useRef(null);
+    const savedCameraBeforeTripRef = useRef(null);
     const [showItineraryLabels, setShowItineraryLabels] = useState(false); // >= 10
     const [mapZoom, setMapZoom] = useState(3); // Current zoom as state for collision recalc
 
@@ -449,6 +450,29 @@ const HomeScreen = () => {
         }
     }, [activeTab]);
 
+    // Track camera before a trip opens so we can restore it when the trip closes
+    useEffect(() => {
+        if (!tripData) {
+            // Trip was cleared, restore the saved camera
+            if (savedCameraBeforeTripRef.current && mapRef.current) {
+                const saved = savedCameraBeforeTripRef.current;
+                savedCameraBeforeTripRef.current = null;
+
+                // First, snap the main bottom sheet back to the saved position
+                // so dynamicMapPadding settles to the same value as before the trip
+                if (saved.sheetIdx !== undefined) {
+                    bottomSheetRef.current?.snapToIndex(saved.sheetIdx);
+                }
+
+                // Wait for the sheet position + map padding to fully settle,
+                // THEN animate the camera back to the exact pre-trip view
+                setTimeout(() => {
+                    mapRef.current?.animateCamera(saved.camera, { duration: 600 });
+                }, 500);
+            }
+        }
+    }, [tripData]);
+
     // Fit the map to show markers based on active day/trip changes
     useEffect(() => {
         if (!tripData?.itinerary || !mapRef.current) return;
@@ -703,6 +727,19 @@ const HomeScreen = () => {
                     const zoom = Math.round(Math.log2(360 / region.longitudeDelta));
                     mapZoomRef.current = zoom;
                     mapRegionRef.current = region;
+
+                    // Continuously save the camera when no trip is active,
+                    // so we always have the exact pre-trip view to restore later.
+                    // We use getCamera() because camera center+zoom is NOT affected by mapPadding,
+                    // unlike region deltas which shift when padding changes.
+                    if (!tripData && mapRef.current) {
+                        mapRef.current.getCamera().then(cam => {
+                            if (!tripData) {
+                                savedCameraBeforeTripRef.current = { camera: cam, sheetIdx: sheetIndex };
+                            }
+                        });
+                    }
+
                     if (zoom !== mapZoom) setMapZoom(zoom);
 
 
@@ -1486,6 +1523,8 @@ const styles = StyleSheet.create({
     },
     flagMarkerInner: {
         position: 'relative',
+        width: 50,
+        height: 50,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -1497,8 +1536,8 @@ const styles = StyleSheet.create({
     },
     flagMarkerBadge: {
         position: 'absolute',
-        top: -4,
-        right: -8,
+        top: 0,
+        right: 0,
         minWidth: 22,
         height: 22,
         borderRadius: 11,
