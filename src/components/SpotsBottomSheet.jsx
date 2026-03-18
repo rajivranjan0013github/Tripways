@@ -136,6 +136,9 @@ const SpotsBottomSheet = ({
         easing: Easing.bezier(0.33, 1, 0.68, 1),
     }), []);
 
+    // Local ui/animation state
+    const isProgrammaticCloseRef = useRef(false);
+
     const handleSheetChanges = useCallback((index) => {
         setSheetIndex(index);
         if (index !== 2) {
@@ -143,7 +146,11 @@ const SpotsBottomSheet = ({
         }
         // If sheet is CLOSED gesturally in trips mode, reset tab to home
         if (index === -1 && activeTab === 'trips') {
-            setActiveTab('home');
+            if (isProgrammaticCloseRef.current) {
+                isProgrammaticCloseRef.current = false; // consume it
+            } else {
+                setActiveTab('home');
+            }
         }
     }, [setSheetIndex, activeTab, setActiveTab]);
 
@@ -162,6 +169,7 @@ const SpotsBottomSheet = ({
                     discoveredPlaces: fullTrip.discoveredPlaces || [],
                 });
                 setIsTemplateTripView(false);
+                isProgrammaticCloseRef.current = true;
                 bottomSheetRef.current?.close();
                 setTimeout(() => {
                     tabBarTranslateY.value = withTiming(tabBarHeight, {
@@ -194,6 +202,7 @@ const SpotsBottomSheet = ({
                     discoveredPlaces: t.discoveredPlaces || [],
                 });
                 setIsTemplateTripView(true);
+                isProgrammaticCloseRef.current = true;
                 bottomSheetRef.current?.close();
                 setTimeout(() => {
                     tabBarTranslateY.value = withTiming(tabBarHeight, {
@@ -288,6 +297,7 @@ const SpotsBottomSheet = ({
                     setSocialMode(null);
                     searchInputRef.current?.blur();
                     Keyboard.dismiss();
+                    isProgrammaticCloseRef.current = true;
                     bottomSheetRef.current?.close();
 
                     setTimeout(() => {
