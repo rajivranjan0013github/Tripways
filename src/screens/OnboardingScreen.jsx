@@ -38,9 +38,10 @@ const slides = [
     },
     {
         id: '3',
+        image:require('../assets/reelssharing.png'),
         type: 'video',
         tag: 'IMPORT IN SECONDS',
-        headline: 'Share reels, save spots',
+        headline: 'Share video, save spots',
     },
 ];
 
@@ -286,7 +287,7 @@ const OnboardingScreen = ({ navigation }) => {
     }, [pinGlow1, pinGlow2, pinGlow3, pinGlow4]);
 
     // ── VideoSlide component (separate to manage its own videoTime state) ──
-    const VideoSlide = useCallback(({ tag, headline }) => {
+    const VideoSlide = useCallback(({ tag, headline, image }) => {
         const [vTime, setVTime] = useState(0);
         const [isPausedForAnn, setIsPausedForAnn] = useState(true); // Start paused on first annotation
         const isPausedRef = useRef(true);
@@ -356,8 +357,15 @@ const OnboardingScreen = ({ navigation }) => {
 
         return (
             <View style={[styles.slide, styles.videoSlide]}>
+                {/* Full-screen background image */}
+                <Image
+                    source={image}
+                    style={styles.heroImage}
+                    resizeMode="cover"
+                />
+
                 <LinearGradient
-                    colors={['#0a0e1a', '#111827', '#0f172a']}
+                    colors={['rgba(10, 14, 26, 0.85)', 'rgba(17, 24, 39, 0.7)', 'rgba(15, 23, 42, 0.85)']}
                     style={StyleSheet.absoluteFill}
                 />
 
@@ -460,7 +468,7 @@ const OnboardingScreen = ({ navigation }) => {
     const renderSlide = useCallback(({ item }) => {
         // Video slide (slide 3)
         if (item.type === 'video') {
-            return <VideoSlide tag={item.tag} headline={item.headline} />;
+            return <VideoSlide tag={item.tag} headline={item.headline} image={item.image} />;
         }
 
         // Image slides (slides 1 & 2)

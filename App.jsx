@@ -92,6 +92,7 @@ export const handleFCMTokenUpdate = async () => {
 
 function App() {
     // Configure RevenueCat on startup
+    console.log("fufiugi")
     useEffect(() => {
         const initPurchases = async () => {
             try {

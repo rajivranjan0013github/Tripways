@@ -110,7 +110,7 @@ const HomeScreen = () => {
     const [sheetIndex, setSheetIndex] = useState(1);
     const [tripOverviewSheetIndex, setTripOverviewSheetIndex] = useState(-1);
     const [activeTripDay, setActiveTripDay] = useState(1);
-
+ console.log("ondocndoc")
     // Zoom level + map region stored in refs to avoid re-renders on every pan/zoom.
     const mapZoomRef = useRef(3);
     const mapRegionRef = useRef(null);
