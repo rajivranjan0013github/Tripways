@@ -1,6 +1,6 @@
 import React, { forwardRef, useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image, ActivityIndicator, Linking } from 'react-native';
-import Animated, { FadeIn, FadeOut, LinearTransition, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from 'react-native-reanimated';
+import Animated, { FadeIn, FadeOut, ZoomIn, LinearTransition, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from 'react-native-reanimated';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView, TouchableOpacity as RNGHTouchableOpacity } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -13,6 +13,7 @@ import { MMKV } from 'react-native-mmkv';
 // Zustand stores
 import { useUIStore } from '../store/uiStore';
 import { useTripStore } from '../store/tripStore';
+import AddSpotSheet from './AddSpotSheet';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const tripStorage = new MMKV();
@@ -49,20 +50,123 @@ const CATEGORY_CONFIG = {
     'Station': { emoji: '🚂', color: '#64748B', bg: '#F8FAFC' },
 };
 
+// Day colors matching the map paths
+const DAY_COLORS = ['#6366F1', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
+
 // Travel mode icons
 const TRAVEL_MODES = {
     walking: { icon: '🚶', label: 'Walking' },
     driving: { icon: '🚗', label: 'Driving' },
 };
 
-const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
-    const { tripData, isTripLoading: isLoading, isSavingTrip, isTemplateTripView, setIsTemplateTripView, reorderSpots, removeSpots, moveSpots } = useTripStore();
+const ChecklistStepItem = ({ step, idx, currentTick, dots, activePulseStyle }) => {
+    const stepStartTick = idx * 5;
+    const isPending = currentTick < stepStartTick;
+    const isActive = currentTick >= stepStartTick && currentTick < stepStartTick + 3;
+    const isCompleted = currentTick >= stepStartTick + 3;
+    const drawLine = currentTick >= stepStartTick + 4;
+
+    const lineStyle = useAnimatedStyle(() => ({
+        height: withTiming(drawLine ? '100%' : '0%', { duration: 500 })
+    }));
+
+    const textStyle = useAnimatedStyle(() => {
+        const activeColor = '#0F172A';
+        const completedColor = '#475569';
+        const pendingColor = '#94A3B8';
+        
+        let targetColor = pendingColor;
+        let targetSize = 16;
+        
+        if (isActive) {
+            targetColor = activeColor;
+            targetSize = 17;
+        } else if (isCompleted) {
+            targetColor = completedColor;
+            targetSize = 16;
+        }
+        
+        return {
+            color: withTiming(targetColor, { duration: 400 }),
+            fontSize: withTiming(targetSize, { duration: 400, easing: Easing.out(Easing.quad) }),
+        };
+    });
+
+    return (
+        <Animated.View
+            entering={FadeIn.delay(idx * 150).duration(300)}
+            style={[
+                styles.checklistRow,
+                isActive && styles.checklistRowActive,
+                isCompleted && styles.checklistRowCompleted,
+            ]}
+        >
+            {/* Status indicator */}
+            <View style={styles.checklistIndicator}>
+                {isCompleted ? (
+                    <View style={styles.checklistCheckCircle}>
+                        <Animated.View entering={ZoomIn.duration(500)}>
+                            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M20 6L9 17l-5-5" />
+                            </Svg>
+                        </Animated.View>
+                    </View>
+                ) : isActive ? (
+                    <Animated.View style={[styles.checklistActiveCircle, activePulseStyle]} />
+                ) : (
+                    <View style={styles.checklistPendingCircle} />
+                )}
+                {/* Connecting line (except last) */}
+                {idx < 3 && ( // Hardcoded 3 based on 4 LOADING_STEPS to avoid passing array length overhead
+                    <View style={[styles.checklistLine, { overflow: 'hidden' }]}>
+                        <Animated.View 
+                            style={[
+                                { width: '100%', backgroundColor: '#10B981', alignSelf: 'flex-start' },
+                                lineStyle
+                            ]} 
+                        />
+                    </View>
+                )}
+            </View>
+
+            {/* Content */}
+            <Animated.View 
+                style={styles.checklistContent}
+                layout={LinearTransition.springify().damping(15)}
+            >
+                <Animated.Text 
+                    style={[
+                        styles.checklistText,
+                        textStyle,
+                        isActive ? { fontWeight: '800' } : (isCompleted ? { fontWeight: '600' } : { fontWeight: '500' })
+                    ]}
+                    layout={LinearTransition.springify().damping(15)}
+                >
+                    {isActive ? step.text + dots : step.text}
+                </Animated.Text>
+            </Animated.View>
+        </Animated.View>
+    );
+};
+
+const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs }, ref) => {
+    const { tripData, isTripLoading: storeLoading, isSavingTrip, isTemplateTripView, setIsTemplateTripView, reorderSpots, removeSpots, moveSpots, optimizeDayOrder, addSpotToDay } = useTripStore();
+    
+    // UI Local state for the loader visibility to allow for "Success" animation delay
+    const [isLoaderVisible, setIsLoaderVisible] = useState(storeLoading);
+
     const { isEditMode, setSelectedSpot } = useUIStore();
     const queryClient = useQueryClient();
     const onSpotPress = setSelectedSpot;
     const [mode, setMode] = useState('overview'); // 'overview' or 'itinerary'
     const [selectedDay, setSelectedDay] = useState(1);
     const [expandedDays, setExpandedDays] = useState({});
+
+    // Notify parent whenever active day or mode changes
+    // Pass null when in overview mode so all routes are shown
+    useEffect(() => {
+        onDayChange?.(mode === 'overview' ? null : selectedDay);
+    }, [selectedDay, mode]);
     const snapPoints = useMemo(() => [185, '60%'], []);
     const scrollViewRef = useRef(null);
     const dayLayoutRefs = useRef({});
@@ -117,6 +221,53 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
     const movePickerSheetRef = useRef(null);
     const movePickerSnapPoints = useMemo(() => ['40%'], []);
 
+    // Add Spot sheet
+    const addSpotSheetRef = useRef(null);
+    const [addSpotDayTarget, setAddSpotDayTarget] = useState(null);
+
+    // Optimize route state
+    const [optimizingDay, setOptimizingDay] = useState(null);
+
+    const handleOptimize = async (dayNum) => {
+        if (optimizingDay !== null) return; // Already optimizing
+        const dayData = tripData?.itinerary?.find(d => d.day === dayNum);
+        if (!dayData?.places || dayData.places.length < 2) return;
+
+        const validPlaces = dayData.places.filter(p => p.coordinates?.lat && p.coordinates?.lng);
+        if (validPlaces.length < 2) return;
+
+        setOptimizingDay(dayNum);
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/optimize-day`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ places: dayData.places }),
+            });
+            const result = await res.json();
+            if (result.success && result.optimizedPlaces) {
+                const cleanPlaces = result.optimizedPlaces.filter(Boolean);
+                optimizeDayOrder(dayNum, cleanPlaces, result.route);
+
+                // Auto-save to backend
+                if (tripData?._id) {
+                    const updatedItinerary = tripData.itinerary.map(d => {
+                        if (d.day !== dayNum) return d;
+                        return { ...d, places: cleanPlaces, route: result.route || d.route };
+                    });
+                    fetch(`${BACKEND_URL}/api/trips/${tripData._id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ itinerary: updatedItinerary }),
+                    }).catch(err => console.warn('Auto-save after optimize failed:', err));
+                }
+            }
+        } catch (err) {
+            console.warn('Optimize route failed:', err);
+        } finally {
+            setOptimizingDay(null);
+        }
+    };
+
     // Local state for draggable list data (avoids blink from useMemo round-trip)
     const [localSpotsMap, setLocalSpotsMap] = useState({});
     const dragJustHappened = useRef(false);
@@ -127,6 +278,14 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
             setSelectedSpots(new Set());
         }
     }, [isEditMode]);
+
+    // Reset view state to Overview/Day 1 when trip is cleared
+    useEffect(() => {
+        if (!tripData) {
+            setMode('overview');
+            setSelectedDay(1);
+        }
+    }, [tripData]);
 
     // Switch to itinerary mode when edit mode is activated
     useEffect(() => {
@@ -211,23 +370,88 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
         scrollViewRef.current?.scrollTo({ y: 0, animated: false });
     }, [mode]);
 
-    // Skeleton pulse animation
+    // ── Logic Checklist Loader ──
+    const LOADING_STEPS = [
+        { text: 'Discovering the best spots' },
+        { text: 'Crafting the perfect route' },
+        { text: 'Optimizing travel times' },
+        { text: 'Applying finishing touches' },
+    ];
+    const [currentTick, setCurrentTick] = useState(0);
+    // Stop at the last tick of the "Active" phase for the final step (3 ticks for 1.5s typewriter)
+    // This prevents the loader from finishing early and appearing stuck
+    const MAX_TICK = (LOADING_STEPS.length - 1) * 5 + 2; 
+
+    useEffect(() => {
+        if (!isLoaderVisible) {
+            setCurrentTick(0);
+            return;
+        }
+        
+        // Reset strictly to 0
+        setCurrentTick(0);
+        
+        let interval;
+        const timeout = setTimeout(() => {
+            interval = setInterval(() => {
+                setCurrentTick(prev => {
+                    if (prev < MAX_TICK) return prev + 1;
+                    return prev;
+                });
+            }, 500); // 500ms per tick logic
+        }, 500); // 500ms head start
+        
+        return () => {
+            clearTimeout(timeout);
+            if (interval) clearInterval(interval);
+        };
+    }, [isLoaderVisible]);
+
+    // Sync local loader visibility with store loading
+    useEffect(() => {
+        if (storeLoading) {
+            setIsLoaderVisible(true);
+        } else if (isLoaderVisible && !storeLoading) {
+            // SUCCESS TRANSITION:
+            // 1. Force the final checkmark to appear
+            setCurrentTick((LOADING_STEPS.length - 1) * 5 + 3); 
+            // 2. Wait a bit so user sees the "Complete" state
+            const timer = setTimeout(() => {
+                setIsLoaderVisible(false);
+            }, 500); 
+            return () => clearTimeout(timer);
+        }
+    }, [storeLoading]);
+
+    // Pulse animation for the active step dot
     const pulseAnim = useSharedValue(0);
     useEffect(() => {
-        if (isLoading) {
+        if (isLoaderVisible) {
+            pulseAnim.value = 0; // Strictly rest to 0 before starting new pulse
             pulseAnim.value = withRepeat(
-                withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+                withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }),
                 -1,
                 true
             );
         } else {
             pulseAnim.value = 0;
         }
-    }, [isLoading]);
+    }, [isLoaderVisible]);
 
-    const skeletonStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(pulseAnim.value, [0, 1], [0.3, 0.7]),
+    const activePulseStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: interpolate(pulseAnim.value, [0, 1], [1, 1.3]) }],
+        opacity: interpolate(pulseAnim.value, [0, 1], [1, 0.6]),
     }));
+
+    // Typewriter effect for active dots "..."
+    const [dots, setDots] = useState('');
+    useEffect(() => {
+        if (!isLoaderVisible) return;
+        const dotsInterval = setInterval(() => {
+            setDots(prev => prev.length >= 3 ? '' : prev + '.');
+        }, 350);
+        return () => clearInterval(dotsInterval);
+    }, [isLoaderVisible]);
 
     const numDays = tripData?.numDays || 4;
     const locationName = tripData?.locationName || 'Trip';
@@ -267,7 +491,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
         }
 
         return backendItinerary.map((dayData) => {
-            const spots = (dayData.places || []).map((place, placeIdx) => {
+            const spots = (dayData.places || []).filter(place => place).map((place, placeIdx) => {
                 const nameLower = place.name?.toLowerCase() || '';
                 const stableId = getStablePlaceId(place);
                 return {
@@ -525,13 +749,18 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                                 style={styles.optimizeButton}
                                 onPress={(e) => {
                                     e.stopPropagation();
-                                    // Optimize logic here
+                                    handleOptimize(dayData.day);
                                 }}
+                                disabled={optimizingDay === dayData.day}
                             >
-                                <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <Path d="M2 20h.01M7 20v-4M12 20V10M17 20V4" />
-                                </Svg>
-                                <Text style={styles.optimizeText}>Optimize</Text>
+                                {optimizingDay === dayData.day ? (
+                                    <ActivityIndicator size="small" color="#0F172A" style={{ width: 12, height: 12 }} />
+                                ) : (
+                                    <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M2 20h.01M7 20v-4M12 20V10M17 20V4" />
+                                    </Svg>
+                                )}
+                                <Text style={styles.optimizeText}>{optimizingDay === dayData.day ? 'Optimizing...' : 'Optimize'}</Text>
                             </TouchableOpacity>
                         </View>
 
@@ -572,6 +801,19 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                                     activationDistance={20}
                                     containerStyle={{ overflow: 'visible' }}
                                 />
+                                <TouchableOpacity
+                                    style={styles.addSpotButton}
+                                    activeOpacity={0.7}
+                                    onPress={() => {
+                                        setAddSpotDayTarget(dayData.day);
+                                        addSpotSheetRef.current?.open();
+                                    }}
+                                >
+                                    <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366F1" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M12 5v14M5 12h14" />
+                                    </Svg>
+                                    <Text style={styles.addSpotText}>Add Spot</Text>
+                                </TouchableOpacity>
                             </Animated.View>
                         )}
                     </Animated.View>
@@ -593,13 +835,18 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                             style={styles.optimizeButton}
                             onPress={(e) => {
                                 e.stopPropagation();
-                                // Optimize logic here
+                                handleOptimize(dayData.day);
                             }}
+                            disabled={optimizingDay === dayData.day}
                         >
-                            <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M2 20h.01M7 20v-4M12 20V10M17 20V4" />
-                            </Svg>
-                            <Text style={styles.optimizeText}>Optimize</Text>
+                            {optimizingDay === dayData.day ? (
+                                <ActivityIndicator size="small" color="#0F172A" style={{ width: 12, height: 12 }} />
+                            ) : (
+                                <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M2 20h.01M7 20v-4M12 20V10M17 20V4" />
+                                </Svg>
+                            )}
+                            <Text style={styles.optimizeText}>{optimizingDay === dayData.day ? 'Optimizing...' : 'Optimize'}</Text>
                         </TouchableOpacity>
                     </View>
 
@@ -641,26 +888,34 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
         return spots.map(s => s.fullName || s.name).join(' → ');
     };
 
-    const renderSkeletonItems = () => {
-        return [1, 2, 3].map((i) => (
-            <View key={`skel-${i}`} style={styles.overviewDayCard}>
-                <Animated.View style={[styles.overviewDayImage, styles.skeletonBox, skeletonStyle]} />
-                <View style={styles.overviewDayInfo}>
-                    <Animated.View style={[styles.skeletonTextTitle, skeletonStyle]} />
-                    <Animated.View style={[styles.skeletonTextLine, skeletonStyle]} />
-                    <Animated.View style={[styles.skeletonTextLine, { width: '60%' }, skeletonStyle]} />
-                </View>
+
+    const renderChecklistLoader = () => (
+        <View style={styles.checklistContainer}>
+            {/* Header */}
+            <View style={styles.checklistHeader}>
+                <Text style={styles.checklistTitle}>Planning your trip</Text>
+                <Text style={styles.checklistSubtitle}>Our Agent is building your perfect itinerary</Text>
             </View>
-        ));
-    };
+
+            {/* Steps */}
+            <View style={styles.checklistSteps}>
+                {LOADING_STEPS.map((step, idx) => (
+                    <ChecklistStepItem 
+                        key={idx}
+                        step={step}
+                        idx={idx}
+                        currentTick={currentTick}
+                        dots={dots}
+                        activePulseStyle={activePulseStyle}
+                    />
+                ))}
+            </View>
+        </View>
+    );
 
     const renderOverviewItems = () => {
-        if (isLoading || itineraryDays.length === 0) {
-            return (
-                <View>
-                    {renderSkeletonItems()}
-                </View>
-            );
+        if (isLoaderVisible || itineraryDays.length === 0) {
+            return renderChecklistLoader();
         }
         return (
             <>
@@ -675,7 +930,10 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                         }}
                     >
                         <View style={styles.overviewDayInfo}>
-                            <Text style={styles.overviewDayLabel}>Day {dayData.day}</Text>
+                            <View style={styles.overviewDayHeader}>
+                                <Text style={styles.overviewDayLabel}>Day {dayData.day}</Text>
+                                <View style={[styles.dayColorDot, { backgroundColor: DAY_COLORS[(dayData.day - 1) % DAY_COLORS.length] }]} />
+                            </View>
                             <Text style={styles.overviewDayCardSpots}>
                                 {formatSpots(dayData.spots)}
                             </Text>
@@ -704,14 +962,23 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
         setSelectedDay(day);
         const y = dayLayoutRefs.current[day];
         if (y != null) {
+            isProgrammaticScroll.current = true;
             scrollViewRef.current?.scrollTo({ y, animated: true });
+            // Give the animation time to finish before re-enabling the listener
+            setTimeout(() => {
+                isProgrammaticScroll.current = false;
+            }, 600);
         }
     };
 
     const selectedDayRef = useRef(selectedDay);
     selectedDayRef.current = selectedDay;
+    // Flag to suppress scroll-listener updates during programmatic scrolls
+    const isProgrammaticScroll = useRef(false);
 
     const handleItineraryScroll = useCallback((event) => {
+        // Ignore scroll events triggered by programmatic scrollToDay calls
+        if (isProgrammaticScroll.current) return;
         const scrollY = event.nativeEvent.contentOffset.y;
         const days = Object.keys(dayLayoutRefs.current)
             .map(Number)
@@ -743,91 +1010,93 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                 animationConfigs={animationConfigs}
             >
                 {/* Fixed Header + Tabs */}
-                <View style={styles.header}>
-                    {mode === 'overview' && (
-                        <View>
-                            <View style={styles.titleRow}>
-                                <View style={styles.titleContent}>
-                                    <Text style={styles.tripTitle} numberOfLines={2}>{numDays}-Day {locationName} Trip</Text>
-                                    <Text style={styles.duration}>📅 {numDays} days {numDays - 1} nights • <Text style={{ color: '#0F172A' }}>Choose dates {'>'}</Text></Text>
+                {!isLoaderVisible && (
+                    <View style={styles.header}>
+                        {mode === 'overview' && (
+                            <View>
+                                <View style={styles.titleRow}>
+                                    <View style={styles.titleContent}>
+                                        <Text style={styles.tripTitle} numberOfLines={2}>{numDays}-Day {locationName} Trip</Text>
+                                        <Text style={styles.duration}>📅 {numDays} days {numDays - 1} nights • <Text style={{ color: '#0F172A' }}>Choose dates {'>'}</Text></Text>
+                                    </View>
+                                    <TouchableOpacity style={styles.shareIconButton}>
+                                        <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                                            <Path d="m17 8-5-5-5 5" />
+                                            <Path d="M12 3v12" />
+                                        </Svg>
+                                    </TouchableOpacity>
                                 </View>
-                                <TouchableOpacity style={styles.shareIconButton}>
-                                    <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                        <Path d="m17 8-5-5-5 5" />
-                                        <Path d="M12 3v12" />
-                                    </Svg>
+                                {isTemplateTripView && (
+                                    <TouchableOpacity
+                                        style={styles.saveTemplateButton}
+                                        activeOpacity={0.8}
+                                        onPress={handleSaveTemplateTrip}
+                                        disabled={isSavingTemplate}
+                                    >
+                                        {isSavingTemplate ? (
+                                            <ActivityIndicator size="small" color="#FFFFFF" />
+                                        ) : (
+                                            <>
+                                                <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                    <Path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                                                    <Path d="M17 21v-8H7v8" />
+                                                    <Path d="M7 3v5h8" />
+                                                </Svg>
+                                                <Text style={styles.saveTemplateButtonText}>Save to My Trips</Text>
+                                            </>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        )}
+
+                        {/* Tabs */}
+                        {mode === 'overview' ? (
+                            /* Full-width tabs for overview mode */
+                            <View style={styles.tabsFullWidth}>
+                                <TouchableOpacity
+                                    style={[styles.tabFull, styles.tabActive]}
+                                    onPress={() => setMode('overview')}
+                                >
+                                    <Text style={[styles.tabText, styles.tabTextActive]}>Overview</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.tabFull}
+                                    onPress={() => { setMode('itinerary'); setSelectedDay(1); }}
+                                >
+                                    <Text style={styles.tabText}>Itinerary</Text>
                                 </TouchableOpacity>
                             </View>
-                            {isTemplateTripView && (
+                        ) : (
+                            /* Scrollable compact tabs for itinerary mode */
+                            <ScrollView
+                                horizontal
+                                showsHorizontalScrollIndicator={false}
+                                style={styles.tabsScrollView}
+                                contentContainerStyle={styles.tabsContainer}
+                            >
                                 <TouchableOpacity
-                                    style={styles.saveTemplateButton}
-                                    activeOpacity={0.8}
-                                    onPress={handleSaveTemplateTrip}
-                                    disabled={isSavingTemplate}
+                                    style={styles.tab}
+                                    onPress={() => setMode('overview')}
                                 >
-                                    {isSavingTemplate ? (
-                                        <ActivityIndicator size="small" color="#FFFFFF" />
-                                    ) : (
-                                        <>
-                                            <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                                <Path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                                                <Path d="M17 21v-8H7v8" />
-                                                <Path d="M7 3v5h8" />
-                                            </Svg>
-                                            <Text style={styles.saveTemplateButtonText}>Save to My Trips</Text>
-                                        </>
-                                    )}
+                                    <Text style={styles.tabText}>Overview</Text>
                                 </TouchableOpacity>
-                            )}
-                        </View>
-                    )}
-
-                    {/* Tabs */}
-                    {mode === 'overview' ? (
-                        /* Full-width tabs for overview mode */
-                        <View style={styles.tabsFullWidth}>
-                            <TouchableOpacity
-                                style={[styles.tabFull, styles.tabActive]}
-                                onPress={() => setMode('overview')}
-                            >
-                                <Text style={[styles.tabText, styles.tabTextActive]}>Overview</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.tabFull}
-                                onPress={() => { setMode('itinerary'); setSelectedDay(1); }}
-                            >
-                                <Text style={styles.tabText}>Itinerary</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        /* Scrollable compact tabs for itinerary mode */
-                        <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.tabsScrollView}
-                            contentContainerStyle={styles.tabsContainer}
-                        >
-                            <TouchableOpacity
-                                style={styles.tab}
-                                onPress={() => setMode('overview')}
-                            >
-                                <Text style={styles.tabText}>Overview</Text>
-                            </TouchableOpacity>
-                            {itineraryDays.map((d) => (
-                                <TouchableOpacity
-                                    key={d.day}
-                                    style={[styles.tab, selectedDay === d.day && styles.tabActive]}
-                                    onPress={() => scrollToDay(d.day)}
-                                >
-                                    <Text style={[styles.tabText, selectedDay === d.day && styles.tabTextActive]}>
-                                        Day {d.day}
-                                    </Text>
-                                </TouchableOpacity>
-                            ))}
-                        </ScrollView>
-                    )}
-                </View>
+                                {itineraryDays.map((d) => (
+                                    <TouchableOpacity
+                                        key={d.day}
+                                        style={[styles.tab, selectedDay === d.day && styles.tabActive]}
+                                        onPress={() => scrollToDay(d.day)}
+                                    >
+                                        <Text style={[styles.tabText, selectedDay === d.day && styles.tabTextActive]}>
+                                            Day {d.day}
+                                        </Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </ScrollView>
+                        )}
+                    </View>
+                )}
 
                 {/* Scrollable Content */}
                 <BottomSheetScrollView
@@ -909,7 +1178,7 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                     </Text>
                 </View>
                 <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={styles.movePickerScrollContent}>
-                    {itineraryDays.map((d) => (
+                    {itineraryDays.filter(d => !d.spots.some(s => selectedSpots.has(s.originalPlace))).map((d) => (
                         <TouchableOpacity
                             key={d.day}
                             style={styles.overviewDayCard}
@@ -921,7 +1190,10 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                             }}
                         >
                             <View style={styles.overviewDayInfo}>
-                                <Text style={styles.overviewDayLabel}>Day {d.day}</Text>
+                                <View style={styles.overviewDayHeader}>
+                                    <Text style={styles.overviewDayLabel}>Day {d.day}</Text>
+                                    <View style={[styles.dayColorDot, { backgroundColor: DAY_COLORS[(d.day - 1) % DAY_COLORS.length] }]} />
+                                </View>
                                 <Text style={styles.overviewDayCardSpots}>
                                     {formatSpots(d.spots)}
                                 </Text>
@@ -933,6 +1205,21 @@ const TripOverviewSheet = forwardRef(({ onChange, animationConfigs }, ref) => {
                     ))}
                 </BottomSheetScrollView>
             </BottomSheet>
+            <AddSpotSheet
+                ref={addSpotSheetRef}
+                onSpotSelected={(place) => {
+                    if (addSpotDayTarget !== null) {
+                        addSpotToDay(addSpotDayTarget, place);
+                        // Clear stale cached drag data so the list picks up the new spots
+                        setLocalSpotsMap(prev => {
+                            const next = { ...prev };
+                            delete next[addSpotDayTarget];
+                            return next;
+                        });
+                        setAddSpotDayTarget(null);
+                    }
+                }}
+            />
         </>
     );
 });
@@ -1099,11 +1386,21 @@ const styles = StyleSheet.create({
     overviewDayInfo: {
         flex: 1,
     },
+    overviewDayHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginBottom: 2,
+    },
     overviewDayLabel: {
         fontSize: 16,
         fontWeight: '800',
         color: '#0F172A',
-        marginBottom: 2,
+    },
+    dayColorDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
     },
     overviewDayCardTitle: {
         fontSize: 22,
@@ -1150,6 +1447,25 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '700',
         color: '#0F172A',
+    },
+    addSpotButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        paddingVertical: 12,
+        marginTop: 4,
+        marginBottom: 4,
+        borderWidth: 1.5,
+        borderColor: '#E0E7FF',
+        borderStyle: 'dashed',
+        borderRadius: 14,
+        backgroundColor: '#FAFAFE',
+    },
+    addSpotText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#6366F1',
     },
 
     // Spot card styles
@@ -1337,23 +1653,127 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
     },
-    // Skeleton Styles
-    skeletonBox: {
-        backgroundColor: '#E2E8F0',
+    // ── Checklist Loader Styles ──
+    checklistContainer: {
+        paddingHorizontal: 24,
+        paddingTop: 32,
+        paddingBottom: 40,
     },
-    skeletonTextTitle: {
-        height: 20,
-        backgroundColor: '#E2E8F0',
-        borderRadius: 4,
-        marginBottom: 10,
-        width: '40%',
+    checklistHeader: {
+        marginBottom: 28,
+        alignItems: 'center', // Center align header text for a more premium look
     },
-    skeletonTextLine: {
-        height: 12,
+    checklistTitle: {
+        fontSize: 26,
+        fontWeight: '800',
+        color: '#0F172A',
+        letterSpacing: -0.5,
+        textAlign: 'center',
+    },
+    checklistSubtitle: {
+        fontSize: 15,
+        fontWeight: '500',
+        color: '#64748B',
+        marginTop: 8,
+        textAlign: 'center',
+    },
+    progressBarTrack: {
+        height: 6,
+        backgroundColor: '#F1F5F9',
+        borderRadius: 3,
+        marginBottom: 36,
+        overflow: 'hidden',
+    },
+    progressBarFill: {
+        height: '100%',
+        backgroundColor: '#3B82F6', // Blue accent for progress
+        borderRadius: 3,
+    },
+    checklistSteps: {
+        gap: 0,
+        paddingHorizontal: 0, // Indent steps slightly to balance centered header
+    },
+    checklistRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        minHeight: 64, // Taller rows for better breathing room
+    },
+    checklistRowActive: {},
+    checklistRowCompleted: {},
+    checklistIndicator: {
+        width: 32,
+        alignItems: 'center',
+        marginRight: 16,
+        alignSelf: 'stretch', // Stretch to full height of dynamic text row
+        zIndex: 1,
+    },
+    checklistCheckCircle: {
+        width: 22,
+        height: 22,
+        borderRadius: 11,
+        backgroundColor: '#10B981',
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#10B981',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 4,
+        zIndex: 2,
+    },
+    checklistActiveCircle: {
+        width: 18,
+        height: 18,
+        borderRadius: 9,
+        backgroundColor: '#3B82F6',
+        marginTop: 4,
+        shadowColor: '#3B82F6',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+        elevation: 6,
+        zIndex: 2,
+    },
+    checklistPendingCircle: {
+        width: 18,
+        height: 18,
+        borderRadius: 9,
         backgroundColor: '#E2E8F0',
-        borderRadius: 4,
-        marginBottom: 6,
-        width: '90%',
+        marginTop: 4,
+        zIndex: 2,
+    },
+    checklistLine: {
+        position: 'absolute',
+        top: 22,       // Start just inside the top circle
+        bottom: -16,   // Stretch safely into the next row, overlapping the next circle
+        width: 2,
+        backgroundColor: '#F1F5F9',
+        overflow: 'hidden',
+        zIndex: 0,     // Stay behind the circles
+    },
+    checklistLineCompleted: {
+        backgroundColor: '#10B981',
+    },
+    checklistContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        flex: 1,
+        paddingTop: 2,
+    },
+    checklistText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#475569', // Completed text is slightly greyed 
+    },
+    checklistTextActive: {
+        color: '#0F172A', // Active text is strong dark
+        fontWeight: '800',
+        fontSize: 17, // Slightly larger active text
+    },
+    checklistTextPending: {
+        color: '#94A3B8',
+        fontWeight: '500',
     },
     generatingBadge: {
         flexDirection: 'row',

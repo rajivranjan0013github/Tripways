@@ -35,15 +35,6 @@ const SpotDetailSheet = forwardRef(({ spot, onClose }, ref) => {
         }
     }, [spot, ref]);
 
-    const renderBackdrop = (props) => (
-        <BottomSheetBackdrop
-            {...props}
-            disappearsOnIndex={-1}
-            appearsOnIndex={0}
-            opacity={0.5}
-        />
-    );
-
     const config = spot ? (CATEGORY_CONFIG[spot.category] || CATEGORY_CONFIG['Attractions']) : CATEGORY_CONFIG['Attractions'];
 
     const handleGetDirections = () => {
@@ -69,7 +60,6 @@ const SpotDetailSheet = forwardRef(({ spot, onClose }, ref) => {
             snapPoints={snapPoints}
             enablePanDownToClose
             containerStyle={{ zIndex: 200 }}
-            backdropComponent={renderBackdrop}
             backgroundStyle={styles.sheetBackground}
             handleComponent={null}
             onClose={onClose}

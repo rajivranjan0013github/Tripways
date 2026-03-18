@@ -340,7 +340,7 @@ const ProfileOverlay = ({ visible, onClose, navigation, bottomSheetRef }) => {
                             </View>
                             <View style={styles.premiumTextContainer}>
                                 <Text style={styles.premiumTitle}>
-                                    {isPremium ? 'TripWays Premium Active' : 'Upgrade to Premium'}
+                                    {isPremium ? 'Where Premium Active' : 'Upgrade to Premium'}
                                 </Text>
                                 <Text style={styles.premiumSubtitle}>
                                     {isPremium 
@@ -438,7 +438,7 @@ const ProfileOverlay = ({ visible, onClose, navigation, bottomSheetRef }) => {
                 </TouchableOpacity>
 
                 {/* App version */}
-                <Text style={styles.versionText}>TripWays v1.0.0</Text>
+                <Text style={styles.versionText}>Where v1.0.0</Text>
             </ScrollView>
 
             <PremiumOverlay visible={premiumVisible} onClose={() => setPremiumVisible(false)} />

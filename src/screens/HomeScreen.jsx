@@ -103,11 +103,13 @@ const HomeScreen = () => {
         setSelectedSpot, socialMode, setSocialMode } = useUIStore();
 
     const { tripData, setTripData, isTripLoading, setTripLoading,
-        isSavingTrip, setIsSavingTrip, clearTrip } = useTripStore();
+        isSavingTrip, setIsSavingTrip, clearTrip, backupTrip, restoreTrip } = useTripStore();
 
     // --- Local-only UI state (not shared across components) ---
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [sheetIndex, setSheetIndex] = useState(1);
+    const [tripOverviewSheetIndex, setTripOverviewSheetIndex] = useState(-1);
+    const [activeTripDay, setActiveTripDay] = useState(1);
 
     // Zoom level + map region stored in refs to avoid re-renders on every pan/zoom.
     const mapZoomRef = useRef(3);
@@ -123,8 +125,19 @@ const HomeScreen = () => {
     // Animated crossfade for flag ↔ cluster transition
     const flagOpacity = useSharedValue(1);
     const clusterOpacity = useSharedValue(0);
+    const markerScaleAnim = useSharedValue(1);
+
     const flagAnimatedStyle = useAnimatedStyle(() => ({ opacity: flagOpacity.value }));
     const clusterAnimatedStyle = useAnimatedStyle(() => ({ opacity: clusterOpacity.value }));
+    const markerAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: markerScaleAnim.value }],
+    }));
+
+    // Update marker scale smoothly when zoom level changes
+    useEffect(() => {
+        const targetScale = mapZoom >= 15 ? 1 : mapZoom <= 10 ? 0.65 : 0.65 + (mapZoom - 10) * 0.07;
+        markerScaleAnim.value = withTiming(targetScale, { duration: 400, easing: Easing.out(Easing.quad) });
+    }, [mapZoom]);
 
     // Load user data from MMKV
     const storedUser = useMemo(() => {
@@ -240,7 +253,7 @@ const HomeScreen = () => {
 
         const allPlaces = tripData.itinerary.flatMap((day, dayIndex) =>
             (day.places || [])
-                .filter(place => place.coordinates?.lat && place.coordinates?.lng)
+                .filter(place => place && place.coordinates?.lat && place.coordinates?.lng)
                 .map((place, placeIndex) => ({
                     id: `marker-${day.day}-${placeIndex}`,
                     lat: place.coordinates.lat,
@@ -305,6 +318,22 @@ const HomeScreen = () => {
         }
     }, [userId]);
 
+    // Once spots data loads, animate the map to the latest saved spot
+    const hasAnimatedToSpot = useRef(false);
+    useEffect(() => {
+        if (hasAnimatedToSpot.current || !spotsData?.spots?.length || tripData) return;
+        const latestSpot = spotsData.spots.find(s => s.coordinates?.lat && s.coordinates?.lng);
+        if (latestSpot && mapRef.current) {
+            hasAnimatedToSpot.current = true;
+            mapRef.current.animateToRegion({
+                latitude: latestSpot.coordinates.lat,
+                longitude: latestSpot.coordinates.lng,
+                latitudeDelta: 65.0,
+                longitudeDelta: 65.0,
+            }, 600);
+        }
+    }, [spotsData, tripData]);
+
     // Create menu animation values
     const createMenuOpacity = useSharedValue(0);
     const createMenuScale = useSharedValue(0.9);
@@ -367,13 +396,14 @@ const HomeScreen = () => {
     // Dynamic map padding to keep markers/UI above bottom sheets
     const dynamicMapPadding = useMemo(() => {
         if (isTripOverviewOpen) {
-            return { top: 50, right: 10, bottom: SCREEN_HEIGHT * 0.5, left: 10 };
+            const bottomPadding = tripOverviewSheetIndex === 0 ? 185 : SCREEN_HEIGHT * 0.6;
+            return { top: 50, right: 10, bottom: bottomPadding, left: 10 };
         }
         // When my spots sheet is open, we cap the padding at the 50% snap point
         // so the map doesn't abruptly re-center/shift when pulled to 90%
         const snapPadding = [0.12, 0.5, 0.5][sheetIndex] * SCREEN_HEIGHT;
         return { top: 50, right: 10, bottom: snapPadding, left: 10 };
-    }, [isTripOverviewOpen, sheetIndex]);
+    }, [isTripOverviewOpen, sheetIndex, tripOverviewSheetIndex]);
 
 
 
@@ -419,17 +449,29 @@ const HomeScreen = () => {
         }
     }, [activeTab]);
 
-    // Fit the map to show all itinerary markers when tripData changes
+    // Fit the map to show markers based on active day/trip changes
     useEffect(() => {
         if (!tripData?.itinerary || !mapRef.current) return;
+        
+        // Don't auto-fit map while user is actively editing (dragging/removing spots)
+        if (isEditMode) return;
+
+        let daysToFit = [];
+        if (activeTripDay === null) {
+            // Overview — fit all days
+            daysToFit = tripData.itinerary;
+        } else {
+            // Specific day — fit only that day's coords
+            daysToFit = tripData.itinerary.filter(d => d.day === activeTripDay);
+        }
+
         const coords = [];
-        tripData.itinerary.forEach(day => {
-            (day.places || []).forEach(place => {
-                if (place.coordinates?.lat && place.coordinates?.lng) {
-                    coords.push({ latitude: place.coordinates.lat, longitude: place.coordinates.lng });
+        daysToFit.forEach(day => {
+            (day.places || []).forEach(p => {
+                if (p && p.coordinates?.lat && p.coordinates?.lng) {
+                    coords.push({ latitude: p.coordinates.lat, longitude: p.coordinates.lng });
                 }
             });
-            // Include route polyline coordinates in the fit range
             if (day.route?.polyline) {
                 try {
                     const polyPoints = decodePolyline(day.route.polyline);
@@ -441,20 +483,15 @@ const HomeScreen = () => {
         });
 
         if (coords.length > 0) {
-            // Match timeout with bottom sheet animation duration for smoothness
+            // Small timeout to allow dynamic padding constraints to settle before fitting
             setTimeout(() => {
                 mapRef.current?.fitToCoordinates(coords, {
-                    edgePadding: { 
-                        top: 80, 
-                        right: 40, 
-                        bottom: 40, // consistent small buffer
-                        left: 40 
-                    },
+                    edgePadding: { top: 25, right: 25, bottom: 25, left: 25 },
                     animated: true,
                 });
-            }, 400);
+            }, 100);
         }
-    }, [tripData, dynamicMapPadding.bottom]); // Re-fit when trip loads OR when sheet snaps to new height
+    }, [tripData, activeTripDay, dynamicMapPadding.bottom, isEditMode]);
 
     useEffect(() => {
         if (showCreateOptions) {
@@ -499,6 +536,7 @@ const HomeScreen = () => {
 
 
     const handleTripOverviewSheetChange = useCallback((index) => {
+        setTripOverviewSheetIndex(index);
         secondarySheetOpen.current = index > -1;
         setTripOverviewOpen(index > -1);
         if (index > -1) {
@@ -526,17 +564,21 @@ const HomeScreen = () => {
                         mapRef.current?.animateToRegion({
                             latitude: latestSpot.coordinates.lat,
                             longitude: latestSpot.coordinates.lng,
-                            latitudeDelta: 10.0,
-                            longitudeDelta: 10.0,
+                            latitudeDelta: 65.0,
+                            longitudeDelta: 65.0,
                         }, 400);
                     } else if (countryMapData.length > 0) {
                         const coords = countryMapData.map(c => c.centroid);
                         mapRef.current?.fitToCoordinates(coords, {
-                            edgePadding: { top: 80, right: 40, bottom: SCREEN_HEIGHT * 0.5, left: 40 },
+                            edgePadding: { top: 10, right: 40, bottom: SCREEN_HEIGHT * 0.5, left: 40 },
                             animated: true,
                         });
                     }
                 }, 400);
+            } else if (activeTab === 'trips') {
+                setTimeout(() => {
+                    bottomSheetRef.current?.snapToIndex(2);
+                }, 150);
             }
         }
     }, [tabBarHeight, activeTab, countryMapData, spotsData]);
@@ -554,6 +596,53 @@ const HomeScreen = () => {
             spotDetailSheetRef.current?.expand();
         }, 100);
     }, []);
+
+    // Zoom map when a spot is selected either from the map or the itinerary list
+    useEffect(() => {
+        if (selectedItinerarySpot?.coordinates?.lat && selectedItinerarySpot?.coordinates?.lng) {
+            mapRef.current?.animateToRegion({
+                latitude: selectedItinerarySpot.coordinates.lat,
+                longitude: selectedItinerarySpot.coordinates.lng,
+                // Zoom in close
+                latitudeDelta: 0.005,
+                longitudeDelta: 0.005,
+            }, 400);
+        } else if (!selectedItinerarySpot && tripData?.itinerary && mapRef.current) {
+            // Closing spot detail — zoom back to active day if one is selected, else full trip
+            const daysToFit = activeTripDay !== null
+                ? tripData.itinerary.filter(d => d.day === activeTripDay)
+                : tripData.itinerary;
+
+            const coords = [];
+            daysToFit.forEach(day => {
+                (day.places || []).forEach(place => {
+                    if (place.coordinates?.lat && place.coordinates?.lng) {
+                        coords.push({ latitude: place.coordinates.lat, longitude: place.coordinates.lng });
+                    }
+                });
+                if (day.route?.polyline) {
+                    try {
+                        const polyPoints = decodePolyline(day.route.polyline);
+                        coords.push(...polyPoints);
+                    } catch (e) {
+                         // ignore
+                    }
+                }
+            });
+
+            if (coords.length > 0) {
+                mapRef.current?.fitToCoordinates(coords, {
+                    edgePadding: { 
+                        top: 25, 
+                        right: 25, 
+                        bottom: 25,
+                        left: 25 
+                    },
+                    animated: true,
+                });
+            }
+        }
+    }, [selectedItinerarySpot, tripData, activeTripDay]);
 
     const handleCreateTripSheetChange = useCallback((index) => {
         secondarySheetOpen.current = index > -1;
@@ -582,16 +671,16 @@ const HomeScreen = () => {
             return {
                 latitude: latestSpot.coordinates.lat,
                 longitude: latestSpot.coordinates.lng,
-                latitudeDelta: 10.0,
-                longitudeDelta: 10.0,
+                latitudeDelta: 65.0,
+                longitudeDelta: 65.0,
             };
         }
-        // Fallback (Panama Canal area zoomed out)
+        // Fallback (Europe zoomed out)
         return {
-            latitude: -20.0,
-            longitude: -80.0,
-            latitudeDelta: 75.0,
-            longitudeDelta: 75.0,
+            latitude: 48.0,
+            longitude: 15.0,
+            latitudeDelta: 70.0,
+            longitudeDelta: 70.0,
         };
     }, [spotsData]);
 
@@ -705,74 +794,80 @@ const HomeScreen = () => {
                     </Marker>
                 ))}
 
-                {/* Itinerary place markers — styled circles with numbers like frontendweb */}
-                {tripData?.itinerary?.flatMap((day, dayIndex) => {
-                    const dayColor = DAY_COLORS[dayIndex % DAY_COLORS.length];
-                    return (day.places || [])
-                        .filter(place => place.coordinates?.lat && place.coordinates?.lng)
-                        .map((place, placeIndex) => (
-                            <Marker
-                                key={`marker-${day.day}-${placeIndex}`}
-                                coordinate={{
-                                    latitude: place.coordinates.lat,
-                                    longitude: place.coordinates.lng,
-                                }}
-                                title={place.name}
-                                description={`Day ${day.day} • ${place.category || 'sightseeing'}`}
-                                anchor={{ x: 0.5, y: 0.85 }}
-                            >
-                                <View style={{ alignItems: 'center', width: 100 }}>
-                                    <View style={{
-                                        width: 28,
-                                        height: 28,
-                                        borderRadius: 14,
-                                        backgroundColor: dayColor,
-                                        borderWidth: 2,
-                                        borderColor: '#FFFFFF',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        shadowColor: '#000',
-                                        shadowOffset: { width: 0, height: 2 },
-                                        shadowOpacity: 0.3,
-                                        shadowRadius: 3,
-                                        elevation: 4,
-                                    }}>
-                                        <Text style={{
-                                            color: '#FFFFFF',
-                                            fontSize: 12,
-                                            fontWeight: '700',
-                                        }}>{placeIndex + 1}</Text>
-                                    </View>
-                                    {visibleLabelIds.has(`marker-${day.day}-${placeIndex}`) && (
-                                        <Text
-                                            numberOfLines={1}
-                                            style={{
-                                                marginTop: 3,
-                                                fontSize: 10,
+                {/* Itinerary place markers — only active day */}
+                {(() => {
+                    return tripData?.itinerary?.flatMap((day, dayIndex) => {
+                        if (activeTripDay !== null && day.day !== activeTripDay) return [];
+                        const dayColor = DAY_COLORS[dayIndex % DAY_COLORS.length];
+                        return (day.places || [])
+                            .filter(place => place && place.coordinates?.lat && place.coordinates?.lng)
+                            .map((place, placeIndex) => (
+                                <Marker
+                                    key={`marker-${day.day}-${placeIndex}`}
+                                    coordinate={{
+                                        latitude: place.coordinates.lat,
+                                        longitude: place.coordinates.lng,
+                                    }}
+                                    title={place.name}
+                                    description={`Day ${day.day} • ${place.category || 'sightseeing'}`}
+                                    anchor={{ x: 0.5, y: 0.85 }}
+                                >
+                                    <Animated.View style={[markerAnimatedStyle, { alignItems: 'center', width: 100 }]}>
+                                        <View style={{
+                                            width: 28,
+                                            height: 28,
+                                            borderRadius: 14,
+                                            backgroundColor: dayColor,
+                                            borderWidth: 2,
+                                            borderColor: '#FFFFFF',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            shadowColor: '#000',
+                                            shadowOffset: { width: 0, height: 2 },
+                                            shadowOpacity: 0.3,
+                                            shadowRadius: 3,
+                                            elevation: 4,
+                                        }}>
+                                            <Text style={{
+                                                color: '#FFFFFF',
+                                                fontSize: 12,
                                                 fontWeight: '700',
-                                                color: '#1E293B',
-                                                textAlign: 'center',
-                                                backgroundColor: 'rgba(255,255,255,0.85)',
-                                                paddingHorizontal: 5,
-                                                paddingVertical: 1,
-                                                borderRadius: 4,
-                                                overflow: 'hidden',
-                                                textShadowColor: 'rgba(255,255,255,0.9)',
-                                                textShadowOffset: { width: 0, height: 0 },
-                                                textShadowRadius: 3,
-                                            }}
-                                        >{place.name}</Text>
-                                    )}
-                                </View>
-                            </Marker>
-                        ));
-                })}
+                                            }}>{placeIndex + 1}</Text>
+                                        </View>
+                                        {(visibleLabelIds.has(`marker-${day.day}-${placeIndex}`) || 
+                                          (selectedItinerarySpot?.name === place.name && 
+                                           selectedItinerarySpot?.coordinates?.lat === place.coordinates?.lat)) && (
+                                            <Text
+                                                numberOfLines={1}
+                                                style={{
+                                                    marginTop: 3,
+                                                    fontSize: 10,
+                                                    fontWeight: '700',
+                                                    color: '#1E293B',
+                                                    textAlign: 'center',
+                                                    backgroundColor: 'rgba(255,255,255,0.85)',
+                                                    paddingHorizontal: 5,
+                                                    paddingVertical: 1,
+                                                    borderRadius: 4,
+                                                    overflow: 'hidden',
+                                                    textShadowColor: 'rgba(255,255,255,0.9)',
+                                                    textShadowOffset: { width: 0, height: 0 },
+                                                    textShadowRadius: 3,
+                                                }}
+                                            >{place.name}</Text>
+                                        )}
+                                    </Animated.View>
+                                </Marker>
+                            ));
+                    });
+                })()}
 
 
 
 
-                {/* Route outline polylines — shadow behind the coloured route */}
+                {/* Route outline polylines — active day only */}
                 {tripData?.itinerary?.map((day, dayIndex) => {
+                    if (activeTripDay !== null && day.day !== activeTripDay) return null;
                     if (!day.route?.polyline) return null;
                     return (
                         <Polyline
@@ -780,12 +875,15 @@ const HomeScreen = () => {
                             coordinates={decodePolyline(day.route.polyline)}
                             strokeColor="rgba(0,0,0,0.12)"
                             strokeWidth={8}
+                            lineJoin="round"
+                            lineCap="round"
                         />
                     );
                 })}
 
-                {/* Route polylines — decoded from backend route data */}
+                {/* Route polylines — active day only */}
                 {tripData?.itinerary?.map((day, dayIndex) => {
+                    if (activeTripDay !== null && day.day !== activeTripDay) return null;
                     if (!day.route?.polyline) return null;
                     return (
                         <Polyline
@@ -793,15 +891,18 @@ const HomeScreen = () => {
                             coordinates={decodePolyline(day.route.polyline)}
                             strokeColor={DAY_COLORS[dayIndex % DAY_COLORS.length]}
                             strokeWidth={5}
+                            lineJoin="round"
+                            lineCap="round"
                         />
                     );
                 })}
 
-                {/* Fallback straight-line polylines when no route polyline exists */}
+                {/* Fallback straight-line polylines — active day only */}
                 {tripData?.itinerary?.map((day, dayIndex) => {
+                    if (activeTripDay !== null && day.day !== activeTripDay) return null;
                     if (day.route?.polyline) return null;
                     const coords = (day.places || [])
-                        .filter(p => p.coordinates?.lat && p.coordinates?.lng)
+                        .filter(p => p && p.coordinates?.lat && p.coordinates?.lng)
                         .map(p => ({ latitude: p.coordinates.lat, longitude: p.coordinates.lng }));
                     if (coords.length <= 1) return null;
                     return (
@@ -811,6 +912,8 @@ const HomeScreen = () => {
                             strokeColor={DAY_COLORS[dayIndex % DAY_COLORS.length]}
                             strokeWidth={4}
                             lineDashPattern={[6, 4]}
+                            lineJoin="round"
+                            lineCap="round"
                         />
                     );
                 })}
@@ -869,14 +972,14 @@ const HomeScreen = () => {
                         >
                             <View style={styles.optionIconContainer}>
                                 <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#EC4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <Rect x="2" y="7" width="20" height="14" rx="2" />
-                                    <Path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-                                    <Path d="M12 11v6M9 14h6" />
+                                    <Path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" />
+                                    <Path d="M8 2v16" />
+                                    <Path d="M16 6v16" />
                                 </Svg>
                             </View>
                             <View style={styles.optionTextContainer}>
                                 <Text style={styles.optionTitle}>Create New Trip</Text>
-                                <Text style={styles.optionSubtitle}>Plan your next adventure</Text>
+                                <Text style={styles.optionSubtitle}>Plan your next destination</Text>
                             </View>
                         </TouchableOpacity>
 
@@ -912,18 +1015,37 @@ const HomeScreen = () => {
             {/* Floating Trip Overview Buttons - Top of Screen */}
             {isTripOverviewOpen && (
                 <>
-                    {/* Close Button - Top Left */}
+                    {/* Close / Discard Button - Top Left */}
                     <TouchableOpacity
-                        style={[styles.tripOverviewFloatingBtn, { left: 16, top: insets.top + 12 }]}
+                        style={[
+                            styles.tripOverviewFloatingBtn,
+                            { 
+                                left: 16, 
+                                top: insets.top + 12,
+                                backgroundColor: isEditMode ? '#0F172A' : 'rgba(255, 255, 255, 0.85)',
+                                borderColor: isEditMode ? 'rgba(15, 23, 42, 0.2)' : 'rgba(255, 255, 255, 0.5)',
+                            }
+                        ]}
                         onPress={() => {
-                            setEditMode(false);
-                            tripOverviewSheetRef.current?.close();
+                            if (isEditMode) {
+                                restoreTrip();
+                                setEditMode(false);
+                            } else {
+                                tripOverviewSheetRef.current?.close();
+                            }
                         }}
                         activeOpacity={0.7}
+                        disabled={isSavingTrip}
                     >
-                        <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E293B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M18 6 6 18M6 6l12 12" />
-                        </Svg>
+                        {isEditMode ? (
+                            <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M18 6 6 18M6 6l12 12" />
+                            </Svg>
+                        ) : (
+                            <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1E293B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M18 6 6 18M6 6l12 12" />
+                            </Svg>
+                        )}
                     </TouchableOpacity>
 
                     {/* Edit / Done Button - Top Right */}
@@ -934,9 +1056,10 @@ const HomeScreen = () => {
                                 right: 16,
                                 top: insets.top + 12,
                                 width: 'auto',
-                                paddingHorizontal: 14,
-                                backgroundColor: '#0F172A',
-                                opacity: isSavingTrip ? 0.7 : 1
+                                paddingHorizontal: 16,
+                                backgroundColor: isEditMode ? '#0F172A' : 'rgba(255, 255, 255, 0.85)',
+                                opacity: isSavingTrip ? 0.7 : 1,
+                                borderColor: isEditMode ? 'rgba(15, 23, 42, 0.2)' : 'rgba(255, 255, 255, 0.5)',
                             }
                         ]}
                         disabled={isSavingTrip}
@@ -983,6 +1106,7 @@ const HomeScreen = () => {
                                 setEditMode(false);
                             } else {
                                 // Entering edit mode
+                                backupTrip();
                                 setEditMode(true);
                             }
                         }}
@@ -991,7 +1115,26 @@ const HomeScreen = () => {
                         {isSavingTrip ? (
                             <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
-                            <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>{isEditMode ? 'Done' : 'Edit'}</Text>
+                            <>
+                                {isEditMode ? (
+                                    <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M20 6L9 17l-5-5" />
+                                    </Svg>
+                                ) : (
+                                    <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1E293B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                        <Path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                    </Svg>
+                                )}
+                                <Text style={{ 
+                                    fontSize: 12, 
+                                    fontWeight: '800', 
+                                    color: isEditMode ? '#FFFFFF' : '#1E293B',
+                                    marginLeft: 6 
+                                }}>
+                                    {isEditMode ? 'Done' : 'Edit'}
+                                </Text>
+                            </>
                         )}
                     </TouchableOpacity>
                 </>
@@ -1001,6 +1144,7 @@ const HomeScreen = () => {
             <TripOverviewSheet
                 ref={tripOverviewSheetRef}
                 onChange={handleTripOverviewSheetChange}
+                onDayChange={setActiveTripDay}
                 animationConfigs={sheetAnimationConfig}
             />
 
@@ -1319,18 +1463,21 @@ const styles = StyleSheet.create({
     },
     tripOverviewFloatingBtn: {
         position: 'absolute',
-        width: 34,
-        height: 34,
-        borderRadius: 17,
-        backgroundColor: 'rgba(255,255,255,0.55)',
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        backgroundColor: 'rgba(255, 255, 255, 0.85)',
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 200,
-        elevation: 200,
+        flexDirection: 'row',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.5)',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.15,
-        shadowRadius: 8,
+        shadowRadius: 12,
+        elevation: 6,
     },
     // Country flag marker styles
     flagMarkerContainer: {

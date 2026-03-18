@@ -8,7 +8,10 @@ import { create } from 'zustand';
 export const useTripStore = create((set, get) => ({
     // Current trip being viewed
     tripData: null,
+    originalTripData: null, // Stores a snapshot of the trip before editing
     setTripData: (data) => set({ tripData: data }),
+    backupTrip: () => set((state) => ({ originalTripData: state.tripData ? JSON.parse(JSON.stringify(state.tripData)) : null })),
+    restoreTrip: () => set((state) => ({ tripData: state.originalTripData || state.tripData, originalTripData: null })),
 
     // Whether the currently viewed trip is a template trip (not saved to user's trips)
     isTemplateTripView: false,
@@ -93,7 +96,40 @@ export const useTripStore = create((set, get) => ({
     },
 
     /**
+     * Add a new spot to a specific day.
+     * @param {number} dayNum - Day number to add the spot to.
+     * @param {Object} place - Place object with name, coordinates, etc.
+     */
+    addSpotToDay: (dayNum, place) => {
+        set((state) => {
+            if (!state.tripData?.itinerary) return state;
+            const newItinerary = state.tripData.itinerary.map((d) => {
+                if (d.day !== dayNum) return d;
+                return { ...d, places: [...(d.places || []), place] };
+            });
+            return { tripData: { ...state.tripData, itinerary: newItinerary } };
+        });
+    },
+
+    /**
+     * Replace a day's places and route after route optimization.
+     * @param {number} dayNum - Day number to update.
+     * @param {Array} optimizedPlaces - Reordered places from the API.
+     * @param {Object|null} route - New route data (polyline, legs, distance, duration).
+     */
+    optimizeDayOrder: (dayNum, optimizedPlaces, route) => {
+        set((state) => {
+            if (!state.tripData?.itinerary) return state;
+            const newItinerary = state.tripData.itinerary.map((d) => {
+                if (d.day !== dayNum) return d;
+                return { ...d, places: optimizedPlaces, route: route || d.route };
+            });
+            return { tripData: { ...state.tripData, itinerary: newItinerary } };
+        });
+    },
+
+    /**
      * Clear the current trip (e.g. when closing the overview sheet).
      */
-    clearTrip: () => set({ tripData: null, isTripLoading: false, isSavingTrip: false, isTemplateTripView: false }),
+    clearTrip: () => set({ tripData: null, originalTripData: null, isTripLoading: false, isSavingTrip: false, isTemplateTripView: false }),
 }));

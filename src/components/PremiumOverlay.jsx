@@ -90,7 +90,7 @@ const PremiumOverlay = ({ visible, onClose }) => {
             // Natively grant premium so the UI unlocks without relying on hooks
             setCustomerInfo(customerInfo);
 
-            Alert.alert("Success", "Welcome to TripWays Premium!");
+            Alert.alert("Success", "Welcome to Where Premium!");
             onClose();
         } catch (e) {
             if (!e.userCancelled) {
