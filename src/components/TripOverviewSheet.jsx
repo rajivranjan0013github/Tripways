@@ -36,6 +36,32 @@ const getStablePlaceId = (place) => {
     return PLACE_ID_MAP.get(place);
 };
 
+// Error boundary to catch rendering crashes
+class SheetErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+    }
+    static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+    }
+    componentDidCatch(error, errorInfo) {
+        console.error('[TripOverviewSheet CRASH]', error?.message, error?.stack);
+        console.error('[TripOverviewSheet CRASH info]', JSON.stringify(errorInfo));
+    }
+    render() {
+        if (this.state.hasError) {
+            return (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                    <Text style={{ color: '#EF4444', fontWeight: '700', fontSize: 16 }}>Something went wrong</Text>
+                    <Text style={{ color: '#64748B', fontSize: 12, marginTop: 8 }}>{String(this.state.error?.message || '')}</Text>
+                </View>
+            );
+        }
+        return this.props.children;
+    }
+}
+
 // Category colors & emoji mapping
 const CATEGORY_CONFIG = {
     'Attractions': { emoji: '🎡', color: '#F59E0B', bg: '#FFFBEB' },
@@ -608,7 +634,7 @@ const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs 
                         </View>
                         {spot.image ? (
                             <Image
-                                source={{ uri: spot.image }}
+                                source={{ uri: spot.image.includes('googleusercontent') ? `${spot.image}=w96-h96` : spot.image }}
                                 style={styles.spotImage}
                             />
                         ) : (
@@ -1009,6 +1035,7 @@ const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs 
                 onChange={onChange}
                 animationConfigs={animationConfigs}
             >
+              <SheetErrorBoundary>
                 {/* Fixed Header + Tabs */}
                 {!isLoaderVisible && (
                     <View style={styles.header}>
@@ -1155,6 +1182,7 @@ const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs 
                         <Text style={styles.savingOverlayText}>Saving changes...</Text>
                     </View>
                 )}
+              </SheetErrorBoundary>
             </BottomSheet>
 
             {/* Move to Day Picker Bottom Sheet — outside main sheet so it renders on top */}

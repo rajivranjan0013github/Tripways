@@ -83,6 +83,21 @@ function decodePolyline(encoded) {
     return points;
 }
 
+/**
+ * Simplify a polyline by evenly sampling points to avoid native map crashes
+ * from rendering too many path segments. Keeps first and last points.
+ */
+function simplifyPolyline(points, maxPoints = 150) {
+    if (!points || points.length <= maxPoints) return points;
+    const result = [points[0]];
+    const step = (points.length - 1) / (maxPoints - 1);
+    for (let i = 1; i < maxPoints - 1; i++) {
+        result.push(points[Math.round(i * step)]);
+    }
+    result.push(points[points.length - 1]);
+    return result;
+}
+
 const HomeScreen = () => {
     const insets = useSafeAreaInsets();
     const navigation = useNavigation();
@@ -110,7 +125,8 @@ const HomeScreen = () => {
     const [sheetIndex, setSheetIndex] = useState(1);
     const [tripOverviewSheetIndex, setTripOverviewSheetIndex] = useState(-1);
     const [activeTripDay, setActiveTripDay] = useState(1);
- console.log("ondocndoc")
+    // Progressive marker loading — load one marker at a time to prevent memory burst
+    const [loadedMarkerCount, setLoadedMarkerCount] = useState(0);
     // Zoom level + map region stored in refs to avoid re-renders on every pan/zoom.
     const mapZoomRef = useRef(3);
     const mapRegionRef = useRef(null);
@@ -172,6 +188,52 @@ const HomeScreen = () => {
         if (!savedSpots || Object.keys(savedSpots).length === 0) return [];
         return getCountryMapData(savedSpots, countriesGeoJson);
     }, [savedSpots]);
+
+    // Memoize decoded polylines — use itinerary reference (not full tripData) for granularity
+    const itineraryRef = tripData?.itinerary;
+    const decodedPolylines = useMemo(() => {
+        if (!itineraryRef) return {};
+        const result = {};
+        itineraryRef.forEach(day => {
+            if (day.route?.polyline) {
+                try {
+                    const raw = decodePolyline(day.route.polyline);
+                    result[day.day] = {
+                        full: simplifyPolyline(raw, 150),     // For day view
+                        overview: simplifyPolyline(raw, 50),  // For overview (lighter)
+                    };
+                } catch (e) {
+                    console.warn('Polyline decode failed for day', day.day, e);
+                }
+            }
+        });
+        return result;
+    }, [itineraryRef]);
+
+    // Progressive marker loading: when a trip loads, add one marker every 200ms
+    // to avoid native memory burst from creating many bitmap snapshots at once
+    const totalMarkerCount = useMemo(() => {
+        if (!tripData?.itinerary) return 0;
+        return tripData.itinerary.reduce((sum, day) => sum + (day.places?.length || 0), 0);
+    }, [tripData]);
+
+    useEffect(() => {
+        if (!tripData?.itinerary) {
+            setLoadedMarkerCount(0);
+            return;
+        }
+        setLoadedMarkerCount(0);
+        const total = tripData.itinerary.reduce((sum, day) => sum + (day.places?.length || 0), 0);
+        if (total === 0) return;
+
+        let count = 0;
+        const timer = setInterval(() => {
+            count++;
+            setLoadedMarkerCount(count);
+            if (count >= total) clearInterval(timer);
+        }, 200);
+        return () => clearInterval(timer);
+    }, [tripData]);
 
     // Build city-level cluster data from the grouped spots structure
     const cityClusterData = useMemo(() => {
@@ -308,6 +370,164 @@ const HomeScreen = () => {
         return visibleIds;
     }, [tripData, showItineraryLabels]);
 
+    // ── Memoized itinerary markers — prevents creating new native GMSMarker objects on every render ──
+    const itineraryMarkers = useMemo(() => {
+        if (!tripData?.itinerary) return null;
+        try {
+        const isOverview = activeTripDay === null;
+        let globalIdx = 0; // sequential index across all days
+        return tripData.itinerary.flatMap((day, dayIndex) => {
+            // When viewing a specific day, show only that day (no progressive limit)
+            if (activeTripDay !== null && day.day !== activeTripDay) {
+                // Still count places for correct globalIdx
+                globalIdx += (day.places?.length || 0);
+                return [];
+            }
+            const dayColor = DAY_COLORS[dayIndex % DAY_COLORS.length];
+            const markers = (day.places || [])
+                .filter(place => place && place.coordinates?.lat && place.coordinates?.lng)
+                .map((place, placeIndex) => {
+                    const myIdx = globalIdx++;
+                    // In overview, only render if this marker has been progressively loaded
+                    if (isOverview && myIdx >= loadedMarkerCount) return null;
+                    return (
+                    <Marker
+                        key={`marker-${day.day}-${placeIndex}`}
+                        coordinate={{
+                            latitude: place.coordinates.lat,
+                            longitude: place.coordinates.lng,
+                        }}
+                        title={place.name || ''}
+                        description={`Day ${day.day} • ${place.category || 'sightseeing'}`}
+                        anchor={{ x: 0.5, y: isOverview ? 0.5 : 0.85 }}
+                        tracksViewChanges={false}
+                    >
+                        {isOverview ? (
+                            /* Simplified markers in overview — no Animated wrapper, no labels,
+                               smaller size to reduce native bitmap memory per marker */
+                            <View style={{ alignItems: 'center' }}>
+                                <View style={{
+                                    width: 22,
+                                    height: 22,
+                                    borderRadius: 11,
+                                    backgroundColor: dayColor,
+                                    borderWidth: 2,
+                                    borderColor: '#FFFFFF',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                }}>
+                                    <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>{placeIndex + 1}</Text>
+                                </View>
+                            </View>
+                        ) : (
+                            /* Full markers with animation, labels, and shadows for day view */
+                            <Animated.View style={[markerAnimatedStyle, { alignItems: 'center', width: 100 }]}>
+                                <View style={{
+                                    width: 28,
+                                    height: 28,
+                                    borderRadius: 14,
+                                    backgroundColor: dayColor,
+                                    borderWidth: 2,
+                                    borderColor: '#FFFFFF',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    shadowColor: '#000',
+                                    shadowOffset: { width: 0, height: 2 },
+                                    shadowOpacity: 0.3,
+                                    shadowRadius: 3,
+                                    elevation: 4,
+                                }}>
+                                    <Text style={{
+                                        color: '#FFFFFF',
+                                        fontSize: 12,
+                                        fontWeight: '700',
+                                    }}>{placeIndex + 1}</Text>
+                                </View>
+                                {(visibleLabelIds.has(`marker-${day.day}-${placeIndex}`) ||
+                                  (selectedItinerarySpot?.name === place.name &&
+                                   selectedItinerarySpot?.coordinates?.lat === place.coordinates?.lat)) && (
+                                    <Text
+                                        numberOfLines={1}
+                                        style={{
+                                            marginTop: 3,
+                                            fontSize: 10,
+                                            fontWeight: '700',
+                                            color: '#1E293B',
+                                            textAlign: 'center',
+                                            backgroundColor: 'rgba(255,255,255,0.85)',
+                                            paddingHorizontal: 5,
+                                            paddingVertical: 1,
+                                            borderRadius: 4,
+                                            overflow: 'hidden',
+                                            textShadowColor: 'rgba(255,255,255,0.9)',
+                                            textShadowOffset: { width: 0, height: 0 },
+                                            textShadowRadius: 3,
+                                        }}
+                                    >{place.name}</Text>
+                                )}
+                            </Animated.View>
+                        )}
+                    </Marker>
+                    );
+                }).filter(Boolean);
+            return markers;
+        });
+        } catch (e) {
+            console.warn('[itineraryMarkers] Render error:', e);
+            return null;
+        }
+    }, [tripData, activeTripDay, loadedMarkerCount, visibleLabelIds, selectedItinerarySpot, markerAnimatedStyle]);
+
+    // ── Memoized polylines — prevents orphaned GMSPolyline2D native objects ──
+    const memoizedPolylines = useMemo(() => {
+        if (!tripData?.itinerary) return null;
+        const isOverview = activeTripDay === null;
+        let globalIdx = 0;
+        return tripData.itinerary.flatMap((day, dayIndex) => {
+            const dayPlaceCount = day.places?.length || 0;
+            const dayStartIdx = globalIdx;
+            globalIdx += dayPlaceCount;
+            // When viewing a specific day, show only that day
+            if (activeTripDay !== null && day.day !== activeTripDay) return [];
+            // In overview, only show polyline after ALL markers for this day are loaded
+            if (isOverview && loadedMarkerCount < dayStartIdx + dayPlaceCount) return [];
+            const elements = [];
+            const dayColor = DAY_COLORS[dayIndex % DAY_COLORS.length];
+
+            if (decodedPolylines[day.day]) {
+                const polyCoords = isOverview
+                    ? decodedPolylines[day.day].overview
+                    : decodedPolylines[day.day].full;
+                // Skip shadow/outline polyline in overview to save memory
+                if (!isOverview) {
+                    elements.push(
+                        <Polyline
+                            key={`route-outline-${day.day}`}
+                            coordinates={polyCoords}
+                            strokeColor="rgba(0,0,0,0.12)"
+                            strokeWidth={8}
+                            lineJoin="round"
+                            lineCap="round"
+                        />
+                    );
+                }
+                // Route polyline (colored) — thinner in overview
+                elements.push(
+                    <Polyline
+                        key={`route-${day.day}`}
+                        coordinates={polyCoords}
+                        strokeColor={dayColor}
+                        strokeWidth={isOverview ? 3 : 5}
+                        lineJoin="round"
+                        lineCap="round"
+                    />
+                );
+            } else {
+                // No route data — skip polyline (don't draw misleading straight lines)
+            }
+            return elements;
+        });
+    }, [tripData, activeTripDay, loadedMarkerCount, decodedPolylines]);
 
     // Whether to show the country map overlay (My Spots default view, no trip open)
     const showCountryMap = !tripData && countryMapData.length > 0;
@@ -474,47 +694,55 @@ const HomeScreen = () => {
     }, [tripData]);
 
     // Fit the map to show markers based on active day/trip changes
+    const fitTimeout = useRef(null);
     useEffect(() => {
         if (!tripData?.itinerary || !mapRef.current) return;
-        
-        // Don't auto-fit map while user is actively editing (dragging/removing spots)
         if (isEditMode) return;
 
         let daysToFit = [];
         if (activeTripDay === null) {
-            // Overview — fit all days
             daysToFit = tripData.itinerary;
         } else {
-            // Specific day — fit only that day's coords
             daysToFit = tripData.itinerary.filter(d => d.day === activeTripDay);
         }
 
-        const coords = [];
+        // Collect place coordinates only (lightweight)
+        let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+        let count = 0;
         daysToFit.forEach(day => {
             (day.places || []).forEach(p => {
-                if (p && p.coordinates?.lat && p.coordinates?.lng) {
-                    coords.push({ latitude: p.coordinates.lat, longitude: p.coordinates.lng });
+                if (p?.coordinates?.lat && p?.coordinates?.lng) {
+                    minLat = Math.min(minLat, p.coordinates.lat);
+                    maxLat = Math.max(maxLat, p.coordinates.lat);
+                    minLng = Math.min(minLng, p.coordinates.lng);
+                    maxLng = Math.max(maxLng, p.coordinates.lng);
+                    count++;
                 }
             });
-            if (day.route?.polyline) {
-                try {
-                    const polyPoints = decodePolyline(day.route.polyline);
-                    coords.push(...polyPoints);
-                } catch (e) {
-                    console.warn('Polyline decode failed for fitToCoordinates', e);
-                }
-            }
         });
 
-        if (coords.length > 0) {
-            // Small timeout to allow dynamic padding constraints to settle before fitting
-            setTimeout(() => {
-                mapRef.current?.fitToCoordinates(coords, {
-                    edgePadding: { top: 25, right: 25, bottom: 25, left: 25 },
-                    animated: true,
-                });
-            }, 100);
+        if (count > 0) {
+            const rawLatDelta = maxLat - minLat;
+            const rawLngDelta = maxLng - minLng;
+            // Cap zoom-out to prevent loading too many map tiles (memory crash)
+            // 2.5° ≈ ~280km — enough to see a city region comfortably
+            const MAX_DELTA = 2.5;
+            const latDelta = Math.min(rawLatDelta + Math.max(rawLatDelta * 0.25, 0.01), MAX_DELTA);
+            const lngDelta = Math.min(rawLngDelta + Math.max(rawLngDelta * 0.25, 0.01), MAX_DELTA);
+            if (fitTimeout.current) clearTimeout(fitTimeout.current);
+            fitTimeout.current = setTimeout(() => {
+                mapRef.current?.animateToRegion({
+                    latitude: (minLat + maxLat) / 2,
+                    longitude: (minLng + maxLng) / 2,
+                    latitudeDelta: latDelta,
+                    longitudeDelta: lngDelta,
+                }, 400);
+            }, 300);
         }
+
+        return () => {
+            if (fitTimeout.current) clearTimeout(fitTimeout.current);
+        };
     }, [tripData, activeTripDay, dynamicMapPadding.bottom, isEditMode]);
 
     useEffect(() => {
@@ -592,11 +820,22 @@ const HomeScreen = () => {
                             longitudeDelta: 65.0,
                         }, 400);
                     } else if (countryMapData.length > 0) {
-                        const coords = countryMapData.map(c => c.centroid);
-                        mapRef.current?.fitToCoordinates(coords, {
-                            edgePadding: { top: 10, right: 40, bottom: SCREEN_HEIGHT * 0.5, left: 40 },
-                            animated: true,
+                        const centroids = countryMapData.map(c => c.centroid);
+                        let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+                        centroids.forEach(c => {
+                            minLat = Math.min(minLat, c.latitude);
+                            maxLat = Math.max(maxLat, c.latitude);
+                            minLng = Math.min(minLng, c.longitude);
+                            maxLng = Math.max(maxLng, c.longitude);
                         });
+                        const latPad = Math.max((maxLat - minLat) * 0.3, 5);
+                        const lngPad = Math.max((maxLng - minLng) * 0.3, 5);
+                        mapRef.current?.animateToRegion({
+                            latitude: (minLat + maxLat) / 2,
+                            longitude: (minLng + maxLng) / 2,
+                            latitudeDelta: (maxLat - minLat) + latPad,
+                            longitudeDelta: (maxLng - minLng) + lngPad,
+                        }, 400);
                     }
                 }, 400);
             } else if (activeTab === 'trips') {
@@ -637,33 +876,31 @@ const HomeScreen = () => {
                 ? tripData.itinerary.filter(d => d.day === activeTripDay)
                 : tripData.itinerary;
 
-            const coords = [];
+            // Compute bounding box from place coordinates
+            let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
+            let count = 0;
             daysToFit.forEach(day => {
                 (day.places || []).forEach(place => {
                     if (place.coordinates?.lat && place.coordinates?.lng) {
-                        coords.push({ latitude: place.coordinates.lat, longitude: place.coordinates.lng });
+                        minLat = Math.min(minLat, place.coordinates.lat);
+                        maxLat = Math.max(maxLat, place.coordinates.lat);
+                        minLng = Math.min(minLng, place.coordinates.lng);
+                        maxLng = Math.max(maxLng, place.coordinates.lng);
+                        count++;
                     }
                 });
-                if (day.route?.polyline) {
-                    try {
-                        const polyPoints = decodePolyline(day.route.polyline);
-                        coords.push(...polyPoints);
-                    } catch (e) {
-                         // ignore
-                    }
-                }
             });
 
-            if (coords.length > 0) {
-                mapRef.current?.fitToCoordinates(coords, {
-                    edgePadding: { 
-                        top: 25, 
-                        right: 25, 
-                        bottom: 25,
-                        left: 25 
-                    },
-                    animated: true,
-                });
+            if (count > 0) {
+                const MAX_DELTA = 2.5;
+                const latDelta = Math.min((maxLat - minLat) + Math.max((maxLat - minLat) * 0.25, 0.01), MAX_DELTA);
+                const lngDelta = Math.min((maxLng - minLng) + Math.max((maxLng - minLng) * 0.25, 0.01), MAX_DELTA);
+                mapRef.current?.animateToRegion({
+                    latitude: (minLat + maxLat) / 2,
+                    longitude: (minLng + maxLng) / 2,
+                    latitudeDelta: latDelta,
+                    longitudeDelta: lngDelta,
+                }, 400);
             }
         }
     }, [selectedItinerarySpot, tripData, activeTripDay]);
@@ -831,129 +1068,11 @@ const HomeScreen = () => {
                     </Marker>
                 ))}
 
-                {/* Itinerary place markers — only active day */}
-                {(() => {
-                    return tripData?.itinerary?.flatMap((day, dayIndex) => {
-                        if (activeTripDay !== null && day.day !== activeTripDay) return [];
-                        const dayColor = DAY_COLORS[dayIndex % DAY_COLORS.length];
-                        return (day.places || [])
-                            .filter(place => place && place.coordinates?.lat && place.coordinates?.lng)
-                            .map((place, placeIndex) => (
-                                <Marker
-                                    key={`marker-${day.day}-${placeIndex}`}
-                                    coordinate={{
-                                        latitude: place.coordinates.lat,
-                                        longitude: place.coordinates.lng,
-                                    }}
-                                    title={place.name}
-                                    description={`Day ${day.day} • ${place.category || 'sightseeing'}`}
-                                    anchor={{ x: 0.5, y: 0.85 }}
-                                >
-                                    <Animated.View style={[markerAnimatedStyle, { alignItems: 'center', width: 100 }]}>
-                                        <View style={{
-                                            width: 28,
-                                            height: 28,
-                                            borderRadius: 14,
-                                            backgroundColor: dayColor,
-                                            borderWidth: 2,
-                                            borderColor: '#FFFFFF',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            shadowColor: '#000',
-                                            shadowOffset: { width: 0, height: 2 },
-                                            shadowOpacity: 0.3,
-                                            shadowRadius: 3,
-                                            elevation: 4,
-                                        }}>
-                                            <Text style={{
-                                                color: '#FFFFFF',
-                                                fontSize: 12,
-                                                fontWeight: '700',
-                                            }}>{placeIndex + 1}</Text>
-                                        </View>
-                                        {(visibleLabelIds.has(`marker-${day.day}-${placeIndex}`) || 
-                                          (selectedItinerarySpot?.name === place.name && 
-                                           selectedItinerarySpot?.coordinates?.lat === place.coordinates?.lat)) && (
-                                            <Text
-                                                numberOfLines={1}
-                                                style={{
-                                                    marginTop: 3,
-                                                    fontSize: 10,
-                                                    fontWeight: '700',
-                                                    color: '#1E293B',
-                                                    textAlign: 'center',
-                                                    backgroundColor: 'rgba(255,255,255,0.85)',
-                                                    paddingHorizontal: 5,
-                                                    paddingVertical: 1,
-                                                    borderRadius: 4,
-                                                    overflow: 'hidden',
-                                                    textShadowColor: 'rgba(255,255,255,0.9)',
-                                                    textShadowOffset: { width: 0, height: 0 },
-                                                    textShadowRadius: 3,
-                                                }}
-                                            >{place.name}</Text>
-                                        )}
-                                    </Animated.View>
-                                </Marker>
-                            ));
-                    });
-                })()}
+                {/* Itinerary place markers — only active day (memoized) */}
+                {itineraryMarkers}
 
-
-
-
-                {/* Route outline polylines — active day only */}
-                {tripData?.itinerary?.map((day, dayIndex) => {
-                    if (activeTripDay !== null && day.day !== activeTripDay) return null;
-                    if (!day.route?.polyline) return null;
-                    return (
-                        <Polyline
-                            key={`route-outline-${day.day}`}
-                            coordinates={decodePolyline(day.route.polyline)}
-                            strokeColor="rgba(0,0,0,0.12)"
-                            strokeWidth={8}
-                            lineJoin="round"
-                            lineCap="round"
-                        />
-                    );
-                })}
-
-                {/* Route polylines — active day only */}
-                {tripData?.itinerary?.map((day, dayIndex) => {
-                    if (activeTripDay !== null && day.day !== activeTripDay) return null;
-                    if (!day.route?.polyline) return null;
-                    return (
-                        <Polyline
-                            key={`route-${day.day}`}
-                            coordinates={decodePolyline(day.route.polyline)}
-                            strokeColor={DAY_COLORS[dayIndex % DAY_COLORS.length]}
-                            strokeWidth={5}
-                            lineJoin="round"
-                            lineCap="round"
-                        />
-                    );
-                })}
-
-                {/* Fallback straight-line polylines — active day only */}
-                {tripData?.itinerary?.map((day, dayIndex) => {
-                    if (activeTripDay !== null && day.day !== activeTripDay) return null;
-                    if (day.route?.polyline) return null;
-                    const coords = (day.places || [])
-                        .filter(p => p && p.coordinates?.lat && p.coordinates?.lng)
-                        .map(p => ({ latitude: p.coordinates.lat, longitude: p.coordinates.lng }));
-                    if (coords.length <= 1) return null;
-                    return (
-                        <Polyline
-                            key={`fallback-${day.day}`}
-                            coordinates={coords}
-                            strokeColor={DAY_COLORS[dayIndex % DAY_COLORS.length]}
-                            strokeWidth={4}
-                            lineDashPattern={[6, 4]}
-                            lineJoin="round"
-                            lineCap="round"
-                        />
-                    );
-                })}
+                {/* Route polylines — memoized to prevent native object leaks */}
+                {memoizedPolylines}
             </MapView>
 
 

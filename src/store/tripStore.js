@@ -9,7 +9,22 @@ export const useTripStore = create((set, get) => ({
     // Current trip being viewed
     tripData: null,
     originalTripData: null, // Stores a snapshot of the trip before editing
-    setTripData: (data) => set({ tripData: data }),
+    setTripData: (data) => {
+        // Strip discoveredPlaces to minimal fields (only name+photoUrl needed for UI lookup)
+        // to prevent holding massive arrays of place metadata in JS heap
+        if (data?.discoveredPlaces && Array.isArray(data.discoveredPlaces)) {
+            data = {
+                ...data,
+                discoveredPlaces: data.discoveredPlaces.map(p => ({
+                    name: p.name,
+                    photoUrl: p.photoUrl,
+                    rating: p.rating,
+                    userRatingCount: p.userRatingCount,
+                })),
+            };
+        }
+        set({ tripData: data });
+    },
     backupTrip: () => set((state) => ({ originalTripData: state.tripData ? JSON.parse(JSON.stringify(state.tripData)) : null })),
     restoreTrip: () => set((state) => ({ tripData: state.originalTripData || state.tripData, originalTripData: null })),
 
