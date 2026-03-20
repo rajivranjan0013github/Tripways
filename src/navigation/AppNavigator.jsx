@@ -63,13 +63,11 @@ const linking = {
     subscribe(listener) {
         // Listen for tripways:// links (External deep links)
         const linkingSub = Linking.addEventListener('url', ({ url }) => {
-            console.log('AppNavigator: Linking event received', url);
             listener(url);
         });
 
         // Listen for share intents (Android real-time events & iOS check on active)
         const shareUnsub = onShareIntent((sharedUrl) => {
-            console.log('AppNavigator: Share intent received', sharedUrl);
             // Convert to a deep link URL so React Navigation can parse it via the config above
             const deepLink = `tripways://share?sharedUrl=${encodeURIComponent(sharedUrl)}`;
             listener(deepLink);

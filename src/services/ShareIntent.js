@@ -60,9 +60,7 @@ export async function setAppGroupData(userId, backendUrl) {
     }
 
     try {
-        console.log(`ShareIntent: Saving App Group Data -> userId: ${userId}, backendUrl: ${backendUrl}`);
         const success = await ShareIntentModule.setAppGroupData(userId, backendUrl);
-        console.log('ShareIntent: setAppGroupData returned:', success);
         return success;
     } catch (e) {
         console.error('ShareIntent: Failed to set app group data:', e);
@@ -78,13 +76,9 @@ export function onShareIntent(callback) {
 
     // On both platforms, check for shared URL when app becomes active
     const appStateListener = AppState.addEventListener('change', async (state) => {
-        console.log(`ShareIntent: AppState changed to ${state}`);
         if (state === 'active') {
-            console.log('ShareIntent: App is active, checking for shared URL...');
             const url = await getSharedUrl();
-            console.log('ShareIntent: getSharedUrl returned', url);
             if (url) {
-                console.log('ShareIntent: Firing callback with', url);
                 callback(url);
             }
         }
@@ -93,7 +87,6 @@ export function onShareIntent(callback) {
 
     // Also listen for URL scheme events just in case
     const linkingListener = Linking.addEventListener('url', (event) => {
-        console.log('ShareIntent: Linking event received', event.url);
         const sharedUrl = parseShareSchemeUrl(event.url);
         if (sharedUrl) {
             callback(sharedUrl);
@@ -108,7 +101,6 @@ export function onShareIntent(callback) {
     /* 
     if (Platform.OS === 'android') {
         const eventSub = DeviceEventEmitter.addListener('onShareIntentReceived', (sharedText) => {
-            console.log('ShareIntent: Native event received', sharedText);
             const url = extractUrl(sharedText);
             if (url) {
                 callback(url);

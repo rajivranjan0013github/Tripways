@@ -92,7 +92,6 @@ export const handleFCMTokenUpdate = async () => {
 
 function App() {
     // Configure RevenueCat on startup
-    console.log("fufiugi")
     useEffect(() => {
         const initPurchases = async () => {
             try {
@@ -120,9 +119,7 @@ function App() {
 
                     if (uid) {
                         try {
-                            const { customerInfo } = await Purchases.logIn(String(uid));
-                            console.log(customerInfo);
-                            
+                            const { customerInfo } = await Purchases.logIn(String(uid));                            
                             
                             // Update the global store directly from RevenueCat customer object
                             useUserStore.getState().setCustomerInfo(customerInfo);

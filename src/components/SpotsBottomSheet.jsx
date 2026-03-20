@@ -161,21 +161,17 @@ const SpotsBottomSheet = ({
     const handleTripPress = async (tripId) => {
         if (!tripId) return;
         try {
-            console.log('[handleTripPress] Step 1: Fetching trip', tripId);
             const res = await fetch(`${BACKEND_URL}/api/trips/${tripId}`);
             const data = await res.json();
-            console.log('[handleTripPress] Step 2: Got response, success=', data?.success, 'itinerary days=', data?.trip?.itinerary?.length);
             if (data?.success && data?.trip) {
                 const fullTrip = data.trip;
                 
                 // Log details about each day for debugging
                 if (fullTrip.itinerary) {
                     fullTrip.itinerary.forEach((day, i) => {
-                        console.log(`[handleTripPress] Day ${day.day}: ${day.places?.length || 0} places, route=${day.route ? 'yes' : 'null'}, polyline=${day.route?.polyline?.length || 0} chars`);
                     });
                 }
                 
-                console.log('[handleTripPress] Step 3: Calling setTripData');
                 setTripData({
                     _id: fullTrip._id,
                     numDays: fullTrip.days,
@@ -183,7 +179,6 @@ const SpotsBottomSheet = ({
                     itinerary: fullTrip.itinerary,
                     discoveredPlaces: fullTrip.discoveredPlaces || [],
                 });
-                console.log('[handleTripPress] Step 4: setTripData done, closing sheet');
                 setIsTemplateTripView(false);
                 isProgrammaticCloseRef.current = true;
                 bottomSheetRef.current?.close();
@@ -194,7 +189,6 @@ const SpotsBottomSheet = ({
                     });
                 }, 150);
                 setTimeout(() => {
-                    console.log('[handleTripPress] Step 5: Opening TripOverviewSheet');
                     setTripOverviewOpen(true);
                     tripOverviewSheetRef.current?.expand();
                 }, 400);
@@ -241,7 +235,6 @@ const SpotsBottomSheet = ({
     useEffect(() => {
         const handleSharedUrl = (url) => {
             if (!url) return;
-            console.log('SpotsBottomSheet: Processing shared URL', url);
             const platform = detectPlatformFromUrl(url) || 'instagram';
             setSocialMode(platform);
             setSearchText(url);
@@ -726,7 +719,7 @@ const SpotsBottomSheet = ({
                                     onPress={() => {
                                         const url = activeImport.normalizedUrl || activeImport.originalUrl;
                                         if (url) {
-                                            Linking.openURL(url).catch((err) => console.log('Failed to open url:', err));
+                                            Linking.openURL(url).catch((err) => {});
                                         }
                                     }}
                                 >

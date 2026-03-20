@@ -779,7 +779,6 @@ const HomeScreen = () => {
     );
 
     const handleSheetChanges = useCallback((index) => {
-        console.log('handleSheetChanges', index);
         setSheetIndex(index);
         if (index !== 2) {
             Keyboard.dismiss();
@@ -1221,14 +1220,11 @@ const HomeScreen = () => {
                         disabled={isSavingTrip}
                         onPress={async () => {
                             if (isEditMode) {
-                                console.log('[Done Button] Clicked in Edit Mode');
-                                console.log('[Done Button] tripData._id:', tripData?._id);
                                 if (tripData?._id) {
                                     // Save changes to backend when clicking Done
                                     setIsSavingTrip(true);
                                     try {
                                         const url = `${BACKEND_URL}/api/trips/${tripData._id}`;
-                                        console.log(`[Done Button] Sending PATCH to: ${url}`);
 
                                         const response = await fetch(url, {
                                             method: 'PATCH',
@@ -1241,10 +1237,8 @@ const HomeScreen = () => {
                                             })
                                         });
 
-                                        console.log(`[Done Button] Response status: ${response.status}`);
                                         if (response.ok) {
                                             const result = await response.json();
-                                            console.log('[Done Button] Save success:', result.success);
                                             if (result.success && result.trip) {
                                                 setTripData(result.trip);
                                                 refetchTrips();

@@ -195,7 +195,6 @@ export function getCountryMapData(savedSpotsGrouped, geojsonData) {
     countries.forEach((countryName, i) => {
         const featureIndex = findCountryFeatureIndex(countryName, lookup);
         if (featureIndex < 0) {
-            console.log(`[CountryMap] No GeoJSON match for: "${countryName}"`);
             return;
         }
 
