@@ -25,12 +25,13 @@ import Animated, {
     useSharedValue
 } from 'react-native-reanimated';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
-import { ScrollView } from 'react-native-gesture-handler';
-import Video from 'react-native-video';
+
 
 // Zustand stores
 import { useUIStore } from '../store/uiStore';
 import { useTripStore } from '../store/tripStore';
+import { useUserStore } from '../store/userStore';
+import PremiumOverlay from './PremiumOverlay';
 
 // TanStack Query
 import { useSavedSpots, useSaveSpot } from '../hooks/useSpots';
@@ -112,10 +113,13 @@ const SpotsBottomSheet = ({
     const [videoProgress, setVideoProgress] = useState('');
     const [selectedSpotPlaceId, setSelectedSpotPlaceId] = useState(null);
     const [selectedImportId, setSelectedImportId] = useState(null);
-    const [videoPlaying, setVideoPlaying] = useState(false);
+    const importDetailSheetRef = useRef(null);
+    const importDetailSnapPoints = useMemo(() => ['70%', '90%'], []);
     const [showAddedBadge, setShowAddedBadge] = useState(false);
     const [savingSpotId, setSavingSpotId] = useState(null);
     const [keyboardHeight, setKeyboardHeight] = useState(0);
+    const [showPremiumOverlay, setShowPremiumOverlay] = useState(false);
+    const isPremium = useUserStore((state) => state.isPremium);
 
 
     // Refs
@@ -254,6 +258,23 @@ const SpotsBottomSheet = ({
         }
     }, [bottomSheetRef, navigation, route.params?.sharedUrl, setSocialMode]);
 
+    // ── Handle tripways://premium deep link from ShareMenuScreen ──
+    useEffect(() => {
+        const handleUrl = ({ url }) => {
+            if (url && url.includes('tripways://premium')) {
+                setShowPremiumOverlay(true);
+            }
+        };
+        const sub = Linking.addEventListener('url', handleUrl);
+        // Also check if we were launched with this deep link
+        Linking.getInitialURL().then((url) => {
+            if (url && url.includes('tripways://premium')) {
+                setShowPremiumOverlay(true);
+            }
+        });
+        return () => sub.remove();
+    }, []);
+
 
     // Process video URL for places extraction
     useEffect(() => {
@@ -281,6 +302,7 @@ const SpotsBottomSheet = ({
                                 videoUrl: trimmed,
                                 userId,
                                 platform: socialMode,
+                                isPremium,
                             })
                         },
                         (eventType, parsed) => {
@@ -297,6 +319,9 @@ const SpotsBottomSheet = ({
                             } else if (eventType === 'places') {
                                 placesData = parsed;
                             } else if (eventType === 'error') {
+                                if (parsed.code === 'IMPORT_LIMIT_REACHED') {
+                                    setShowPremiumOverlay(true);
+                                }
                                 reject(new Error(parsed.message || 'Unknown error'));
                             }
                         },
@@ -436,6 +461,31 @@ const SpotsBottomSheet = ({
         []
     );
 
+    const renderImportDetailBackdrop = useCallback(
+        (props) => (
+            <BottomSheetBackdrop
+                {...props}
+                disappearsOnIndex={-1}
+                appearsOnIndex={0}
+                opacity={0.4}
+                pressBehavior="close"
+            />
+        ),
+        []
+    );
+
+    // Open/close import detail sheet when selectedImportId changes
+    useEffect(() => {
+        if (selectedImportId) {
+            // Small delay to ensure the ref is ready after state update
+            setTimeout(() => {
+                importDetailSheetRef.current?.expand();
+            }, 100);
+        } else {
+            importDetailSheetRef.current?.close();
+        }
+    }, [selectedImportId]);
+
     const selectedImportSummary = useMemo(
         () => importedVideos.find((item) => item._id === selectedImportId) || null,
         [importedVideos, selectedImportId]
@@ -443,6 +493,7 @@ const SpotsBottomSheet = ({
     const activeImport = selectedImportDetail || selectedImportSummary;
 
     return (
+        <>
         <BottomSheet
             ref={bottomSheetRef}
             index={activeTab === 'trips' ? 2 : 1} 
@@ -479,7 +530,13 @@ const SpotsBottomSheet = ({
                     setSavedViewMode={setSavedViewMode}
                     importedVideos={importedVideos}
                     totalImportsCount={totalImportsCount}
-                    onImportPress={(item) => setSelectedImportId(item._id)}
+                    onImportPress={(item) => {
+                        setSelectedImportId(item._id);
+                        // bottomSheetRef.current?.snapToIndex(0);
+                        setTimeout(() => {
+                            importDetailSheetRef.current?.expand();
+                        }, 350);
+                    }}
                     sheetAnimatedPosition={sheetAnimatedPosition}
                     thresholdY={thresholdY}
                     fadeRange={fadeRange}
@@ -491,6 +548,8 @@ const SpotsBottomSheet = ({
                     tabBarHeight={tabBarHeight}
                     tabBarTranslateY={tabBarTranslateY}
                     setShowProfile={setShowProfile}
+                    isPremium={isPremium}
+                    setShowPremiumOverlay={setShowPremiumOverlay}
                 />
             ) : (
                     /* ── Trips Mode ── */
@@ -503,6 +562,10 @@ const SpotsBottomSheet = ({
                         handleTripPress={handleTripPress}
                     />
                 )}
+
+            {/* "Spot Added" Badge */}
+            <SpotAddedBadge visible={showAddedBadge} keyboardHeight={keyboardHeight} />
+        </BottomSheet>
 
             {/* Spot Detail Modal */}
             <Modal
@@ -616,111 +679,93 @@ const SpotsBottomSheet = ({
                 </TouchableOpacity>
             </Modal>
 
-            <Modal
-                visible={!!selectedImportId}
-                transparent
-                animationType="slide"
-                onRequestClose={() => { setSelectedImportId(null); setVideoPlaying(false); }}
+            <BottomSheet
+                ref={importDetailSheetRef}
+                index={-1}
+                snapPoints={importDetailSnapPoints}
+                enablePanDownToClose
+                backdropComponent={renderImportDetailBackdrop}
+                backgroundStyle={styles.importDetailSheetBg}
+                handleIndicatorStyle={styles.handleIndicator}
+                onChange={(index) => {
+                    if (index === -1) {
+                        setSelectedImportId(null);
+                    }
+                }}
             >
-                <TouchableOpacity
-                    style={styles.detailOverlay}
-                    activeOpacity={1}
-                    onPress={() => { setSelectedImportId(null); setVideoPlaying(false); }}
-                >
-                    <View style={styles.detailCard} onStartShouldSetResponder={() => true}>
-                        <TouchableOpacity style={styles.detailCloseBtn} onPress={() => { setSelectedImportId(null); setVideoPlaying(false); }}>
-                            <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                {importDetailLoading || !activeImport ? (
+                    <View style={styles.detailLoading}>
+                        <ActivityIndicator size="large" color="#3B82F6" />
+                        <Text style={{ color: '#94A3B8', marginTop: 12, fontSize: 14, fontWeight: '500' }}>Loading import details…</Text>
+                    </View>
+                ) : (
+                    <BottomSheetScrollView contentContainerStyle={styles.importDetailContent}>
+                        <TouchableOpacity 
+                            style={[styles.detailCloseBtn, { top: 10, right: 10, backgroundColor: '#F1F5F9' }]} 
+                            onPress={() => setSelectedImportId(null)}
+                        >
+                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <Path d="M18 6 6 18M6 6l12 12" />
                             </Svg>
                         </TouchableOpacity>
-
-                        {importDetailLoading || !activeImport ? (
-                            <View style={styles.detailLoading}>
-                                <ActivityIndicator size="large" color="#3B82F6" />
-                                <Text style={{ color: '#94A3B8', marginTop: 12, fontSize: 14, fontWeight: '500' }}>Loading import details…</Text>
+                        <View style={[styles.detailInfo, { paddingTop: 40 }]}>
+                            <View style={styles.importDetailTopRow}>
+                                <Text style={styles.importPlatformPillLarge}>
+                                    {activeImport.platform === 'tiktok' ? 'TikTok' : activeImport.platform === 'instagram' ? 'Instagram Reel' : 'Imported Video'}
+                                </Text>
+                                <Text style={styles.importStatusTextLarge}>{activeImport.status}</Text>
                             </View>
-                        ) : (
-                            <ScrollView style={styles.importDetailScroll} contentContainerStyle={styles.importDetailContent}>
-                                {activeImport.cloudflareVideoUrl ? (
-                                    <TouchableOpacity
-                                        activeOpacity={0.9}
-                                        style={styles.videoPlayerContainer}
-                                        onPress={() => setVideoPlaying(p => !p)}
-                                    >
-                                        <Video
-                                            source={{ uri: activeImport.cloudflareVideoUrl }}
-                                            style={styles.detailVideo}
-                                            paused={!videoPlaying}
-                                            resizeMode="cover"
-                                            repeat
-                                            controls={false}
-                                            poster={activeImport.thumbnailUrl || undefined}
-                                            posterResizeMode="cover"
-                                        />
-                                        {!videoPlaying && (
-                                            <View style={styles.videoPlayOverlay}>
-                                                <View style={styles.videoPlayButton}>
-                                                    <Svg width="28" height="28" viewBox="0 0 24 24" fill="#fff">
-                                                        <Path d="M8 5v14l11-7z" />
-                                                    </Svg>
-                                                </View>
-                                            </View>
-                                        )}
-                                    </TouchableOpacity>
-                                ) : activeImport.thumbnailUrl ? (
-                                    <Image source={{ uri: activeImport.thumbnailUrl }} style={styles.detailImage} />
-                                ) : (
-                                    <View style={[styles.detailImage, styles.importHeroFallback]}>
-                                        <Text style={styles.importHeroFallbackText}>{activeImport.platform === 'tiktok' ? 'TikTok' : 'Reel'}</Text>
-                                    </View>
-                                )}
 
-                                <View style={styles.detailInfo}>
-                                    <View style={styles.importDetailTopRow}>
-                                        <Text style={styles.importPlatformPillLarge}>
-                                            {activeImport.platform === 'tiktok' ? 'TikTok' : activeImport.platform === 'instagram' ? 'Instagram Reel' : 'Imported Video'}
-                                        </Text>
-                                        <Text style={styles.importStatusTextLarge}>{activeImport.status}</Text>
-                                    </View>
+                            <Text style={styles.detailName}>{activeImport.title || activeImport.destination || 'Imported video'}</Text>
+                            {!!activeImport.caption && <Text style={styles.detailSummary}>{activeImport.caption}</Text>}
 
-                                    <Text style={styles.detailName}>{activeImport.title || activeImport.destination || 'Imported video'}</Text>
-                                    {!!activeImport.caption && <Text style={styles.detailSummary}>{activeImport.caption}</Text>}
+                            <View style={styles.importActionRow}>
+                                <TouchableOpacity 
+                                    style={[styles.importActionButton, { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}
+                                    activeOpacity={0.8}
+                                    onPress={() => {
+                                        const url = activeImport.normalizedUrl || activeImport.originalUrl;
+                                        if (url) {
+                                            Linking.openURL(url).catch((err) => console.log('Failed to open url:', err));
+                                        }
+                                    }}
+                                >
+                                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                        <Path d="M15 3h6v6" />
+                                        <Path d="M10 14L21 3" />
+                                    </Svg>
+                                    <Text style={styles.importActionButtonText}>
+                                        Open in {activeImport.platform === 'tiktok' ? 'TikTok' : activeImport.platform === 'instagram' ? 'Instagram' : 'App'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
 
-                                    <View style={styles.importMetricsRow}>
-                                        <View style={styles.importMetricCard}>
-                                            <Text style={styles.importMetricValue}>{activeImport.totalExtractedPlaces || 0}</Text>
-                                            <Text style={styles.importMetricLabel}>Extracted</Text>
-                                        </View>
-                                       
-                                    </View>
-
-                                  
-
-                                  
-                                    {Array.isArray(activeImport.locations) && activeImport.locations.length > 0 && (
-                                        <>
-                                            <Text style={styles.importSectionTitle}>Extracted Locations</Text>
-                                            {activeImport.locations.map((location, index) => (
-                                                <View key={`${location.country}-${location.city}-${index}`} style={styles.importLocationCard}>
-                                                    <Text style={styles.importLocationTitle}>{location.city || 'Unknown city'}, {location.country || 'Unknown country'}</Text>
-                                                    <Text style={styles.importLocationSubtitle}>{(location.spots || []).join(', ')}</Text>
-                                                </View>
-                                            ))}
-                                        </>
-                                    )}
-
-                                  
+                            <View style={styles.importMetricsRow}>
+                                <View style={styles.importMetricCard}>
+                                    <Text style={styles.importMetricValue}>{activeImport.totalExtractedPlaces || 0}</Text>
+                                    <Text style={styles.importMetricLabel}>Spots Extracted</Text>
                                 </View>
-                            </ScrollView>
-                        )}
-                    </View>
-                </TouchableOpacity>
-            </Modal>
+                            </View>
 
+                            {Array.isArray(activeImport.locations) && activeImport.locations.length > 0 && (
+                                <>
+                                    <Text style={styles.importSectionTitle}>Extracted Locations</Text>
+                                    {activeImport.locations.map((location, index) => (
+                                        <View key={`${location.country}-${location.city}-${index}`} style={styles.importLocationCard}>
+                                            <Text style={styles.importLocationTitle}>{location.city || 'Unknown city'}, {location.country || 'Unknown country'}</Text>
+                                            <Text style={styles.importLocationSubtitle}>{(location.spots || []).join(', ')}</Text>
+                                        </View>
+                                    ))}
+                                </>
+                            )}
+                        </View>
+                    </BottomSheetScrollView>
+                )}
+            </BottomSheet>
 
-            {/* "Spot Added" Badge */}
-            <SpotAddedBadge visible={showAddedBadge} keyboardHeight={keyboardHeight} />
-        </BottomSheet>
+            <PremiumOverlay visible={showPremiumOverlay} onClose={() => setShowPremiumOverlay(false)} />
+        </>
     );
 };
 
@@ -779,6 +824,11 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 12,
         elevation: 10,
+    },
+    importDetailSheetBg: {
+        backgroundColor: '#FFFFFF',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
     },
     handleIndicator: {
         backgroundColor: '#E5E7EB',
@@ -895,7 +945,6 @@ const styles = StyleSheet.create({
     },
     importDetailTopRow: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 10,
         gap: 12,
@@ -913,7 +962,12 @@ const styles = StyleSheet.create({
     importStatusTextLarge: {
         fontSize: 12,
         fontWeight: '800',
-        color: '#64748B',
+        color: '#059669',
+        backgroundColor: '#D1FAE5',
+        overflow: 'hidden',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
         textTransform: 'capitalize',
     },
     importMetricsRow: {

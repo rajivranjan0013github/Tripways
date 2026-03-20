@@ -42,7 +42,8 @@ const SpotsExploreContent = ({
     createTripSheetRef,
     tabBarHeight,
     tabBarTranslateY,
-    setShowProfile
+    setShowProfile,
+    setShowPremiumOverlay
 }) => {
     const isPremium = useUserStore((state) => state.isPremium);
     
@@ -236,27 +237,43 @@ const SpotsExploreContent = ({
                                         <Path d="m15 18-6-6 6-6"/>
                                     </Svg>
                                 </TouchableOpacity>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.mySpotsTitle}>Imported Reels & TikToks</Text>
-                                    {!isPremium ? (
-                                        <View style={styles.freeLimitContainer}>
-                                            <View style={styles.freeLimitProgressTrack}>
-                                                <View style={[styles.freeLimitProgressBar, { width: `${Math.min((totalImportsCount / 5) * 100, 100)}%` }]} />
+                                <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <View>
+                                        <Text style={styles.mySpotsTitle}>Imported Reels & TikToks</Text>
+                                        {!isPremium ? (
+                                            <View style={styles.freeLimitContainer}>
+                                                <View style={styles.freeLimitProgressTrack}>
+                                                    <View style={[styles.freeLimitProgressBar, { width: `${Math.min((totalImportsCount / 5) * 100, 100)}%` }]} />
+                                                </View>
+                                                <Text style={styles.freeLimitText}>
+                                                    {totalImportsCount >= 5 ? '5 / 5 free imports used' : `${totalImportsCount} / 5 free imports saved`}
+                                                </Text>
                                             </View>
-                                            <Text style={styles.freeLimitText}>
-                                                {totalImportsCount >= 5 ? '5 / 5 free imports used' : `${totalImportsCount} / 5 free imports saved`}
-                                            </Text>
-                                        </View>
-                                    ) : (
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                                            <View style={styles.premiumBadgeIcon}>
-                                                <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                                    <Path d="M20 6 9 17l-5-5"/>
+                                        ) : (
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                                                <View style={styles.premiumBadgeIcon}>
+                                                    <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                        <Path d="M20 6 9 17l-5-5"/>
+                                                    </Svg>
+                                                </View>
+                                                <Text style={styles.premiumText}>Unlimited Imports</Text>
+                                                <Text style={styles.premiumCountText}> • {totalImportsCount} Saved</Text>
+                                            </View>
+                                        )}
+                                    </View>
+                                    {!isPremium && (
+                                        <TouchableOpacity 
+                                            style={styles.upgradeBtnSmall} 
+                                            activeOpacity={0.8}
+                                            onPress={() => setShowPremiumOverlay(true)}
+                                        >
+                                            <View style={styles.upgradeBtnSmallInner}>
+                                                <Svg width="11" height="11" viewBox="0 0 24 24" fill="#FFFFFF" style={{ marginRight: 4 }}>
+                                                    <Path d="M5 16L3 5L8.5 10L12 4L15.5 10L21 5L19 16H5ZM19 19C19 19.5523 18.5523 20 18 20H6C5.44772 20 5 19.5523 5 19V18H19V19Z" />
                                                 </Svg>
+                                                <Text style={styles.upgradeBtnSmallText}>Upgrade</Text>
                                             </View>
-                                            <Text style={styles.premiumText}>Unlimited Imports</Text>
-                                            <Text style={styles.premiumCountText}> • {totalImportsCount} Saved</Text>
-                                        </View>
+                                        </TouchableOpacity>
                                     )}
                                 </View>
                             </View>
@@ -757,6 +774,28 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '500',
         color: '#94A3B8',
+    },
+    upgradeBtnSmall: {
+        borderRadius: 20,
+        backgroundColor: '#00C3F9',
+        elevation: 4,
+        shadowColor: '#00C3F9',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 6,
+    },
+    upgradeBtnSmallInner: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    upgradeBtnSmallText: {
+        color: '#FFFFFF',
+        fontSize: 12,
+        fontWeight: '800',
+        letterSpacing: 0.4,
     },
 });
 

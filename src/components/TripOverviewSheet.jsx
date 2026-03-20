@@ -13,7 +13,9 @@ import { MMKV } from 'react-native-mmkv';
 // Zustand stores
 import { useUIStore } from '../store/uiStore';
 import { useTripStore } from '../store/tripStore';
+import { useUserStore } from '../store/userStore';
 import AddSpotSheet from './AddSpotSheet';
+import PremiumOverlay from './PremiumOverlay';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const tripStorage = new MMKV();
@@ -177,6 +179,8 @@ const ChecklistStepItem = ({ step, idx, currentTick, dots, activePulseStyle }) =
 
 const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs }, ref) => {
     const { tripData, isTripLoading: storeLoading, isSavingTrip, isTemplateTripView, setIsTemplateTripView, reorderSpots, removeSpots, moveSpots, optimizeDayOrder, addSpotToDay } = useTripStore();
+    const isPremium = useUserStore((state) => state.isPremium);
+    const [showPremiumOverlay, setShowPremiumOverlay] = useState(false);
     
     // UI Local state for the loader visibility to allow for "Success" animation delay
     const [isLoaderVisible, setIsLoaderVisible] = useState(storeLoading);
@@ -255,6 +259,10 @@ const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs 
     const [optimizingDay, setOptimizingDay] = useState(null);
 
     const handleOptimize = async (dayNum) => {
+        if (!isPremium) {
+            setShowPremiumOverlay(true);
+            return;
+        }
         if (optimizingDay !== null) return; // Already optimizing
         const dayData = tripData?.itinerary?.find(d => d.day === dayNum);
         if (!dayData?.places || dayData.places.length < 2) return;
@@ -771,23 +779,6 @@ const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs 
                     >
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                             <Text style={styles.dayTitle}>Day {dayData.day}</Text>
-                            <TouchableOpacity
-                                style={styles.optimizeButton}
-                                onPress={(e) => {
-                                    e.stopPropagation();
-                                    handleOptimize(dayData.day);
-                                }}
-                                disabled={optimizingDay === dayData.day}
-                            >
-                                {optimizingDay === dayData.day ? (
-                                    <ActivityIndicator size="small" color="#0F172A" style={{ width: 12, height: 12 }} />
-                                ) : (
-                                    <Svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <Path d="M2 20h.01M7 20v-4M12 20V10M17 20V4" />
-                                    </Svg>
-                                )}
-                                <Text style={styles.optimizeText}>{optimizingDay === dayData.day ? 'Optimizing...' : 'Optimize'}</Text>
-                            </TouchableOpacity>
                         </View>
 
                         <Animated.View style={{ transform: [{ rotate: isExpanded ? '0deg' : '-90deg' }] }}>
@@ -1248,6 +1239,7 @@ const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs 
                     }
                 }}
             />
+            <PremiumOverlay visible={showPremiumOverlay} onClose={() => setShowPremiumOverlay(false)} />
         </>
     );
 });

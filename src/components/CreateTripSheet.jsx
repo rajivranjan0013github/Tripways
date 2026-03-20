@@ -1,7 +1,7 @@
 import React, { forwardRef, useMemo, useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, Image, ScrollView, ActivityIndicator, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, Image, ScrollView, ActivityIndicator, Keyboard, InteractionManager } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetFlatList, BottomSheetScrollView, BottomSheetFooter } from '@gorhom/bottom-sheet';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -105,6 +105,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     const [selectedSpots, setSelectedSpots] = useState([]);
     const [discoveredPlaces, setDiscoveredPlaces] = useState([]);
     const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
+    const [isAddingMoreSpots, setIsAddingMoreSpots] = useState(null); // stores the placeName being loaded
     const [isPlanning, setIsPlanning] = useState(false);
     const [isFromVideo, setIsFromVideo] = useState(false);
     const [isFromSavedSpots, setIsFromSavedSpots] = useState(false);
@@ -113,6 +114,12 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     const [videoImportMeta, setVideoImportMeta] = useState(null);
     const inputRef = useRef(null);
     const bottomSheetInternalRef = useRef(null);
+    const discoveredPlacesRef = useRef([]);
+
+    // Keep ref in sync with state
+    useEffect(() => {
+        discoveredPlacesRef.current = discoveredPlaces;
+    }, [discoveredPlaces]);
 
     // Expose BottomSheet methods + custom openDiscoverSpots
     useImperativeHandle(ref, () => ({
@@ -496,44 +503,61 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             )}
             <View style={styles.footer}>
                 {/* Trip Preferences Section */}
-                <View style={styles.prefSection}>
-                    <View style={styles.prefSectionHeader}>
-                        <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
-                            <Path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z" />
-                            <Path d="M5 17l.6 1.4L7 19l-1.4.6L5 21l-.6-1.4L3 19l1.4-.6L5 17z" />
-                        </Svg>
-                        <Text style={styles.prefSectionTitle}>Trip Preferences</Text>
+                {selectedSpots.length > 0 ? (
+                    <View style={styles.prefSection}>
+                        <View style={styles.prefSectionHeader}>
+                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M20 6 9 17l-5-5" />
+                            </Svg>
+                            <Text style={styles.prefSectionTitle}>Spots Selected</Text>
+                        </View>
+                        <View style={[styles.tagGrid, { gap: 8 }]}>
+                            <View style={[styles.tagChip, styles.tagChipSelected, { flexDirection: 'row', gap: 6 }]}>
+                                <Text style={{ fontSize: 16 }}>📍</Text>
+                                <Text style={[styles.tagText, styles.tagTextSelected]}>{selectedSpots.length} {selectedSpots.length === 1 ? 'spot' : 'spots'} ready</Text>
+                            </View>
+                        </View>
                     </View>
-                    <View style={styles.tagGrid}>
-                        {[
-                            { name: 'Popular', icon: '📌' },
-                            { name: 'Museum', icon: '🎨' },
-                            { name: 'Nature', icon: '⛰️' },
-                            { name: 'Foodie', icon: '🍕' },
-                            { name: 'History', icon: '🏛️' },
-                            { name: 'Shopping', icon: '🛍️' },
-                        ].map((tag, idx) => {
-                            const isSelected = selectedPrefs.includes(tag.name);
-                            return (
-                                <TouchableOpacity
-                                    key={idx}
-                                    style={[styles.tagChip, isSelected && styles.tagChipSelected]}
-                                    onPress={() => {
-                                        setSelectedPrefs(prev =>
-                                            prev.includes(tag.name)
-                                                ? prev.filter(p => p !== tag.name)
-                                                : [...prev, tag.name]
-                                        );
-                                    }}
-                                >
-                                    <Text style={styles.tagIcon}>{tag.icon}</Text>
-                                    <Text style={[styles.tagText, isSelected && styles.tagTextSelected]}>{tag.name}</Text>
-                                </TouchableOpacity>
-                            );
-                        })}
+                ) : (
+                    <View style={styles.prefSection}>
+                        <View style={styles.prefSectionHeader}>
+                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+                                <Path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z" />
+                                <Path d="M5 17l.6 1.4L7 19l-1.4.6L5 21l-.6-1.4L3 19l1.4-.6L5 17z" />
+                            </Svg>
+                            <Text style={styles.prefSectionTitle}>Trip Preferences</Text>
+                        </View>
+                        <View style={styles.tagGrid}>
+                            {[
+                                { name: 'Popular', icon: '📌' },
+                                { name: 'Museum', icon: '🎨' },
+                                { name: 'Nature', icon: '⛰️' },
+                                { name: 'Foodie', icon: '🍕' },
+                                { name: 'History', icon: '🏛️' },
+                                { name: 'Shopping', icon: '🛍️' },
+                            ].map((tag, idx) => {
+                                const isSelected = selectedPrefs.includes(tag.name);
+                                return (
+                                    <TouchableOpacity
+                                        key={idx}
+                                        style={[styles.tagChip, isSelected && styles.tagChipSelected]}
+                                        onPress={() => {
+                                            setSelectedPrefs(prev =>
+                                                prev.includes(tag.name)
+                                                    ? prev.filter(p => p !== tag.name)
+                                                    : [...prev, tag.name]
+                                            );
+                                        }}
+                                    >
+                                        <Text style={styles.tagIcon}>{tag.icon}</Text>
+                                        <Text style={[styles.tagText, isSelected && styles.tagTextSelected]}>{tag.name}</Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
                     </View>
-                </View>
+                )}
 
                 {/* Trip Duration Section */}
                 <Animated.View style={durationShakeStyle}>
@@ -853,27 +877,44 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
 
     // DEV: Fetch discover places with explicit args (used by openDiscoverSpots)
     const fetchDiscoverPlacesWithArgs = async (placeName, interests, days) => {
-        setIsLoadingPlaces(true);
-        setDiscoveredPlaces([]);
-        setSelectedSpots([]);
-        setIsFromSavedSpots(false);
-        setIsFromVideo(true);
+        setIsAddingMoreSpots(placeName);
         try {
             const backendUrl = Config.BACKEND_URL || 'http://localhost:3000';
+            // Use ref to avoid stale closures when clicking rapidly
+            const existingIds = discoveredPlacesRef.current
+                .flatMap(p => [p.id, p.placeId].filter(Boolean));
             const response = await fetch(`${backendUrl}/api/discover-places`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ place: placeName, interests, days }),
+                body: JSON.stringify({ place: placeName, interests, days, excludeIds: existingIds }),
             });
             const data = await response.json();
             if (data.success && data.places) {
-                setDiscoveredPlaces(data.places);
-                setSelectedSpots(data.places.map(p => p.id));
+                // Append new spots, avoiding duplicates by both ID and name
+                setDiscoveredPlaces(prev => {
+                    const existingIds = new Set(prev.flatMap(p => [p.id, p.placeId].filter(Boolean)));
+                    const existingNames = new Set(prev.map(p => (p.name || '').toLowerCase().trim()));
+                    const newPlaces = data.places.filter(p =>
+                        !existingIds.has(p.id) && !existingNames.has((p.name || '').toLowerCase().trim())
+                    );
+                    return [...prev, ...newPlaces];
+                });
+                // Also auto-select the newly added spots
+                setSelectedSpots(prev => {
+                    const existingSet = new Set(prev);
+                    const currentNames = new Set(
+                        discoveredPlacesRef.current.map(p => (p.name || '').toLowerCase().trim())
+                    );
+                    const newIds = data.places
+                        .filter(p => !existingSet.has(p.id) && !currentNames.has((p.name || '').toLowerCase().trim()))
+                        .map(p => p.id);
+                    return [...prev, ...newIds];
+                });
             }
         } catch (error) {
             console.error('Failed to discover places:', error);
         } finally {
-            setIsLoadingPlaces(false);
+            setIsAddingMoreSpots(null);
         }
     };
 
@@ -1010,7 +1051,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     };
 
     const renderDiscoverSpots = () => (
-        <Animated.View entering={FadeIn} style={[styles.content, { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }]}>
+        <View style={[styles.content, { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }]}>
             <View style={styles.discoverHeader}>
                 <View style={styles.discoverTitleRow}>
                     <Text style={styles.discoverTitle}>Discover spots</Text>
@@ -1086,12 +1127,19 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                         <TouchableOpacity
                                             style={styles.addLocationBtn}
                                             activeOpacity={0.7}
+                                            disabled={isAddingMoreSpots !== null}
                                             onPress={() => fetchDiscoverPlacesWithArgs(country, ['popular'], 4)}
                                         >
-                                            <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
-                                                <Path d="M12 5v14M5 12h14" />
-                                            </Svg>
-                                            <Text style={styles.addLocationBtnText}>Add spots in {country}</Text>
+                                            {isAddingMoreSpots === country ? (
+                                                <ActivityIndicator size="small" color="#3B82F6" />
+                                            ) : (
+                                                <>
+                                                    <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#3B82F6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                                                        <Path d="M12 5v14M5 12h14" />
+                                                    </Svg>
+                                                    <Text style={styles.addLocationBtnText}>Add spots</Text>
+                                                </>
+                                            )}
                                         </TouchableOpacity>
                                     </View>
                                     {Object.entries(cities).map(([city, spots]) => {
@@ -1156,12 +1204,19 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                                 <TouchableOpacity
                                                     style={[styles.addLocationBtn, { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', paddingVertical: 8, paddingHorizontal: 16, marginTop: 12, marginBottom: 20, marginHorizontal: 24, justifyContent: 'center' }]}
                                                     activeOpacity={0.7}
+                                                    disabled={isAddingMoreSpots !== null}
                                                     onPress={() => fetchDiscoverPlacesWithArgs(city, ['popular'], 4)}
                                                 >
-                                                    <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                                        <Path d="M12 5v14M5 12h14" />
-                                                    </Svg>
-                                                    <Text style={[styles.addLocationBtnText, { fontSize: 13, color: '#64748B' }]}>Add more spots in {city}</Text>
+                                                    {isAddingMoreSpots === city ? (
+                                                        <ActivityIndicator size="small" color="#64748B" />
+                                                    ) : (
+                                                        <>
+                                                            <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                                                <Path d="M12 5v14M5 12h14" />
+                                                            </Svg>
+                                                            <Text style={[styles.addLocationBtnText, { fontSize: 13, color: '#64748B' }]}>Add more spots</Text>
+                                                        </>
+                                                    )}
                                                 </TouchableOpacity>
                                             </View>
                                         );
@@ -1228,19 +1283,129 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                         <TouchableOpacity
                             style={[styles.addLocationBtn, { backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', paddingVertical: 10, paddingHorizontal: 20, marginTop: 12, marginBottom: 40, justifyContent: 'center' }]}
                             activeOpacity={0.7}
+                            disabled={isAddingMoreSpots !== null}
                             onPress={() => fetchDiscoverPlacesWithArgs(selectedLocation?.name || 'Unknown', ['popular'], 4)}
                         >
-                            <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M12 5v14M5 12h14" />
-                            </Svg>
-                            <Text style={[styles.addLocationBtnText, { fontSize: 14, color: '#64748B' }]}>Add more spots in {selectedLocation?.name || 'Unknown'}</Text>
+                            {isAddingMoreSpots ? (
+                                <ActivityIndicator size="small" color="#64748B" />
+                            ) : (
+                                <>
+                                    <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M12 5v14M5 12h14" />
+                                    </Svg>
+                                    <Text style={[styles.addLocationBtnText, { fontSize: 14, color: '#64748B' }]}>Add more spots</Text>
+                                </>
+                            )}
                         </TouchableOpacity>
                     </BottomSheetScrollView>
                 )}
 
             </View>
-        </Animated.View>
+        </View>
     );
+
+    const renderFooter = useCallback((props) => {
+        if (step !== 'discoverSpots') return null;
+        return (
+            <BottomSheetFooter {...props} bottomInset={0}>
+                <LinearGradient
+                    colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.6)', 'rgba(255,255,255,0.9)', 'rgba(255,255,255,1)']}
+                    locations={[0, 0.25, 0.5, 0.75]}
+                    style={{ height: 30 }}
+                    pointerEvents="none"
+                />
+                <View style={{ paddingHorizontal: 22, paddingBottom: Platform.OS === 'android' ? Math.max(20, insets.bottom) : Math.max(16, insets.bottom), backgroundColor: '#FFFFFF' }}>
+                    {/* Save Spots button for discovered places */}
+                    {!isFromSavedSpots && selectedSpots.length > 0 && !isPlanning && !isLoadingPlaces && (
+                        <TouchableOpacity
+                            style={[styles.addSpotsButton, { backgroundColor: '#10B981', marginBottom: 8 }]}
+                            onPress={async () => {
+                                const storedUser = (() => { try { const u = storage.getString('user'); return u ? JSON.parse(u) : null; } catch { return null; } })();
+                                const userId = storedUser?.id || storedUser?._id;
+                                if (!userId) return;
+                                setIsSavingSpots(true);
+                                try {
+                                    const spotsToSave = discoveredPlacesRef.current.filter(p => selectedSpots.includes(p.id)).map(p => ({
+                                        country: p.country || 'Unknown',
+                                        city: p.city || 'Unknown',
+                                        name: p.name,
+                                        placeId: p.id,
+                                        address: p.address,
+                                        rating: p.rating,
+                                        userRatingCount: p.userRatingCount,
+                                        photoUrl: p.photoUrl,
+                                        coordinates: p.coordinates,
+                                        source: videoImportMeta?.importId ? 'video' : 'discovery',
+                                    }));
+                                    const response = await fetch(`${BACKEND_URL}/api/spots`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            userId,
+                                            importId: videoImportMeta?.importId || null,
+                                            spots: spotsToSave,
+                                        }),
+                                    });
+                                    const data = await response.json();
+                                    if (data.success) {
+                                        setDiscoveredPlaces(prev => prev.map(p => 
+                                            selectedSpots.includes(p.id) ? { ...p, _isSavedSpot: true } : p
+                                        ));
+                                        setSelectedSpots([]);
+                                        if (videoImportMeta?.importId) {
+                                            queryClient.invalidateQueries({ queryKey: ['imports', csUserId] });
+                                            queryClient.invalidateQueries({ queryKey: ['import', videoImportMeta.importId] });
+                                        }
+                                    }
+                                } catch (e) { console.warn('Save spots failed:', e); }
+                                setIsSavingSpots(false);
+                            }}
+                            disabled={isSavingSpots}
+                        >
+                            {isSavingSpots ? (
+                                <View style={styles.planningRow}>
+                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                    <Text style={styles.addSpotsText}>  Saving spots...</Text>
+                                </View>
+                            ) : (
+                                <Text style={styles.addSpotsText}>💾 Save {selectedSpots.length} spots</Text>
+                            )}
+                        </TouchableOpacity>
+                    )}
+                    <TouchableOpacity
+                        style={[styles.addSpotsButton, (isPlanning || isLoadingPlaces) && { opacity: 0.7 }]}
+                        onPress={() => {
+                            if (isFromVideo || isFromSavedSpots || matchedSavedSpots.length > 0) {
+                                setStep('preferences');
+                            } else {
+                                handlePlanTrip();
+                            }
+                        }}
+                        disabled={isPlanning || isLoadingPlaces || selectedSpots.length === 0}
+                    >
+                        {isPlanning ? (
+                            <View style={styles.planningRow}>
+                                <ActivityIndicator size="small" color="#FFFFFF" />
+                                <Text style={styles.addSpotsText}>  Planning your trip...</Text>
+                            </View>
+                        ) : isLoadingPlaces ? (
+                            <View style={styles.planningRow}>
+                                <ActivityIndicator size="small" color="#FFFFFF" />
+                                <Text style={styles.addSpotsText}>  Discovering spots...</Text>
+                            </View>
+                        ) : (
+                            <>
+                                <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M5 12h14M12 5l7 7-7 7" />
+                                </Svg>
+                                <Text style={styles.addSpotsText}>Plan Trip</Text>
+                            </>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            </BottomSheetFooter>
+        );
+    }, [step, isFromSavedSpots, selectedSpots, isPlanning, isLoadingPlaces, isSavingSpots, isFromVideo, matchedSavedSpots, videoImportMeta, insets.bottom]);
 
     return (
         <BottomSheet
@@ -1256,25 +1421,29 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             backgroundStyle={step === 'discoverSpots' ? styles.sheetBackgroundWhite : styles.sheetBackground}
             handleIndicatorStyle={styles.handleIndicator}
             containerStyle={{ zIndex: 100 }}
+            footerComponent={renderFooter}
             onChange={(index) => {
                 onChange(index);
                 if (index === -1) {
-                    setStep('home');
-                    setSearchActive(false);
-                    setSearchQuery('');
-                    setSelectedLocation(null);
-                    setNumDays(4);
-                    setSelectionMode('days');
-                    setSelectedDates({});
-                    setStartDate(null);
-                    setEndDate(null);
-                    setDaysSelected(false);
-                    setSelectedPrefs([]);
-                    setSpotCategory('All');
-                    setSelectedSpots([]);
-                    setDiscoveredPlaces([]);
-                    setIsFromVideo(false);
-                    setIsFromSavedSpots(false);
+                    // Defer heavy state cleanup until after the close animation
+                    InteractionManager.runAfterInteractions(() => {
+                        setStep('home');
+                        setSearchActive(false);
+                        setSearchQuery('');
+                        setSelectedLocation(null);
+                        setNumDays(4);
+                        setSelectionMode('days');
+                        setSelectedDates({});
+                        setStartDate(null);
+                        setEndDate(null);
+                        setDaysSelected(false);
+                        setSelectedPrefs([]);
+                        setSpotCategory('All');
+                        setSelectedSpots([]);
+                        setDiscoveredPlaces([]);
+                        setIsFromVideo(false);
+                        setIsFromSavedSpots(false);
+                    });
                 }
             }}
             animationConfigs={animationConfigs}
@@ -1297,109 +1466,6 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                 {step === 'preferences' && renderPreferences()}
                 {step === 'howManyDays' && renderHowManyDays()}
                 {step === 'discoverSpots' && renderDiscoverSpots()}
-
-                {/* Bottom fade gradient + Floating Plan Trip Button */}
-                {step === 'discoverSpots' && (
-                    <>
-                        {/* Fade gradient: transparent → white */}
-                        <LinearGradient
-                            colors={['rgba(255,255,255,0)', 'rgba(255,255,255,0.6)', 'rgba(255,255,255,0.9)', 'rgba(255,255,255,1)']}
-                            locations={[0, 0.25, 0.5, 0.75]}
-                            style={styles.addSpotsGradient}
-                            pointerEvents="none"
-                        />
-                        <View style={[styles.addSpotsBar, { bottom: Platform.OS === 'android' ? Math.max(60, 10 + insets.bottom) : 40 }]} pointerEvents="box-none">
-                            {/* Save Spots button for discovered places */}
-                            {!isFromSavedSpots && selectedSpots.length > 0 && !isPlanning && !isLoadingPlaces && (
-                                <TouchableOpacity
-                                    style={[styles.addSpotsButton, { backgroundColor: '#10B981', marginBottom: 8 }]}
-                                    onPress={async () => {
-                                        const storedUser = (() => { try { const u = storage.getString('user'); return u ? JSON.parse(u) : null; } catch { return null; } })();
-                                        const userId = storedUser?.id || storedUser?._id;
-                                        if (!userId) return;
-                                        setIsSavingSpots(true);
-                                        try {
-                                            const spotsToSave = discoveredPlaces.filter(p => selectedSpots.includes(p.id)).map(p => ({
-                                                country: p.country || 'Unknown',
-                                                city: p.city || 'Unknown',
-                                                name: p.name,
-                                                placeId: p.id,
-                                                address: p.address,
-                                                rating: p.rating,
-                                                userRatingCount: p.userRatingCount,
-                                                photoUrl: p.photoUrl,
-                                                coordinates: p.coordinates,
-                                                source: videoImportMeta?.importId ? 'video' : 'discovery',
-                                            }));
-                                            const response = await fetch(`${BACKEND_URL}/api/spots`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({
-                                                    userId,
-                                                    importId: videoImportMeta?.importId || null,
-                                                    spots: spotsToSave,
-                                                }),
-                                            });
-                                            const data = await response.json();
-                                            if (data.success) {
-                                                // Update UI: mark as saved and clear selection
-                                                setDiscoveredPlaces(prev => prev.map(p => 
-                                                    selectedSpots.includes(p.id) ? { ...p, _isSavedSpot: true } : p
-                                                ));
-                                                setSelectedSpots([]);
-                                                if (videoImportMeta?.importId) {
-                                                    queryClient.invalidateQueries({ queryKey: ['imports', csUserId] });
-                                                    queryClient.invalidateQueries({ queryKey: ['import', videoImportMeta.importId] });
-                                                }
-                                            }
-                                        } catch (e) { console.warn('Save spots failed:', e); }
-                                        setIsSavingSpots(false);
-                                    }}
-                                    disabled={isSavingSpots}
-                                >
-                                    {isSavingSpots ? (
-                                        <View style={styles.planningRow}>
-                                            <ActivityIndicator size="small" color="#FFFFFF" />
-                                            <Text style={styles.addSpotsText}>  Saving spots...</Text>
-                                        </View>
-                                    ) : (
-                                        <Text style={styles.addSpotsText}>💾 Save {selectedSpots.length} spots</Text>
-                                    )}
-                                </TouchableOpacity>
-                            )}
-                            <TouchableOpacity
-                                style={[styles.addSpotsButton, (isPlanning || isLoadingPlaces) && { opacity: 0.7 }]}
-                                onPress={() => {
-                                    if (isFromVideo || isFromSavedSpots || matchedSavedSpots.length > 0) {
-                                        setStep('preferences');
-                                    } else {
-                                        handlePlanTrip();
-                                    }
-                                }}
-                                disabled={isPlanning || isLoadingPlaces || selectedSpots.length === 0}
-                            >
-                                {isPlanning ? (
-                                    <View style={styles.planningRow}>
-                                        <ActivityIndicator size="small" color="#FFFFFF" />
-                                        <Text style={styles.addSpotsText}>  Planning your trip...</Text>
-                                    </View>
-                                ) : isLoadingPlaces ? (
-                                    <View style={styles.planningRow}>
-                                        <ActivityIndicator size="small" color="#FFFFFF" />
-                                        <Text style={styles.addSpotsText}>  Discovering spots...</Text>
-                                    </View>
-                                ) : (
-                                    <>
-                                        <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                            <Path d="M5 12h14M12 5l7 7-7 7" />
-                                        </Svg>
-                                        <Text style={styles.addSpotsText}>Plan Trip</Text>
-                                    </>
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                    </>
-                )}
             </View>
         </BottomSheet>
     );

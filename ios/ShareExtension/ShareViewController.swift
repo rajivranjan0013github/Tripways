@@ -324,6 +324,9 @@ class ShareViewController: UIViewController {
         if let userId = defaults?.string(forKey: "userId") {
             body["userId"] = userId
         }
+        // Check premium status from App Group
+        let isPremium = defaults?.bool(forKey: "isPremium") ?? false
+        body["isPremium"] = isPremium
         // Detect platform from URL
         let lower = sharedUrl.lowercased()
         if lower.contains("instagram.com") || lower.contains("instagr.am") {
@@ -416,8 +419,13 @@ class ShareViewController: UIViewController {
 
             case "error":
                 let message = parsed["message"] as? String ?? "Unknown error"
+                let code = parsed["code"] as? String ?? ""
                 DispatchQueue.main.async { [weak self] in
-                    self?.updateStatus("Error: \(message)", isError: true)
+                    if code == "IMPORT_LIMIT_REACHED" {
+                        self?.showPremiumUpgrade()
+                    } else {
+                        self?.updateStatus("Error: \(message)", isError: true)
+                    }
                     self?.spinner.stopAnimating()
                 }
 
@@ -592,6 +600,116 @@ class ShareViewController: UIViewController {
                 }
             }
         }.resume()
+    }
+
+    // MARK: - Premium Upgrade Prompt
+
+    private func showPremiumUpgrade() {
+        // Hide processing UI
+        tableView.alpha = 0
+        categoryCollectionView.alpha = 0
+        addSpotsBar.alpha = 0
+        statusLabel.text = ""
+
+        // Build the upgrade container
+        let container = UIView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(container)
+
+        let lockLabel = UILabel()
+        lockLabel.text = "🔒"
+        lockLabel.font = UIFont.systemFont(ofSize: 48)
+        lockLabel.textAlignment = .center
+        lockLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(lockLabel)
+
+        let titleLbl = UILabel()
+        titleLbl.text = "Free Import Limit Reached"
+        titleLbl.font = UIFont.systemFont(ofSize: 20, weight: .bold)
+        titleLbl.textColor = UIColor(red: 0.06, green: 0.09, blue: 0.16, alpha: 1.0)
+        titleLbl.textAlignment = .center
+        titleLbl.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(titleLbl)
+
+        let subtitleLbl = UILabel()
+        subtitleLbl.text = "You've used all 5 free reel imports.\nUpgrade to Premium for unlimited imports!"
+        subtitleLbl.font = UIFont.systemFont(ofSize: 14, weight: .regular)
+        subtitleLbl.textColor = UIColor(red: 0.39, green: 0.45, blue: 0.55, alpha: 1.0)
+        subtitleLbl.numberOfLines = 0
+        subtitleLbl.textAlignment = .center
+        subtitleLbl.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(subtitleLbl)
+
+        let upgradeBtn = UIButton(type: .system)
+        upgradeBtn.setTitle("Upgrade to Premium", for: .normal)
+        upgradeBtn.setTitleColor(.white, for: .normal)
+        upgradeBtn.titleLabel?.font = UIFont.systemFont(ofSize: 16, weight: .bold)
+        upgradeBtn.backgroundColor = UIColor(red: 0, green: 0.76, blue: 0.98, alpha: 1.0) // #00C3F9
+        upgradeBtn.layer.cornerRadius = 26
+        upgradeBtn.translatesAutoresizingMaskIntoConstraints = false
+        upgradeBtn.addTarget(self, action: #selector(upgradeTapped), for: .touchUpInside)
+        container.addSubview(upgradeBtn)
+
+        let dismissBtn = UIButton(type: .system)
+        dismissBtn.setTitle("Not now", for: .normal)
+        dismissBtn.setTitleColor(UIColor(red: 0.58, green: 0.64, blue: 0.72, alpha: 1.0), for: .normal)
+        dismissBtn.titleLabel?.font = UIFont.systemFont(ofSize: 14, weight: .medium)
+        dismissBtn.translatesAutoresizingMaskIntoConstraints = false
+        dismissBtn.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
+        container.addSubview(dismissBtn)
+
+        NSLayoutConstraint.activate([
+            container.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            container.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -20),
+            container.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 32),
+            container.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -32),
+
+            lockLabel.topAnchor.constraint(equalTo: container.topAnchor),
+            lockLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+
+            titleLbl.topAnchor.constraint(equalTo: lockLabel.bottomAnchor, constant: 16),
+            titleLbl.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+
+            subtitleLbl.topAnchor.constraint(equalTo: titleLbl.bottomAnchor, constant: 8),
+            subtitleLbl.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            subtitleLbl.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+
+            upgradeBtn.topAnchor.constraint(equalTo: subtitleLbl.bottomAnchor, constant: 24),
+            upgradeBtn.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            upgradeBtn.widthAnchor.constraint(equalToConstant: 220),
+            upgradeBtn.heightAnchor.constraint(equalToConstant: 52),
+
+            dismissBtn.topAnchor.constraint(equalTo: upgradeBtn.bottomAnchor, constant: 12),
+            dismissBtn.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            dismissBtn.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+
+        // Fade in
+        container.alpha = 0
+        UIView.animate(withDuration: 0.3) {
+            container.alpha = 1
+        }
+    }
+
+    @objc private func upgradeTapped() {
+        // Open the main app at the premium screen via deep link
+        if let url = URL(string: "tripways://premium") {
+            // Share extensions can't use UIApplication.shared.open directly, 
+            // so use the responder chain trick
+            var responder: UIResponder? = self
+            while responder != nil {
+                if let application = responder as? UIApplication {
+                    application.open(url, options: [:], completionHandler: nil)
+                    break
+                }
+                responder = responder?.next
+            }
+
+            // Also try via extensionContext openURL
+            extensionContext?.open(url, completionHandler: { [weak self] _ in
+                self?.close()
+            })
+        }
     }
 
     // MARK: - Helpers

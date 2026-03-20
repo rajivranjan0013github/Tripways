@@ -12,6 +12,7 @@ import {
     NativeModules,
     StatusBar,
     DeviceEventEmitter,
+    Linking,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -61,6 +62,21 @@ const ShareMenuContent = ({ sharedUrl: initialUrl }) => {
         return null;
     }, []);
 
+    const isPremium = useMemo(() => {
+        try {
+            const customerInfoStr = storage.getString('customerInfo');
+            if (customerInfoStr) {
+                const info = JSON.parse(customerInfoStr);
+                const hasActiveSubscription = info?.activeSubscriptions?.length > 0;
+                const hasActiveEntitlement = Object.keys(info?.entitlements?.active || {}).length > 0;
+                return hasActiveSubscription || hasActiveEntitlement;
+            }
+        } catch (_) {}
+        return false;
+    }, []);
+
+    const [limitReached, setLimitReached] = useState(false);
+
     useEffect(() => {
         const processUrl = async () => {
             if (!cleanUrl) {
@@ -84,6 +100,7 @@ const ShareMenuContent = ({ sharedUrl: initialUrl }) => {
                                 videoUrl: cleanUrl,
                                 userId,
                                 platform,
+                                isPremium,
                             }),
                         },
                         (eventType, parsed) => {
@@ -100,6 +117,12 @@ const ShareMenuContent = ({ sharedUrl: initialUrl }) => {
                             } else if (eventType === 'places') {
                                 lastData = parsed;
                             } else if (eventType === 'error') {
+                                if (parsed.code === 'IMPORT_LIMIT_REACHED') {
+                                    setLimitReached(true);
+                                    setIsProcessing(false);
+                                    resolve(null); // Don't reject — we handle this gracefully
+                                    return;
+                                }
                                 reject(new Error(parsed.message || 'Processing failed'));
                             }
                         },
@@ -240,6 +263,30 @@ const ShareMenuContent = ({ sharedUrl: initialUrl }) => {
                     {error ? (
                         <View style={styles.center}>
                             <Text style={styles.errorText}>{error}</Text>
+                        </View>
+                    ) : limitReached ? (
+                        <View style={styles.limitContainer}>
+                            <Text style={styles.limitEmoji}>🔒</Text>
+                            <Text style={styles.limitTitle}>Free Import Limit Reached</Text>
+                            <Text style={styles.limitSubtitle}>
+                                You've used all 5 free reel imports. Upgrade to Premium for unlimited imports!
+                            </Text>
+                            <TouchableOpacity
+                                style={styles.limitUpgradeBtn}
+                                activeOpacity={0.8}
+                                onPress={() => {
+                                    // Deep link into the main app with a premium flag
+                                    Linking.openURL('tripways://premium').catch(() => {
+                                        // If deep link fails, just close the overlay
+                                        ShareIntentModule.finishActivity();
+                                    });
+                                }}
+                            >
+                                <Text style={styles.limitUpgradeBtnText}>Upgrade to Premium</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={handleClose} style={{ marginTop: 12 }}>
+                                <Text style={styles.limitDismissText}>Not now</Text>
+                            </TouchableOpacity>
                         </View>
                     ) : (
                         <>
@@ -529,7 +576,53 @@ const styles = StyleSheet.create({
     emptyText: {
         color: '#94A3B8',
         fontSize: 14,
-    }
+    },
+    // Import limit reached styles
+    limitContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 24,
+    },
+    limitEmoji: {
+        fontSize: 48,
+        marginBottom: 16,
+    },
+    limitTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#0F172A',
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    limitSubtitle: {
+        fontSize: 14,
+        color: '#64748B',
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 24,
+    },
+    limitUpgradeBtn: {
+        backgroundColor: '#00C3F9',
+        paddingVertical: 14,
+        paddingHorizontal: 40,
+        borderRadius: 26,
+        shadowColor: '#00C3F9',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+    },
+    limitUpgradeBtnText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '700',
+    },
+    limitDismissText: {
+        fontSize: 14,
+        color: '#94A3B8',
+        fontWeight: '500',
+    },
 });
 
 export default ShareMenuScreen;

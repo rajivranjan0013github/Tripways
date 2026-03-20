@@ -63,4 +63,20 @@ RCT_EXPORT_METHOD(setAppGroupData:(NSString *)userId
     resolve(@(YES));
 }
 
+RCT_EXPORT_METHOD(setPremiumStatus:(BOOL)isPremium
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    NSUserDefaults *userDefaults = [[NSUserDefaults alloc] initWithSuiteName:[self appGroupId]];
+    if (!userDefaults) {
+        resolve(@(NO));
+        return;
+    }
+    
+    [userDefaults setBool:isPremium forKey:@"isPremium"];
+    [userDefaults synchronize];
+    
+    NSLog(@"ShareIntentModule: Saved isPremium=%d to App Group", isPremium);
+    resolve(@(YES));
+}
+
 @end
