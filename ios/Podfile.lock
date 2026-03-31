@@ -2648,6 +2648,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - RNDeviceInfo (15.0.2):
+    - React-Core
   - RNFBApp (23.8.6):
     - boost
     - DoubleConversion
@@ -3106,6 +3108,7 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - RNBootSplash (from `../node_modules/react-native-bootsplash`)
+  - RNDeviceInfo (from `../node_modules/react-native-device-info`)
   - "RNFBApp (from `../node_modules/@react-native-firebase/app`)"
   - "RNFBMessaging (from `../node_modules/@react-native-firebase/messaging`)"
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
@@ -3301,6 +3304,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   RNBootSplash:
     :path: "../node_modules/react-native-bootsplash"
+  RNDeviceInfo:
+    :path: "../node_modules/react-native-device-info"
   RNFBApp:
     :path: "../node_modules/@react-native-firebase/app"
   RNFBMessaging:
@@ -3418,6 +3423,7 @@ SPEC CHECKSUMS:
   ReactCommon: 17fd88849a174bf9ce45461912291aca711410fc
   RevenueCat: 9acbd29a62000b57d59efa16166290c4a119847b
   RNBootSplash: ce1a6f2d0a8cfe999af30c62151ab84562c30284
+  RNDeviceInfo: 4c852998208b60dc192ae3529e5867817719ad1e
   RNFBApp: 262a63cf10f0f2e5436bd68360892e3557439d8d
   RNFBMessaging: 0a3227cd1dcaa7f380335f7fafe50d2b8f0d7cd8
   RNGestureHandler: 4089d198e5474209e2b77dfb503578e704dee4e6

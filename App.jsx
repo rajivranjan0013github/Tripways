@@ -3,7 +3,7 @@
  * @format
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -23,8 +23,9 @@ import {
 } from '@react-native-firebase/messaging';
 import { getApp } from '@react-native-firebase/app';
 import Purchases, { LOG_LEVEL } from 'react-native-purchases';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { useUserStore } from './src/store/userStore';
+import SpInAppUpdates, { IAUUpdateKind, IAUInstallStatus } from 'sp-react-native-in-app-updates';
 
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
@@ -91,6 +92,52 @@ export const handleFCMTokenUpdate = async () => {
 };
 
 function App() {
+    const inAppUpdates = useMemo(() => new SpInAppUpdates(__DEV__), []);
+
+    // In-App Update check (force update on Android, soft prompt on iOS)
+    useEffect(() => {
+        if (__DEV__) return;
+        let statusListener;
+        const checkForUpdates = async () => {
+            try {
+                const result = await inAppUpdates.checkNeedsUpdate();
+                if (!result?.shouldUpdate) return;
+
+                if (Platform.OS === 'android') {
+                    statusListener = (event) => {
+                        if (event.status === IAUInstallStatus.DOWNLOADED) {
+                            Alert.alert(
+                                'Update ready',
+                                'A newer version has finished downloading. Restart to install now?',
+                                [
+                                    { text: 'Later', style: 'cancel' },
+                                    { text: 'Restart', onPress: () => inAppUpdates.installUpdate() },
+                                ],
+                            );
+                        }
+                    };
+                    inAppUpdates.addStatusUpdateListener(statusListener);
+                    await inAppUpdates.startUpdate({ updateType: IAUUpdateKind.IMMEDIATE });
+                } else {
+                    await inAppUpdates.startUpdate({
+                        title: 'Update available',
+                        message: 'A new version is ready on the App Store.',
+                        buttonUpgradeText: 'Update',
+                        buttonCancelText: 'Later',
+                    });
+                }
+            } catch (error) {
+                console.warn('In-app update check failed:', error);
+            }
+        };
+        checkForUpdates();
+        return () => {
+            if (statusListener) {
+                inAppUpdates.removeStatusUpdateListener(statusListener);
+            }
+        };
+    }, [inAppUpdates]);
+
     // Configure RevenueCat on startup
     useEffect(() => {
         const initPurchases = async () => {
