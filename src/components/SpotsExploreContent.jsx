@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Image, StyleSheet, Keyboard, Dimensions, Platform } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Image, StyleSheet, Keyboard, Dimensions, Platform, Modal, FlatList } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { BottomSheetView, BottomSheetScrollView, BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import Animated, { withTiming, Easing } from 'react-native-reanimated';
@@ -7,7 +7,34 @@ import Svg, { Path, Circle, Rect, Polyline, Line, Check, Defs, LinearGradient as
 import LinearGradient from 'react-native-linear-gradient';
 import { useUserStore } from '../store/userStore';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const IMPORT_GUIDE_STEPS = [
+    {
+        gif: require('../assets/1.gif'),
+        title: 'Find a Travel Video',
+        description: 'Open Instagram or TikTok and find a travel video you love.',
+        emoji: '🔍',
+        accent: '#E1306C',
+        accentBg: '#FFF0F5',
+    },
+    {
+        gif: require('../assets/3.gif'),
+        title: 'Tap the Share Button',
+        description: 'Tap on the share button to share the video link.',
+        emoji: '🔗',
+        accent: '#8B5CF6',
+        accentBg: '#F5F3FF',
+    },
+    {
+        gif: require('../assets/2.gif'),
+        title: 'Tap on the Where App',
+        description: 'Tap on the Where app and we\'ll extract all the places for you!',
+        emoji: '✨',
+        accent: '#10B981',
+        accentBg: '#ECFDF5',
+    },
+];
 
 const SpotsExploreContent = ({
     socialMode,
@@ -46,6 +73,9 @@ const SpotsExploreContent = ({
     setShowPremiumOverlay
 }) => {
     const isPremium = useUserStore((state) => state.isPremium);
+    const [showImportGuide, setShowImportGuide] = useState(false);
+    const [guideStep, setGuideStep] = useState(0);
+    const guideFlatListRef = useRef(null);
     
     return (
         <View style={styles.sheetContent}>
@@ -296,7 +326,14 @@ const SpotsExploreContent = ({
                                             {Object.entries(cities).map(([city, cityData]) => {
                                                 const cityKey = `${country}::${city}`;
                                                 return (
-                                                    <TouchableOpacity key={cityKey} activeOpacity={0.85} onPress={() => { bottomSheetRef.current?.close(); tabBarTranslateY.value = withTiming(tabBarHeight, { duration: 400, easing: Easing.bezier(0.33, 1, 0.68, 1) }); setTimeout(() => { createTripSheetRef.current?.openWithSavedSpots(country, city, cities); }, 350); }} style={styles.cityCard}>{cityData.cityPhoto ? <Image source={{ uri: cityData.cityPhoto }} style={styles.cityCardImage} /> : <View style={styles.cityCardImagePlaceholder}><Text style={styles.cityCardEmoji}>🏙️</Text></View>}<View style={styles.cityCardInfo}><Text style={styles.cityCardTitle} numberOfLines={1}>{city}</Text><Text style={styles.cityCardSubtitle}>{cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}</Text></View></TouchableOpacity>
+                                                    <TouchableOpacity key={cityKey} activeOpacity={0.85} onPress={() => { bottomSheetRef.current?.close(); tabBarTranslateY.value = withTiming(tabBarHeight, { duration: 400, easing: Easing.bezier(0.33, 1, 0.68, 1) }); setTimeout(() => { createTripSheetRef.current?.openWithSavedSpots(country, city, cities); }, 350); }} style={styles.cityCard}>
+                                                        {cityData.cityPhoto ? <Image source={{ uri: cityData.cityPhoto }} style={styles.cityCardImage} /> : <View style={styles.cityCardImagePlaceholder}><Text style={styles.cityCardEmoji}>🏙️</Text></View>}
+                                                        <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.9)']} locations={[0, 0.6, 1]} style={styles.cityCardGradient} />
+                                                        <View style={styles.cityCardInfo}>
+                                                            <Text style={styles.cityCardTitle} numberOfLines={1}>{city}</Text>
+                                                            <Text style={styles.cityCardSubtitle}>{cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}</Text>
+                                                        </View>
+                                                    </TouchableOpacity>
                                                 );
                                             })}
                                         </ScrollView>
@@ -305,10 +342,27 @@ const SpotsExploreContent = ({
                             })
                         )
                     ) : importedVideos.length === 0 ? (
-                        <View style={styles.emptySpots}>
-                            <Image source={require('../assets/spots.png')} style={styles.emptySpotsImage} />
-                            <Text style={styles.emptySpotsText}>No imported videos yet</Text>
-                            <Text style={styles.emptySpotsHint}>Import a reel or TikTok to keep the video, caption, and extracted places here</Text>
+                        <View style={styles.emptyImports}>
+                            <View style={styles.emptyImportsIconWrap}>
+                                <Text style={{ fontSize: 36 }}>🎬</Text>
+                            </View>
+                            <Text style={styles.emptyImportsTitle}>No imported videos yet</Text>
+                            <Text style={styles.emptyImportsDesc}>
+                                Save travel reels & TikToks here.{'\n'}We'll extract all the places for you!
+                            </Text>
+                            <TouchableOpacity
+                                style={styles.emptyImportsGuideBtn}
+                                activeOpacity={0.8}
+                                onPress={() => {
+                                    setGuideStep(0);
+                                    setShowImportGuide(true);
+                                }}
+                            >
+                                <Text style={styles.emptyImportsGuideBtnText}>See How It Works</Text>
+                                <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="m9 18 6-6-6-6"/>
+                                </Svg>
+                            </TouchableOpacity>
                         </View>
                     ) : (
                         importedVideos.map((item) => {
@@ -316,7 +370,17 @@ const SpotsExploreContent = ({
                             return (
                                 <TouchableOpacity key={item._id} style={styles.importCard} activeOpacity={0.85} onPress={() => onImportPress(item)}>
                                     {item.thumbnailUrl ? (
-                                        <Image source={{ uri: item.thumbnailUrl }} style={styles.importCardImage} />
+                                        <Image 
+                                            source={{ 
+                                                uri: item.thumbnailUrl,
+                                                headers: {
+                                                    Referer: item.platform === 'instagram' ? 'https://www.instagram.com/' : 
+                                                             item.platform === 'tiktok' ? 'https://www.tiktok.com/' : 
+                                                             'https://www.google.com/'
+                                                }
+                                            }} 
+                                            style={styles.importCardImage} 
+                                        />
                                     ) : (
                                         <View style={styles.importCardImagePlaceholder}>
                                             <Text style={styles.importCardImageEmoji}>{item.platform === 'tiktok' ? '♪' : '▣'}</Text>
@@ -336,6 +400,128 @@ const SpotsExploreContent = ({
                     )}
                 </BottomSheetScrollView>
             )}
+
+            {/* Import Guide Modal */}
+            <Modal
+                visible={showImportGuide}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setShowImportGuide(false)}
+            >
+                <View style={styles.guideOverlay}>
+                    <View style={styles.guideContainer}>
+                        {/* Close button */}
+                        <TouchableOpacity
+                            style={styles.guideCloseBtn}
+                            activeOpacity={0.7}
+                            onPress={() => setShowImportGuide(false)}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                            <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M18 6 6 18M6 6l12 12" />
+                            </Svg>
+                        </TouchableOpacity>
+
+                        {/* Header */}
+                        <Text style={styles.guideHeaderTitle}>How to Import</Text>
+                        <Text style={styles.guideHeaderSub}>3 simple steps to save any reel or TikTok</Text>
+
+                        {/* Step Indicators */}
+                        <View style={styles.guideStepIndicators}>
+                            {IMPORT_GUIDE_STEPS.map((_, idx) => (
+                                <View
+                                    key={idx}
+                                    style={[
+                                        styles.guideStepDot,
+                                        guideStep === idx && styles.guideStepDotActive,
+                                    ]}
+                                />
+                            ))}
+                        </View>
+
+                        {/* GIF Carousel */}
+                        <FlatList
+                            ref={guideFlatListRef}
+                            data={IMPORT_GUIDE_STEPS}
+                            horizontal
+                            pagingEnabled
+                            showsHorizontalScrollIndicator={false}
+                            scrollEnabled={false}
+                            keyExtractor={(_, idx) => String(idx)}
+                            renderItem={({ item, index }) => (
+                                <View style={styles.guideSlide}>
+                                    <View style={[styles.guideGifWrap, { borderColor: item.accent + '20' }]}>
+                                        <View style={styles.guideGifInner}>
+                                            <Image
+                                                source={item.gif}
+                                                style={styles.guideGif}
+                                                resizeMode="cover"
+                                            />
+                                        </View>
+                                    </View>
+                                    <View style={styles.guideSlideInfo}>
+                                        <View style={[styles.guideStepBadge, { backgroundColor: item.accentBg }]}>
+                                            <Text style={styles.guideStepEmoji}>{item.emoji}</Text>
+                                            <Text style={[styles.guideStepBadgeText, { color: item.accent }]}>Step {index + 1}</Text>
+                                        </View>
+                                        <Text style={styles.guideSlideTitle}>{item.title}</Text>
+                                        <Text style={styles.guideSlideDesc}>{item.description}</Text>
+                                    </View>
+                                </View>
+                            )}
+                        />
+
+                        {/* Navigation Buttons */}
+                        <View style={styles.guideNavRow}>
+                            {guideStep > 0 ? (
+                                <TouchableOpacity
+                                    style={styles.guidePrevBtn}
+                                    activeOpacity={0.8}
+                                    onPress={() => {
+                                        const next = guideStep - 1;
+                                        setGuideStep(next);
+                                        guideFlatListRef.current?.scrollToIndex({ index: next, animated: true });
+                                    }}
+                                >
+                                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="m15 18-6-6 6-6"/>
+                                    </Svg>
+                                    <Text style={styles.guidePrevBtnText}>Back</Text>
+                                </TouchableOpacity>
+                            ) : (
+                                <View />
+                            )}
+                            {guideStep < IMPORT_GUIDE_STEPS.length - 1 ? (
+                                <TouchableOpacity
+                                    style={styles.guideNextBtn}
+                                    activeOpacity={0.8}
+                                    onPress={() => {
+                                        const next = guideStep + 1;
+                                        setGuideStep(next);
+                                        guideFlatListRef.current?.scrollToIndex({ index: next, animated: true });
+                                    }}
+                                >
+                                    <Text style={styles.guideNextBtnText}>Next</Text>
+                                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="m9 18 6-6-6-6"/>
+                                    </Svg>
+                                </TouchableOpacity>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.guideNextBtn}
+                                    activeOpacity={0.8}
+                                    onPress={() => setShowImportGuide(false)}
+                                >
+                                    <Text style={styles.guideNextBtnText}>Got it!</Text>
+                                    <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M20 6 9 17l-5-5"/>
+                                    </Svg>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 };
@@ -541,40 +727,60 @@ const styles = StyleSheet.create({
     },
     cityCard: {
         width: 150,
+        height: 150,
         marginRight: 12,
-        borderRadius: 14,
+        borderRadius: 16,
         overflow: 'hidden',
         backgroundColor: '#F1F5F9',
+        position: 'relative',
     },
     cityCardImage: {
-        width: 150,
-        height: 110,
-        borderTopLeftRadius: 14,
-        borderTopRightRadius: 14,
+        width: '100%',
+        height: '100%',
+        position: 'absolute',
     },
     cityCardImagePlaceholder: {
-        width: 150,
-        height: 110,
+        width: '100%',
+        height: '100%',
         backgroundColor: '#E2E8F0',
         justifyContent: 'center',
         alignItems: 'center',
+        position: 'absolute',
+    },
+    cityCardGradient: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '75%',
     },
     cityCardEmoji: {
         fontSize: 32,
     },
     cityCardInfo: {
-        paddingHorizontal: 10,
-        paddingVertical: 8,
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        paddingHorizontal: 12,
+        paddingVertical: 12,
     },
     cityCardTitle: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#1E293B',
+        fontSize: 15,
+        fontWeight: '800',
+        color: '#FFFFFF',
+        textShadowColor: 'rgba(0,0,0,0.3)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
     },
     cityCardSubtitle: {
-        fontSize: 11,
-        color: '#94A3B8',
-        marginTop: 1,
+        fontSize: 12,
+        fontWeight: '600',
+        color: 'rgba(255,255,255,0.9)',
+        marginTop: 2,
+        textShadowColor: 'rgba(0,0,0,0.3)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
     },
     importCard: {
         flexDirection: 'row',
@@ -711,6 +917,51 @@ const styles = StyleSheet.create({
         color: '#CBD5E1',
         marginTop: 4,
     },
+    emptyImports: {
+        alignItems: 'center',
+        paddingVertical: 40,
+        paddingHorizontal: 20,
+    },
+    emptyImportsIconWrap: {
+        width: 72,
+        height: 72,
+        borderRadius: 36,
+        backgroundColor: '#F5F3FF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
+    },
+    emptyImportsTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#1E293B',
+        marginBottom: 8,
+        letterSpacing: -0.3,
+    },
+    emptyImportsDesc: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#94A3B8',
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 20,
+    },
+    emptyImportsGuideBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F5F3FF',
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 24,
+        gap: 6,
+        borderWidth: 1,
+        borderColor: '#EDE9FE',
+    },
+    emptyImportsGuideBtnText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#8B5CF6',
+    },
     skeletonCountryHeader: {
         marginBottom: 12,
         paddingHorizontal: 5,
@@ -796,6 +1047,190 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: '800',
         letterSpacing: 0.4,
+    },
+    // Import Guide Button
+    importGuideBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'flex-start',
+        backgroundColor: '#F5F3FF',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 20,
+        marginTop: 12,
+        borderWidth: 1,
+        borderColor: '#EDE9FE',
+        gap: 6,
+    },
+    importGuideBtnText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#8B5CF6',
+    },
+    // Import Guide Modal
+    guideOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    guideContainer: {
+        backgroundColor: '#FFFFFF',
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        paddingTop: 20,
+        paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+        paddingHorizontal: 20,
+        maxHeight: SCREEN_HEIGHT * 0.88,
+    },
+    guideCloseBtn: {
+        position: 'absolute',
+        top: 18,
+        right: 18,
+        zIndex: 10,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#F1F5F9',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    guideHeaderTitle: {
+        fontSize: 22,
+        fontWeight: '800',
+        color: '#0F172A',
+        letterSpacing: -0.5,
+        marginBottom: 4,
+    },
+    guideHeaderSub: {
+        fontSize: 14,
+        color: '#94A3B8',
+        fontWeight: '500',
+        marginBottom: 16,
+    },
+    guideStepIndicators: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginBottom: 16,
+    },
+    guideStepDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#E2E8F0',
+    },
+    guideStepDotActive: {
+        width: 24,
+        backgroundColor: '#8B5CF6',
+        borderRadius: 4,
+    },
+    guideSlide: {
+        width: SCREEN_WIDTH - 40,
+        alignItems: 'center',
+        paddingHorizontal: 4,
+    },
+    guideGifWrap: {
+        width: SCREEN_WIDTH - 60,
+        height: SCREEN_HEIGHT * 0.40,
+        borderRadius: 24,
+        overflow: 'hidden',
+        backgroundColor: '#F8FAFC',
+        borderWidth: 1.5,
+        borderColor: '#F1F5F9',
+        marginBottom: 14,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+        elevation: 4,
+    },
+    guideGifInner: {
+        flex: 1,
+        justifyContent: 'flex-end',
+    },
+    guideGif: {
+        width: '100%',
+        height: '105%',
+    },
+    guideSlideInfo: {
+        alignItems: 'center',
+        paddingHorizontal: 8,
+    },
+    guideStepBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F5F3FF',
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+        borderRadius: 16,
+        marginBottom: 8,
+        gap: 6,
+    },
+    guideStepEmoji: {
+        fontSize: 14,
+    },
+    guideStepBadgeText: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: '#8B5CF6',
+        letterSpacing: 0.5,
+        textTransform: 'uppercase',
+    },
+    guideSlideTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#0F172A',
+        marginBottom: 4,
+        textAlign: 'center',
+        letterSpacing: -0.3,
+    },
+    guideSlideDesc: {
+        fontSize: 14,
+        color: '#64748B',
+        textAlign: 'center',
+        lineHeight: 20,
+        paddingHorizontal: 16,
+        fontWeight: '500',
+    },
+    guideNavRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: 20,
+    },
+    guidePrevBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 14,
+        backgroundColor: '#F1F5F9',
+        gap: 4,
+    },
+    guidePrevBtnText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#64748B',
+    },
+    guideNextBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+        borderRadius: 14,
+        backgroundColor: '#8B5CF6',
+        gap: 6,
+        shadowColor: '#8B5CF6',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    guideNextBtnText: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#FFFFFF',
     },
 });
 

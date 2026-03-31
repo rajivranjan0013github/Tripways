@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useMemo } from 'react';
+import { trackSession } from './src/utils/reviewManager';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -40,7 +41,6 @@ export const handleFCMTokenUpdate = async () => {
         try {
             await registerDeviceForRemoteMessages(getMessaging(getApp()));
         } catch (e) {
-            console.warn('Failed to register device for remote messages', e);
         }
 
         // Get current FCM token
@@ -55,7 +55,6 @@ export const handleFCMTokenUpdate = async () => {
         try {
             localUserData = JSON.parse(localUserDataString);
         } catch (e) {
-            console.warn('Failed to parse local user data', e);
             return;
         }
 
@@ -212,6 +211,11 @@ function App() {
         if (userStr) {
             handleFCMTokenUpdate();
         }
+    }, []);
+
+    // Track app session for in-app review timing
+    useEffect(() => {
+        trackSession();
     }, []);
 
     // Handle token refresh

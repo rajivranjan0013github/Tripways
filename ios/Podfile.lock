@@ -1842,6 +1842,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - react-native-in-app-review (4.4.2):
+    - React-Core
   - react-native-maps (1.27.1):
     - react-native-maps/Maps (= 1.27.1)
   - react-native-maps/Generated (1.27.1):
@@ -3071,6 +3073,7 @@ DEPENDENCIES:
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-config (from `../node_modules/react-native-config`)
   - react-native-credentials-manager (from `../node_modules/react-native-credentials-manager`)
+  - react-native-in-app-review (from `../node_modules/react-native-in-app-review`)
   - react-native-maps (from `../node_modules/react-native-maps`)
   - react-native-maps/Google (from `../node_modules/react-native-maps`)
   - react-native-mmkv (from `../node_modules/react-native-mmkv`)
@@ -3232,6 +3235,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-config"
   react-native-credentials-manager:
     :path: "../node_modules/react-native-credentials-manager"
+  react-native-in-app-review:
+    :path: "../node_modules/react-native-in-app-review"
   react-native-maps:
     :path: "../node_modules/react-native-maps"
   react-native-mmkv:
@@ -3386,6 +3391,7 @@ SPEC CHECKSUMS:
   React-microtasksnativemodule: d9499269ad1f484ae71319bac1d9231447f2094e
   react-native-config: adc7d6e70302363192ed8f2eae027864d218ff71
   react-native-credentials-manager: 6aba4da1698722761a8d4879eff2d02ad6686294
+  react-native-in-app-review: 1516ba69d60d58053b7eb3aaaf8d2a5a74af8b57
   react-native-maps: 9678f8f985cf98056c40acd9f7c88a5d0ef095b9
   react-native-mmkv: b189248d0ad153f44ef126270c201a1828a056fd
   react-native-safe-area-context: 1792c367881ef3be64cc01df775c19c6d217a015
@@ -3434,6 +3440,6 @@ SPEC CHECKSUMS:
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Yoga: daa1e4de4b971b977b23bc842aaa3e135324f1f3
 
-PODFILE CHECKSUM: f049848504c44e839e62713637d67637608cb75d
+PODFILE CHECKSUM: 3c339bedb5cf29a0b931818e76252d6b8636f2df
 
 COCOAPODS: 1.16.2

@@ -102,7 +102,7 @@ const ExactBackground = () => {
     return (
         <View style={StyleSheet.absoluteFill}>
             <Image
-                source={require('../assets/onboarding3.png')}
+                source={require('../assets/onboardinglogin.png')}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
             />
