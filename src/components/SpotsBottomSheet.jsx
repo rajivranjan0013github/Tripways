@@ -694,14 +694,30 @@ const SpotsBottomSheet = ({
                 ) : (
                     <BottomSheetScrollView contentContainerStyle={styles.importDetailContent}>
                         <TouchableOpacity 
-                            style={[styles.detailCloseBtn, { top: 10, right: 10, backgroundColor: '#F1F5F9' }]} 
+                            style={[styles.detailCloseBtn, { top: 10, right: 10, backgroundColor: 'rgba(241, 245, 249, 0.9)' }]} 
                             onPress={() => setSelectedImportId(null)}
                         >
                             <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <Path d="M18 6 6 18M6 6l12 12" />
                             </Svg>
                         </TouchableOpacity>
-                        <View style={[styles.detailInfo, { paddingTop: 40 }]}>
+
+                        {/* Hero Thumbnail */}
+                        {activeImport.thumbnailUrl ? (
+                            <Image 
+                                source={{ uri: activeImport.thumbnailUrl }} 
+                                style={[styles.detailImage, { height: 260 }]} 
+                                resizeMode="cover"
+                            />
+                        ) : (
+                            <View style={[styles.detailImage, styles.importHeroFallback, { height: 260 }]}>
+                                <Text style={styles.importHeroFallbackText}>
+                                    {activeImport.platform === 'tiktok' ? '🎵' : '🎥'}
+                                </Text>
+                            </View>
+                        )}
+
+                        <View style={styles.detailInfo}>
                             <View style={styles.importDetailTopRow}>
                                 <Text style={styles.importPlatformPillLarge}>
                                     {activeImport.platform === 'tiktok' ? 'TikTok' : activeImport.platform === 'instagram' ? 'Instagram Reel' : 'Imported Video'}

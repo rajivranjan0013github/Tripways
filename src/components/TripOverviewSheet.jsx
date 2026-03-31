@@ -79,7 +79,13 @@ const CATEGORY_CONFIG = {
 };
 
 // Day colors matching the map paths
-const DAY_COLORS = ['#6366F1', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
+const getDayColor = (dayIndex) => {
+    // 137.5 degrees is the golden angle, ensuring every sequential color is maximally distinct
+    const hue = (dayIndex * 137.5) % 360;
+    // Deep, rich colors: High saturation (95%), very low lightness (25-32%)
+    const lightness = 25 + (dayIndex % 2 === 0 ? 7 : 0); 
+    return `hsl(${hue}, 95%, ${lightness}%)`;
+};
 
 // Travel mode icons
 const TRAVEL_MODES = {
@@ -949,7 +955,7 @@ const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs 
                         <View style={styles.overviewDayInfo}>
                             <View style={styles.overviewDayHeader}>
                                 <Text style={styles.overviewDayLabel}>Day {dayData.day}</Text>
-                                <View style={[styles.dayColorDot, { backgroundColor: DAY_COLORS[(dayData.day - 1) % DAY_COLORS.length] }]} />
+                                <View style={[styles.dayColorDot, { backgroundColor: getDayColor(dayData.day - 1) }]} />
                             </View>
                             <Text style={styles.overviewDayCardSpots}>
                                 {formatSpots(dayData.spots)}
@@ -1211,7 +1217,7 @@ const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs 
                             <View style={styles.overviewDayInfo}>
                                 <View style={styles.overviewDayHeader}>
                                     <Text style={styles.overviewDayLabel}>Day {d.day}</Text>
-                                    <View style={[styles.dayColorDot, { backgroundColor: DAY_COLORS[(d.day - 1) % DAY_COLORS.length] }]} />
+                                    <View style={[styles.dayColorDot, { backgroundColor: getDayColor(d.day - 1) }]} />
                                 </View>
                                 <Text style={styles.overviewDayCardSpots}>
                                     {formatSpots(d.spots)}

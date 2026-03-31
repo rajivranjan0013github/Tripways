@@ -84,8 +84,8 @@ android {
         applicationId "com.thousandways.travel"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "1.4"
+        versionCode 7
+        versionName "1.7"
         resValue "string", "GOOGLE_MAPS_API_KEY", project.env.get("GOOGLE_MAPS_API_KEY")
     }
     signingConfigs {

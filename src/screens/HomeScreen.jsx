@@ -4,8 +4,16 @@
  */
 
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, Keyboard, ActivityIndicator } from 'react-native';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing, interpolate, useDerivedValue } from 'react-native-reanimated';
+import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, Keyboard, ActivityIndicator, Image } from 'react-native';
+import Animated, { 
+    useSharedValue, 
+    useAnimatedStyle, 
+    withTiming, 
+    Easing, 
+    interpolate, 
+    useDerivedValue, 
+    interpolateColor 
+} from 'react-native-reanimated';
 import MapView, { PROVIDER_GOOGLE, Marker, Polyline } from 'react-native-maps';
 import { BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,13 +22,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import { MMKV } from 'react-native-mmkv';
 import Config from 'react-native-config';
+import Supercluster from 'supercluster';
 
 import CreateTripSheet from '../components/CreateTripSheet';
+import { trackActionAndMaybeAskReview } from '../utils/reviewManager';
 import TripOverviewSheet from '../components/TripOverviewSheet';
 import SpotDetailSheet from '../components/SpotDetailSheet';
 import ProfileOverlay from '../components/ProfileOverlay';
 import SpotsBottomSheet from '../components/SpotsBottomSheet';
 import { setAppGroupData } from '../services/ShareIntent';
+import tripIcon from '../assets/trip.png';
 import MySpotIcon from '../assets/My-spot';
 import countriesGeoJson from '../assets/countries.geo.json';
 import { getCountryMapData, COUNTRY_COLORS as MAP_COUNTRY_COLORS } from '../utils/countryMapUtils';
@@ -39,7 +50,12 @@ const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Day colors matching the frontendweb reference
-const DAY_COLORS = ['#6366F1', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#F97316'];
+const getDayColor = (dayIndex) => {
+    // 137.5 degrees is the golden angle, ensuring every sequential color is maximally distinct
+    const hue = (dayIndex * 137.5) % 360;
+    // Deep, rich colors: High saturation (95%), very low lightness (25-32%)
+    const lightness = 25 + (dayIndex % 2 === 0 ? 7 : 0); 
+    return `hsl(${hue}, 95%, ${lightness}%)`;};
 
 // Single static map style — never changes at runtime to avoid tile reload flicker.
 // City and country labels are always off; flag emoji markers serve as labels.
@@ -124,18 +140,19 @@ const HomeScreen = () => {
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [sheetIndex, setSheetIndex] = useState(1);
     const [tripOverviewSheetIndex, setTripOverviewSheetIndex] = useState(-1);
-    const [activeTripDay, setActiveTripDay] = useState(1);
+    const [activeTripDay, setActiveTripDay] = useState(null); // Overview by default
     // Progressive marker loading — load one marker at a time to prevent memory burst
     const [loadedMarkerCount, setLoadedMarkerCount] = useState(0);
     // Zoom level + map region stored in refs to avoid re-renders on every pan/zoom.
     const mapZoomRef = useRef(3);
     const mapRegionRef = useRef(null);
     const savedCameraBeforeTripRef = useRef(null);
-    const [showItineraryLabels, setShowItineraryLabels] = useState(false); // >= 10
+    const animationActiveRef = useRef(false);
+    const tripIdRef = useRef(null);
     const [mapZoom, setMapZoom] = useState(3); // Current zoom as state for collision recalc
 
     // Simple boolean for flag vs cluster view — opacity handles the visual transition.
-    const showFlagsRef = useRef(true);
+    const [showFlags, setShowFlags] = useState(true);
     // Whether to show individual spots vs city clusters (higher zoom = individual)
     const [showIndividualSpots, setShowIndividualSpots] = useState(false);
 
@@ -144,8 +161,12 @@ const HomeScreen = () => {
     const clusterOpacity = useSharedValue(0);
     const markerScaleAnim = useSharedValue(1);
 
-    const flagAnimatedStyle = useAnimatedStyle(() => ({ opacity: flagOpacity.value }));
-    const clusterAnimatedStyle = useAnimatedStyle(() => ({ opacity: clusterOpacity.value }));
+    const flagAnimatedStyle = useAnimatedStyle(() => ({ 
+        opacity: Platform.OS === 'ios' ? flagOpacity.value : (showFlags ? 1 : 0) 
+    }));
+    const clusterAnimatedStyle = useAnimatedStyle(() => ({ 
+        opacity: Platform.OS === 'ios' ? clusterOpacity.value : (!showFlags ? 1 : 0) 
+    }));
     const markerAnimatedStyle = useAnimatedStyle(() => ({
         transform: [{ scale: markerScaleAnim.value }],
     }));
@@ -210,30 +231,7 @@ const HomeScreen = () => {
         return result;
     }, [itineraryRef]);
 
-    // Progressive marker loading: when a trip loads, add one marker every 200ms
-    // to avoid native memory burst from creating many bitmap snapshots at once
-    const totalMarkerCount = useMemo(() => {
-        if (!tripData?.itinerary) return 0;
-        return tripData.itinerary.reduce((sum, day) => sum + (day.places?.length || 0), 0);
-    }, [tripData]);
 
-    useEffect(() => {
-        if (!tripData?.itinerary) {
-            setLoadedMarkerCount(0);
-            return;
-        }
-        setLoadedMarkerCount(0);
-        const total = tripData.itinerary.reduce((sum, day) => sum + (day.places?.length || 0), 0);
-        if (total === 0) return;
-
-        let count = 0;
-        const timer = setInterval(() => {
-            count++;
-            setLoadedMarkerCount(count);
-            if (count >= total) clearInterval(timer);
-        }, 200);
-        return () => clearInterval(timer);
-    }, [tripData]);
 
     // Build city-level cluster data from the grouped spots structure
     const cityClusterData = useMemo(() => {
@@ -267,47 +265,65 @@ const HomeScreen = () => {
 
     // Flatten all spots with their assigned country colors for individual marker display
     const individualSpotsData = useMemo(() => {
-        return cityClusterData.flatMap(city => city.spots);
+        return cityClusterData.flatMap(city => city.spots.map(s => ({ ...s, cityName: city.cityName })));
     }, [cityClusterData]);
 
-    // Collision avoidance for city cluster markers — prevent overlap
+    // Initialize Supercluster once for highly-optimized native-speed clustering
+    const supercluster = useMemo(() => {
+        const cluster = new Supercluster({
+            radius: 45,
+            maxZoom: 16,
+            map: (props) => ({ 
+                spotCount: 1, 
+                color: props.color, 
+                cityName: props.cityName || 'Area'
+            }),
+            reduce: (accumulated, props) => {
+                accumulated.spotCount += props.spotCount;
+            }
+        });
+        
+        const geoJsonPoints = individualSpotsData.map(spot => ({
+            type: 'Feature',
+            properties: {
+                id: spot._id || spot.placeId || Math.random(),
+                spotCount: 1,
+                color: spot.color, // Color of the first point in cluster will be retained
+                cityName: spot.cityName
+            },
+            geometry: {
+                type: 'Point',
+                coordinates: [spot.coordinates.lng, spot.coordinates.lat] // GeoJSON requires [lng, lat]
+            }
+        }));
+        
+        cluster.load(geoJsonPoints);
+        return cluster;
+    }, [individualSpotsData]);
+
+    // O(1) fetch from Supercluster using the current map zoom
     const visibleCityClusters = useMemo(() => {
-        if (cityClusterData.length === 0) return [];
-        const zoom = mapZoomRef.current;
-        // Degrees per pixel at this zoom (Web Mercator approximation)
-        const degLngPerPx = 360 / (256 * Math.pow(2, zoom));
-        // Minimum gap in pixels between city cluster markers
-        const MIN_GAP_PX = 80;
-        const minGapDeg = MIN_GAP_PX * degLngPerPx;
-
-        const visible = [];
-        const placed = []; // { lat, lng } of already placed markers
-
-        // Sort by spot count descending so larger cities win placement priority
-        const sorted = [...cityClusterData].sort((a, b) => b.spotCount - a.spotCount);
-
-        for (const city of sorted) {
-            const lat = city.centroid.latitude;
-            const lng = city.centroid.longitude;
-            let tooClose = false;
-            for (const other of placed) {
-                const dLat = Math.abs(lat - other.lat);
-                const dLng = Math.abs(lng - other.lng);
-                // Adjust for latitude (cos correction)
-                const latRad = (lat * Math.PI) / 180;
-                const adjustedDLat = dLat / Math.cos(latRad);
-                if (adjustedDLat < minGapDeg && dLng < minGapDeg) {
-                    tooClose = true;
-                    break;
-                }
-            }
-            if (!tooClose) {
-                visible.push(city);
-                placed.push({ lat, lng });
-            }
-        }
-        return visible;
-    }, [cityClusterData, mapZoom]);
+        if (!individualSpotsData || individualSpotsData.length === 0) return [];
+        const zoom = Math.max(mapZoomRef.current || mapZoom, 4);
+        
+        // Fetch globally or based on Map region bounds
+        const bounds = [-180, -90, 180, 90]; 
+        const clusters = supercluster.getClusters(bounds, zoom);
+        
+        return clusters.map(cluster => {
+            const [lng, lat] = cluster.geometry.coordinates;
+            const props = cluster.properties;
+            const isCluster = props.cluster;
+            
+            return {
+                key: isCluster ? `cluster-${props.cluster_id}` : `cluster-${props.id}`,
+                centroid: { latitude: lat, longitude: lng },
+                spotCount: isCluster ? props.point_count : 1,
+                color: props.color,
+                cityName: props.cityName || 'Area',
+            };
+        });
+    }, [individualSpotsData, mapZoom, supercluster]);
 
     // --- Logic for Marker Label Collision Avoidance ---
     // Calculates which labels should be shown based on zoom and relative screen distance
@@ -325,50 +341,43 @@ const HomeScreen = () => {
                 }))
         );
 
-        // 1. Zoom Threshold: Show labels only when sufficiently zoomed in
-        if (!showItineraryLabels) return new Set();
-
-        const zoom = mapZoomRef.current;
+        const zoom = mapZoomRef.current || 10;
         const visibleIds = new Set();
-        const screenPositions = [];
-
-        // 2. Pre-calculate mapping from pixels to degrees for current zoom and world scale
-        // In Web Mercator, 1 pixel at zoom level z roughly equals:
-        const degLngPerPixel = 360 / (256 * Math.pow(2, zoom));
         
-        // Horizontal spacing for labels (roughly 100px - 140px depending on name length)
-        // Vertical spacing (roughly 40px)
-        const HORIZONTAL_GAP_PX = 120;
-        const VERTICAL_GAP_PX = 32;
+        // 2. Spatial Grid Hash for O(N) collision detection
+        // At higher zooms, the grid cells are smaller, allowing labels to sit closer geographically
+        let gridPrecision;
+        if (zoom >= 14) gridPrecision = 0.002;      // ~200m
+        else if (zoom >= 12) gridPrecision = 0.005; // ~500m
+        else if (zoom >= 10) gridPrecision = 0.015; // ~1.5km
+        else if (zoom >= 8) gridPrecision = 0.05;   // ~5km
+        else if (zoom >= 6) gridPrecision = 0.15;   // ~15km
+        else if (zoom >= 4) gridPrecision = 0.5;    // ~50km
+        else gridPrecision = 1.0;                   // ~100km
+        const occupiedCells = new Set();
 
         allPlaces.forEach((place) => {
-            // Mercator correction: 1 pixel covers fewer degrees of latitude at higher lats
-            const latRad = (place.lat * Math.PI) / 180;
-            const degLatPerPixel = degLngPerPixel * Math.cos(latRad);
+            const cellX = Math.round(place.lng / gridPrecision);
+            const cellY = Math.round(place.lat / gridPrecision);
+            // Combine with map zoom for cache key logic if needed, but precision handles scope
+            const cellKey = `${cellX},${cellY}`;
 
-            const horizontalThreshold = HORIZONTAL_GAP_PX * degLngPerPixel;
-            const verticalThreshold = VERTICAL_GAP_PX * degLatPerPixel;
-
-            let isTooClose = false;
-            for (const other of screenPositions) {
-                const dLat = Math.abs(place.lat - other.lat);
-                const dLng = Math.abs(place.lng - other.lng);
-
-                // Check if current place collides with an already visible label's "box"
-                if (dLat < verticalThreshold && dLng < horizontalThreshold) {
-                    isTooClose = true;
-                    break;
-                }
-            }
-
-            if (!isTooClose) {
+            // Check if exact cell or immediate 4-way neighbors are occupied
+            if (
+                !occupiedCells.has(cellKey) &&
+                !occupiedCells.has(`${cellX + 1},${cellY}`) &&
+                !occupiedCells.has(`${cellX - 1},${cellY}`) &&
+                !occupiedCells.has(`${cellX},${cellY + 1}`) &&
+                !occupiedCells.has(`${cellX},${cellY - 1}`)
+            ) {
                 visibleIds.add(place.id);
-                screenPositions.push({ lat: place.lat, lng: place.lng });
+                // Mark cell as occupied
+                occupiedCells.add(cellKey);
             }
         });
 
         return visibleIds;
-    }, [tripData, showItineraryLabels]);
+    }, [tripData, mapZoom]);
 
     // ── Memoized itinerary markers — prevents creating new native GMSMarker objects on every render ──
     const itineraryMarkers = useMemo(() => {
@@ -383,7 +392,7 @@ const HomeScreen = () => {
                 globalIdx += (day.places?.length || 0);
                 return [];
             }
-            const dayColor = DAY_COLORS[dayIndex % DAY_COLORS.length];
+            const dayColor = getDayColor(dayIndex);
             const markers = (day.places || [])
                 .filter(place => place && place.coordinates?.lat && place.coordinates?.lng)
                 .map((place, placeIndex) => {
@@ -399,13 +408,14 @@ const HomeScreen = () => {
                         }}
                         title={place.name || ''}
                         description={`Day ${day.day} • ${place.category || 'sightseeing'}`}
-                        anchor={{ x: 0.5, y: isOverview ? 0.5 : 0.85 }}
+                        // Center is the middle of the top circle, bounding box is taller
+                        anchor={{ x: 0.5, y: isOverview ? 11/50 : 14/60 }}
                         tracksViewChanges={false}
                     >
                         {isOverview ? (
-                            /* Simplified markers in overview — no Animated wrapper, no labels,
-                               smaller size to reduce native bitmap memory per marker */
-                            <View style={{ alignItems: 'center' }}>
+                            /* Fixed bounding box (100x50) to prevent clipping. 
+                               Circle is 22x22 at the very top. Exact center is y=11. */
+                            <View style={{ alignItems: 'center', width: 100, height: 50 }}>
                                 <View style={{
                                     width: 22,
                                     height: 22,
@@ -418,10 +428,28 @@ const HomeScreen = () => {
                                 }}>
                                     <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '700' }}>{placeIndex + 1}</Text>
                                 </View>
+                                {visibleLabelIds.has(`marker-${day.day}-${placeIndex}`) && (
+                                    <Text
+                                        numberOfLines={1}
+                                        style={{
+                                            marginTop: 2,
+                                            fontSize: 9,
+                                            fontWeight: '700',
+                                            color: '#FFFFFF',
+                                            textAlign: 'center',
+                                            backgroundColor: 'rgba(0,0,0,0.75)',
+                                            paddingHorizontal: 4,
+                                            paddingVertical: 1,
+                                            borderRadius: 3,
+                                            overflow: 'hidden',
+                                        }}
+                                    >{place.name}</Text>
+                                )}
                             </View>
                         ) : (
-                            /* Full markers with animation, labels, and shadows for day view */
-                            <Animated.View style={[markerAnimatedStyle, { alignItems: 'center', width: 100 }]}>
+                            /* Fixed bounding box (120x60) to prevent clipping. 
+                               Circle is 28x28 at the very top. Exact center is y=14. */
+                            <Animated.View style={[markerAnimatedStyle, { alignItems: 'center', width: 120, height: 60 }]}>
                                 <View style={{
                                     width: 28,
                                     height: 28,
@@ -431,11 +459,7 @@ const HomeScreen = () => {
                                     borderColor: '#FFFFFF',
                                     alignItems: 'center',
                                     justifyContent: 'center',
-                                    shadowColor: '#000',
-                                    shadowOffset: { width: 0, height: 2 },
-                                    shadowOpacity: 0.3,
-                                    shadowRadius: 3,
-                                    elevation: 4,
+                                    // Removed native shadows to prevent severe GPU memory & RN Maps heating bugs
                                 }}>
                                     <Text style={{
                                         color: '#FFFFFF',
@@ -443,28 +467,23 @@ const HomeScreen = () => {
                                         fontWeight: '700',
                                     }}>{placeIndex + 1}</Text>
                                 </View>
-                                {(visibleLabelIds.has(`marker-${day.day}-${placeIndex}`) ||
-                                  (selectedItinerarySpot?.name === place.name &&
-                                   selectedItinerarySpot?.coordinates?.lat === place.coordinates?.lat)) && (
-                                    <Text
-                                        numberOfLines={1}
-                                        style={{
-                                            marginTop: 3,
-                                            fontSize: 10,
-                                            fontWeight: '700',
-                                            color: '#1E293B',
-                                            textAlign: 'center',
-                                            backgroundColor: 'rgba(255,255,255,0.85)',
-                                            paddingHorizontal: 5,
-                                            paddingVertical: 1,
-                                            borderRadius: 4,
-                                            overflow: 'hidden',
-                                            textShadowColor: 'rgba(255,255,255,0.9)',
-                                            textShadowOffset: { width: 0, height: 0 },
-                                            textShadowRadius: 3,
-                                        }}
-                                    >{place.name}</Text>
-                                )}
+                                <Text
+                                    numberOfLines={1}
+                                    style={{
+                                        marginTop: 3,
+                                        maxWidth: 120, // ensure it doesn't overflow container width
+                                        fontSize: 10,
+                                        fontWeight: '700',
+                                        color: '#FFFFFF',
+                                        textAlign: 'center',
+                                        backgroundColor: 'rgba(0,0,0,0.85)',
+                                        paddingHorizontal: 5,
+                                        paddingVertical: 1,
+                                        borderRadius: 4,
+                                        overflow: 'hidden',
+                                        // Removed expensive textShadow
+                                    }}
+                                >{place.name}</Text>
                             </Animated.View>
                         )}
                     </Marker>
@@ -484,47 +503,74 @@ const HomeScreen = () => {
         const isOverview = activeTripDay === null;
         let globalIdx = 0;
         return tripData.itinerary.flatMap((day, dayIndex) => {
-            const dayPlaceCount = day.places?.length || 0;
+            const dayPlaces = (day.places || []).filter(p => p?.coordinates?.lat && p?.coordinates?.lng);
+            const dayPlaceCount = dayPlaces.length;
             const dayStartIdx = globalIdx;
-            globalIdx += dayPlaceCount;
+            globalIdx += (day.places?.length || 0);
             // When viewing a specific day, show only that day
             if (activeTripDay !== null && day.day !== activeTripDay) return [];
-            // In overview, only show polyline after ALL markers for this day are loaded
-            if (isOverview && loadedMarkerCount < dayStartIdx + dayPlaceCount) return [];
-            const elements = [];
-            const dayColor = DAY_COLORS[dayIndex % DAY_COLORS.length];
 
-            if (decodedPolylines[day.day]) {
-                const polyCoords = isOverview
-                    ? decodedPolylines[day.day].overview
-                    : decodedPolylines[day.day].full;
-                // Skip shadow/outline polyline in overview to save memory
-                if (!isOverview) {
-                    elements.push(
-                        <Polyline
-                            key={`route-outline-${day.day}`}
-                            coordinates={polyCoords}
-                            strokeColor="rgba(0,0,0,0.12)"
-                            strokeWidth={8}
-                            lineJoin="round"
-                            lineCap="round"
-                        />
-                    );
+            const polyData = decodedPolylines[day.day];
+            if (!polyData) return [];
+            const polyCoords = isOverview ? polyData.overview : polyData.full;
+            if (!polyCoords || polyCoords.length < 2) return [];
+
+            const dayColor = getDayColor(dayIndex);
+            const elements = [];
+
+            // How many spots of THIS day have been loaded?
+            const loadedInThisDay = Math.max(0, Math.min(dayPlaceCount, loadedMarkerCount - dayStartIdx));
+
+            // Need at least 2 loaded spots to draw a route segment
+            if (loadedInThisDay < 2) return [];
+
+            // Find the polyline slice up to the last loaded spot's nearest point
+            const lastLoadedSpot = dayPlaces[loadedInThisDay - 1];
+            let sliceEnd = polyCoords.length; // default: show all
+
+            if (loadedInThisDay < dayPlaceCount) {
+                // Still loading — find the closest polyline point to the last loaded spot
+                let bestIdx = 0;
+                let bestDist = Infinity;
+                for (let k = 0; k < polyCoords.length; k++) {
+                    const dLat = polyCoords[k].latitude - lastLoadedSpot.coordinates.lat;
+                    const dLng = polyCoords[k].longitude - lastLoadedSpot.coordinates.lng;
+                    const dist = dLat * dLat + dLng * dLng;
+                    if (dist < bestDist) {
+                        bestDist = dist;
+                        bestIdx = k;
+                    }
                 }
-                // Route polyline (colored) — thinner in overview
+                sliceEnd = bestIdx + 1; // inclusive
+            }
+
+            const visibleCoords = polyCoords.slice(0, sliceEnd);
+            if (visibleCoords.length < 2) return [];
+
+            // Shadow/outline (skip in overview to save memory)
+            if (!isOverview) {
                 elements.push(
                     <Polyline
-                        key={`route-${day.day}`}
-                        coordinates={polyCoords}
-                        strokeColor={dayColor}
-                        strokeWidth={isOverview ? 3 : 5}
+                        key={`route-outline-${day.day}-${sliceEnd}`}
+                        coordinates={visibleCoords}
+                        strokeColor="rgba(0,0,0,0.12)"
+                        strokeWidth={12}
                         lineJoin="round"
                         lineCap="round"
                     />
                 );
-            } else {
-                // No route data — skip polyline (don't draw misleading straight lines)
             }
+            // Colored route
+            elements.push(
+                <Polyline
+                    key={`route-${day.day}-${sliceEnd}`}
+                    coordinates={visibleCoords}
+                    strokeColor={dayColor}
+                    strokeWidth={isOverview ? 5 : 8}
+                    lineJoin="round"
+                    lineCap="round"
+                />
+            );
             return elements;
         });
     }, [tripData, activeTripDay, loadedMarkerCount, decodedPolylines]);
@@ -581,6 +627,11 @@ const HomeScreen = () => {
     const animatedTabBarStyle = useAnimatedStyle(() => {
         return {
             transform: [{ translateY: tabBarTranslateY.value }],
+            backgroundColor: interpolateColor(
+                createMenuOpacity.value,
+                [0, 1],
+                ['#eaedee', '#acb5b9']
+            )
         };
     });
 
@@ -626,6 +677,104 @@ const HomeScreen = () => {
         return { top: 50, right: 10, bottom: snapPadding, left: 10 };
     }, [isTripOverviewOpen, sheetIndex, tripOverviewSheetIndex]);
 
+    // Progressive Trip Animation Loop
+    // IMPORTANT: Only depends on tripData to avoid re-triggers from sheet state changes.
+    // All other values are read from refs at execution time.
+    useEffect(() => {
+        if (!tripData?.itinerary) {
+            setLoadedMarkerCount(0);
+            tripIdRef.current = null;
+            return;
+        }
+
+        // Already animated this exact trip — don't re-animate
+        if (tripIdRef.current === tripData._id) {
+            return;
+        }
+
+        const total = tripData.itinerary.reduce((sum, day) => sum + (day.places?.length || 0), 0);
+        tripIdRef.current = tripData._id;
+        animationActiveRef.current = true;
+        setLoadedMarkerCount(0);
+
+        const runTripAnimation = async () => {
+            // Small delay to let TripOverviewSheet mount and map settle
+            await new Promise(r => setTimeout(r, 300));
+            if (!animationActiveRef.current) return;
+
+            // Collect coords per day for progressive zoom-out
+            const coordsByDay = tripData.itinerary.map(day =>
+                (day.places || [])
+                    .filter(p => p.coordinates?.lat && p.coordinates?.lng)
+                    .map(p => ({ latitude: p.coordinates.lat, longitude: p.coordinates.lng }))
+            );
+
+            // Start by zooming into Day 1 only
+            const day1Coords = coordsByDay[0] || [];
+            if (day1Coords.length > 1) {
+                mapRef.current?.fitToCoordinates(day1Coords, {
+                    edgePadding: { top: 60, right: 60, bottom: 120, left: 60 },
+                    animated: true,
+                });
+            } else if (day1Coords.length === 1) {
+                mapRef.current?.animateToRegion({
+                    latitude: day1Coords[0].latitude,
+                    longitude: day1Coords[0].longitude,
+                    latitudeDelta: 0.05,
+                    longitudeDelta: 0.05,
+                }, 600);
+            }
+
+            // Wait for initial zoom
+            await new Promise(r => setTimeout(r, 300));
+            if (!animationActiveRef.current) return;
+
+            // Progressively reveal spots, zooming out after each day
+            let currentLoaded = 0;
+            const allRevealedCoords = []; // accumulates coords across days
+
+            for (let i = 0; i < tripData.itinerary.length; i++) {
+                if (!animationActiveRef.current) break;
+
+                const day = tripData.itinerary[i];
+                const dayPlaces = (day.places || []).filter(p => p.coordinates?.lat && p.coordinates?.lng);
+
+                // Draw this day's spots one by one
+                for (let j = 0; j < dayPlaces.length; j++) {
+                    if (!animationActiveRef.current) break;
+                    currentLoaded++;
+                    setLoadedMarkerCount(currentLoaded);
+                    allRevealedCoords.push({
+                        latitude: dayPlaces[j].coordinates.lat,
+                        longitude: dayPlaces[j].coordinates.lng,
+                    });
+                    await new Promise(r => setTimeout(r, 100));
+                }
+
+                // After this day finishes, zoom out to fit all revealed days so far
+                if (animationActiveRef.current && i < tripData.itinerary.length - 1 && allRevealedCoords.length > 1) {
+                    // Also include next day's coords in the zoom so user sees where it's heading
+                    const nextDayCoords = coordsByDay[i + 1] || [];
+                    const previewCoords = [...allRevealedCoords, ...nextDayCoords];
+
+                    mapRef.current?.fitToCoordinates(previewCoords, {
+                        edgePadding: { top: 60, right: 60, bottom: 120, left: 60 },
+                        animated: true,
+                    });
+                    // Wait for zoom-out transition
+                    await new Promise(r => setTimeout(r, 200));
+                }
+            }
+
+            animationActiveRef.current = false;
+        };
+
+        runTripAnimation();
+
+        return () => {
+            animationActiveRef.current = false;
+        };
+    }, [tripData]);
 
 
     // Hide floating tab bar when keyboard is open
@@ -698,6 +847,7 @@ const HomeScreen = () => {
     useEffect(() => {
         if (!tripData?.itinerary || !mapRef.current) return;
         if (isEditMode) return;
+        if (animationActiveRef.current) return; // Wait for the progressive animation to finish first!
 
         let daysToFit = [];
         if (activeTripDay === null) {
@@ -706,37 +856,39 @@ const HomeScreen = () => {
             daysToFit = tripData.itinerary.filter(d => d.day === activeTripDay);
         }
 
-        // Collect place coordinates only (lightweight)
-        let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-        let count = 0;
+        // Gather all valid coordinates
+        const allCoords = [];
         daysToFit.forEach(day => {
             (day.places || []).forEach(p => {
                 if (p?.coordinates?.lat && p?.coordinates?.lng) {
-                    minLat = Math.min(minLat, p.coordinates.lat);
-                    maxLat = Math.max(maxLat, p.coordinates.lat);
-                    minLng = Math.min(minLng, p.coordinates.lng);
-                    maxLng = Math.max(maxLng, p.coordinates.lng);
-                    count++;
+                    allCoords.push({
+                        latitude: p.coordinates.lat,
+                        longitude: p.coordinates.lng
+                    });
                 }
             });
         });
 
-        if (count > 0) {
-            const rawLatDelta = maxLat - minLat;
-            const rawLngDelta = maxLng - minLng;
-            // Cap zoom-out to prevent loading too many map tiles (memory crash)
-            // 2.5° ≈ ~280km — enough to see a city region comfortably
-            const MAX_DELTA = 2.5;
-            const latDelta = Math.min(rawLatDelta + Math.max(rawLatDelta * 0.25, 0.01), MAX_DELTA);
-            const lngDelta = Math.min(rawLngDelta + Math.max(rawLngDelta * 0.25, 0.01), MAX_DELTA);
+        if (allCoords.length > 0) {
             if (fitTimeout.current) clearTimeout(fitTimeout.current);
             fitTimeout.current = setTimeout(() => {
-                mapRef.current?.animateToRegion({
-                    latitude: (minLat + maxLat) / 2,
-                    longitude: (minLng + maxLng) / 2,
-                    latitudeDelta: latDelta,
-                    longitudeDelta: lngDelta,
-                }, 400);
+                if (allCoords.length === 1) {
+                    // Just one point, animate to region with fixed zoom
+                    mapRef.current?.animateToRegion({
+                        latitude: allCoords[0].latitude,
+                        longitude: allCoords[0].longitude,
+                        latitudeDelta: 0.05,
+                        longitudeDelta: 0.05,
+                    }, 400);
+                } else {
+                    // Let native Maps handle the perfect bounding box zoom natively!
+                    // dynamicMapPadding handles the UI obstruction at the bottom, 
+                    // this just gives some breathing room inside the safe area.
+                    mapRef.current?.fitToCoordinates(allCoords, {
+                        edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
+                        animated: true,
+                    });
+                }
             }, 300);
         }
 
@@ -875,31 +1027,32 @@ const HomeScreen = () => {
                 ? tripData.itinerary.filter(d => d.day === activeTripDay)
                 : tripData.itinerary;
 
-            // Compute bounding box from place coordinates
-            let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-            let count = 0;
+            const allCoords = [];
             daysToFit.forEach(day => {
                 (day.places || []).forEach(place => {
                     if (place.coordinates?.lat && place.coordinates?.lng) {
-                        minLat = Math.min(minLat, place.coordinates.lat);
-                        maxLat = Math.max(maxLat, place.coordinates.lat);
-                        minLng = Math.min(minLng, place.coordinates.lng);
-                        maxLng = Math.max(maxLng, place.coordinates.lng);
-                        count++;
+                        allCoords.push({
+                            latitude: place.coordinates.lat,
+                            longitude: place.coordinates.lng,
+                        });
                     }
                 });
             });
 
-            if (count > 0) {
-                const MAX_DELTA = 2.5;
-                const latDelta = Math.min((maxLat - minLat) + Math.max((maxLat - minLat) * 0.25, 0.01), MAX_DELTA);
-                const lngDelta = Math.min((maxLng - minLng) + Math.max((maxLng - minLng) * 0.25, 0.01), MAX_DELTA);
-                mapRef.current?.animateToRegion({
-                    latitude: (minLat + maxLat) / 2,
-                    longitude: (minLng + maxLng) / 2,
-                    latitudeDelta: latDelta,
-                    longitudeDelta: lngDelta,
-                }, 400);
+            if (allCoords.length > 0) {
+                if (allCoords.length === 1) {
+                    mapRef.current?.animateToRegion({
+                        latitude: allCoords[0].latitude,
+                        longitude: allCoords[0].longitude,
+                        latitudeDelta: 0.05,
+                        longitudeDelta: 0.05,
+                    }, 400);
+                } else {
+                    mapRef.current?.fitToCoordinates(allCoords, {
+                        edgePadding: { top: 60, right: 60, bottom: 60, left: 60 },
+                        animated: true,
+                    });
+                }
             }
         }
     }, [selectedItinerarySpot, tripData, activeTripDay]);
@@ -959,6 +1112,14 @@ const HomeScreen = () => {
                 mapPadding={dynamicMapPadding}
                 customMapStyle={CUSTOM_MAP_STYLE}
                 initialRegion={initialMapRegion}
+                onPanDrag={() => {
+                    // Instantly cancel animation if user manually pans map
+                    if (animationActiveRef.current) {
+                        animationActiveRef.current = false;
+                        const total = tripData?.itinerary?.reduce((sum, day) => sum + (day.places?.length || 0), 0) || 0;
+                        setLoadedMarkerCount(total);
+                    }
+                }}
                 onRegionChangeComplete={(region) => {
                     const zoom = Math.round(Math.log2(360 / region.longitudeDelta));
                     mapZoomRef.current = zoom;
@@ -976,16 +1137,19 @@ const HomeScreen = () => {
                         });
                     }
 
-                    if (zoom !== mapZoom) setMapZoom(zoom);
+                    // Update state if the integer zoom level has changed
+                    if (zoom !== mapZoom) {
+                        setMapZoom(zoom);
+                    }
 
 
-                    // Hysteresis for flag↔cluster crossfade (zoom 4 = show clusters, zoom 3 = back to flags)
-                    if (showFlagsRef.current && zoom >= 4) {
-                        showFlagsRef.current = false;
+                    // Smooth crossfade between country flags and spot clusters at zoom 4
+                    if (showFlags && zoom >= 4) {
+                        setShowFlags(false);
                         flagOpacity.value = withTiming(0, { duration: 300 });
                         clusterOpacity.value = withTiming(1, { duration: 300 });
-                    } else if (!showFlagsRef.current && zoom < 3) {
-                        showFlagsRef.current = true;
+                    } else if (!showFlags && zoom < 4) {
+                        setShowFlags(true);
                         flagOpacity.value = withTiming(1, { duration: 300 });
                         clusterOpacity.value = withTiming(0, { duration: 300 });
                     }
@@ -995,14 +1159,11 @@ const HomeScreen = () => {
                     if (shouldShowIndividual !== showIndividualSpots) {
                         setShowIndividualSpots(shouldShowIndividual);
                     }
-
-                    const labelsVisible = zoom >= 10;
-                    if (labelsVisible !== showItineraryLabels) setShowItineraryLabels(labelsVisible);
                 }}
             >
 
                 {/* ── My Spots: Country flag markers (always mounted, opacity-controlled) ── */}
-                {showCountryMap && countryMapData.map((item) => (
+                {showCountryMap && showFlags && countryMapData.map((item) => (
                     <Marker
                         key={`flag-${item.countryName}`}
                         coordinate={item.centroid}
@@ -1021,14 +1182,14 @@ const HomeScreen = () => {
                 ))}
 
                 {/* ── My Spots: City cluster markers (mid zoom, opacity-controlled) ── */}
-                {showCountryMap && !showIndividualSpots && visibleCityClusters.map((city) => {
+                {showCountryMap && !showFlags && !showIndividualSpots && visibleCityClusters.map((city) => {
                     const size = 38 + Math.min(city.spotCount, 20) * 0.6;
                     return (
                         <Marker
                             key={`city-${city.key}`}
                             coordinate={city.centroid}
                             anchor={{ x: 0.5, y: 0.85 }}
-                            tracksViewChanges={false}
+                            tracksViewChanges={Platform.OS === 'android'}
                             onPress={() => {
                                 mapRef.current?.animateToRegion({
                                     latitude: city.centroid.latitude,
@@ -1045,20 +1206,19 @@ const HomeScreen = () => {
                                 ]}>
                                     <Text style={styles.cityClusterCount}>{city.spotCount}</Text>
                                 </View>
-                                <Text style={styles.cityClusterLabel} numberOfLines={1}>{city.cityName}</Text>
                             </Animated.View>
                         </Marker>
                     );
                 })}
 
                 {/* ── My Spots: Individual spot markers (high zoom, opacity-controlled) ── */}
-                {showCountryMap && showIndividualSpots && individualSpotsData.map((spot, idx) => (
+                {showCountryMap && !showFlags && showIndividualSpots && individualSpotsData.map((spot, idx) => (
                     <Marker
                         key={`spot-${spot._id || spot.placeId || idx}`}
                         coordinate={{ latitude: spot.coordinates.lat, longitude: spot.coordinates.lng }}
                         anchor={{ x: 0.5, y: 0.3 }}
                         onPress={() => handleSpotPress(spot)}
-                        tracksViewChanges={false}
+                        tracksViewChanges={Platform.OS === 'android'}
                     >
                         <Animated.View style={[styles.spotMarkerContainer, clusterAnimatedStyle]}>
                             <View style={[styles.spotMarkerDot, { backgroundColor: spot.color }]} />
@@ -1126,11 +1286,7 @@ const HomeScreen = () => {
                             }}
                         >
                             <View style={styles.optionIconContainer}>
-                                <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#EC4899" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <Path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z" />
-                                    <Path d="M8 2v16" />
-                                    <Path d="M16 6v16" />
-                                </Svg>
+                                <Image source={tripIcon} style={{ width: 22, height: 22 }} resizeMode="contain" />
                             </View>
                             <View style={styles.optionTextContainer}>
                                 <Text style={styles.optionTitle}>Create New Trip</Text>
@@ -1164,6 +1320,8 @@ const HomeScreen = () => {
                     setTimeout(() => {
                         refetchTrips();
                     }, 2000);
+                    // Track meaningful action & maybe prompt for review
+                    trackActionAndMaybeAskReview();
                 }}
             />
 
@@ -1294,7 +1452,15 @@ const HomeScreen = () => {
             <TripOverviewSheet
                 ref={tripOverviewSheetRef}
                 onChange={handleTripOverviewSheetChange}
-                onDayChange={setActiveTripDay}
+                onDayChange={(day) => {
+                    // If user manually selects a specific day, cancel the progressive animation
+                    if (day !== null && animationActiveRef.current) {
+                        animationActiveRef.current = false;
+                        const total = tripData?.itinerary?.reduce((sum, d) => sum + (d.places?.length || 0), 0) || 0;
+                        setLoadedMarkerCount(total);
+                    }
+                    setActiveTripDay(day);
+                }}
                 animationConfigs={sheetAnimationConfig}
             />
 
@@ -1495,7 +1661,6 @@ const styles = StyleSheet.create({
         position: 'absolute',
         left: 0,
         right: 0,
-        backgroundColor: '#eaedeeff',
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-around',
@@ -1588,7 +1753,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     optionTitle: {
-        fontSize: 14,
+        fontSize: 18,
         fontWeight: '700',
         color: '#1E293B',
     },
@@ -1636,35 +1801,30 @@ const styles = StyleSheet.create({
     },
     flagMarkerInner: {
         position: 'relative',
-        width: 50,
-        height: 50,
+        width: 40,
+        height: 40,
         alignItems: 'center',
         justifyContent: 'center',
     },
     flagMarkerEmoji: {
-        fontSize: 36,
+        fontSize: 30,
         textShadowColor: 'rgba(0,0,0,0.3)',
         textShadowOffset: { width: 0, height: 2 },
         textShadowRadius: 4,
     },
     flagMarkerBadge: {
         position: 'absolute',
-        top: 0,
-        right: 0,
+        top: 9,
+        right: -10,
         minWidth: 22,
         height: 22,
         borderRadius: 11,
-        backgroundColor: '#EF4444',
+        backgroundColor: '#000000',
         borderWidth: 2,
         borderColor: '#FFFFFF',
         alignItems: 'center',
         justifyContent: 'center',
         paddingHorizontal: 4,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 3,
-        elevation: 5,
     },
     flagMarkerBadgeText: {
         color: '#FFFFFF',
@@ -1682,10 +1842,6 @@ const styles = StyleSheet.create({
         paddingVertical: 2,
         borderRadius: 6,
         overflow: 'hidden',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
     },
     // Cluster marker styles
     clusterMarker: {
@@ -1694,11 +1850,6 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.9)',
         alignItems: 'center',
         justifyContent: 'center',
-        shadowColor: '#3B82F6',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.4,
-        shadowRadius: 6,
-        elevation: 6,
     },
     clusterMarkerText: {
         color: '#FFFFFF',
@@ -1715,19 +1866,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 3,
         borderColor: 'rgba(255,255,255,0.95)',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.3,
-        shadowRadius: 5,
-        elevation: 6,
     },
     cityClusterCount: {
         color: '#FFFFFF',
         fontSize: 15,
         fontWeight: '800',
-        textShadowColor: 'rgba(0,0,0,0.2)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 2,
     },
     cityClusterLabel: {
         marginTop: 3,
@@ -1753,19 +1896,14 @@ const styles = StyleSheet.create({
         borderRadius: 7,
         borderWidth: 2.5,
         borderColor: '#FFFFFF',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 3,
-        elevation: 4,
     },
     spotMarkerLabel: {
         marginTop: 3,
         fontSize: 10,
         fontWeight: '600',
-        color: '#334155',
+        color: '#FFFFFF',
         textAlign: 'center',
-        backgroundColor: 'rgba(255,255,255,0.9)',
+        backgroundColor: 'rgba(0,0,0,0.85)',
         paddingHorizontal: 5,
         paddingVertical: 1.5,
         borderRadius: 5,

@@ -22,6 +22,7 @@ import Config from 'react-native-config';
 import { MMKV } from 'react-native-mmkv';
 import { extractUrl, detectPlatformFromUrl } from '../services/ShareIntent';
 import { fetchStream } from '../services/fetchStream';
+import { trackActionAndMaybeAskReview } from '../utils/reviewManager';
 
 const { ShareIntentModule } = NativeModules;
 const storage = new MMKV();
@@ -192,6 +193,8 @@ const ShareMenuContent = ({ sharedUrl: initialUrl }) => {
 
             if (res.ok) {
                 setIsSaved(true);
+                // Track meaningful action & maybe prompt for review
+                trackActionAndMaybeAskReview();
                 setTimeout(() => {
                     ShareIntentModule.finishActivity();
                 }, 1500);
