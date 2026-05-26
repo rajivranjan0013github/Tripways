@@ -4,7 +4,8 @@
  */
 
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, Keyboard, ActivityIndicator, Image } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Dimensions, Platform, Keyboard, ActivityIndicator } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import Animated, { 
     useSharedValue, 
     useAnimatedStyle, 
@@ -30,6 +31,7 @@ import TripOverviewSheet from '../components/TripOverviewSheet';
 import SpotDetailSheet from '../components/SpotDetailSheet';
 import ProfileOverlay from '../components/ProfileOverlay';
 import SpotsBottomSheet from '../components/SpotsBottomSheet';
+import SpotlightTour from '../components/SpotlightTour';
 import { setAppGroupData } from '../services/ShareIntent';
 import tripIcon from '../assets/trip.png';
 import MySpotIcon from '../assets/My-spot';
@@ -127,6 +129,11 @@ const HomeScreen = () => {
     const searchInputRef = useRef(null);
     const secondarySheetOpen = useRef(false); // Track if any overlay sheet is open
 
+    // Spotlight tour target refs
+    const createTabRef = useRef(null);
+    const searchBarSpotlightRef = useRef(null);
+    const importedBtnSpotlightRef = useRef(null);
+
     // --- Zustand stores ---
     const { activeTab, setActiveTab, showCreateOptions, setShowCreateOptions,
         showProfile, setShowProfile, isEditMode, setEditMode,
@@ -141,6 +148,7 @@ const HomeScreen = () => {
     const [sheetIndex, setSheetIndex] = useState(1);
     const [tripOverviewSheetIndex, setTripOverviewSheetIndex] = useState(-1);
     const [activeTripDay, setActiveTripDay] = useState(null); // Overview by default
+    const [showMainTutorial, setShowMainTutorial] = useState(false);
     // Progressive marker loading — load one marker at a time to prevent memory burst
     const [loadedMarkerCount, setLoadedMarkerCount] = useState(0);
     // Zoom level + map region stored in refs to avoid re-renders on every pan/zoom.
@@ -151,10 +159,32 @@ const HomeScreen = () => {
     const tripIdRef = useRef(null);
     const [mapZoom, setMapZoom] = useState(3); // Current zoom as state for collision recalc
 
+    // Check for tutorial visibility on mount
+    useEffect(() => {
+        const hasSeen = storage.getBoolean('hasSeenMainTutorial');
+        if (!hasSeen) {
+            // Slight delay so the app fully renders first
+            setTimeout(() => {
+                setShowMainTutorial(true);
+            }, 500);
+        }
+    }, []);
+
+    const dismissTutorial = useCallback(() => {
+        setShowMainTutorial(false);
+        storage.set('hasSeenMainTutorial', true);
+    }, []);
+
     // Simple boolean for flag vs cluster view — opacity handles the visual transition.
     const [showFlags, setShowFlags] = useState(true);
     // Whether to show individual spots vs city clusters (higher zoom = individual)
     const [showIndividualSpots, setShowIndividualSpots] = useState(false);
+
+    // Bounds tracking for optimized Supercluster queries [minLng, minLat, maxLng, maxLat]
+    const [visibleBounds, setVisibleBounds] = useState([-180, -90, 180, 90]);
+
+    // Tracks current state of markers. We start true to ensure render, then flip to false for performance.
+    const [tracksViewChangesMap, setTracksViewChangesMap] = useState({});
 
     // Animated crossfade for flag ↔ cluster transition
     const flagOpacity = useSharedValue(1);
@@ -162,10 +192,10 @@ const HomeScreen = () => {
     const markerScaleAnim = useSharedValue(1);
 
     const flagAnimatedStyle = useAnimatedStyle(() => ({ 
-        opacity: Platform.OS === 'ios' ? flagOpacity.value : (showFlags ? 1 : 0) 
+        opacity: flagOpacity.value
     }));
     const clusterAnimatedStyle = useAnimatedStyle(() => ({ 
-        opacity: Platform.OS === 'ios' ? clusterOpacity.value : (!showFlags ? 1 : 0) 
+        opacity: clusterOpacity.value
     }));
     const markerAnimatedStyle = useAnimatedStyle(() => ({
         transform: [{ scale: markerScaleAnim.value }],
@@ -271,29 +301,33 @@ const HomeScreen = () => {
     // Initialize Supercluster once for highly-optimized native-speed clustering
     const supercluster = useMemo(() => {
         const cluster = new Supercluster({
-            radius: 45,
+            radius: 60, // Increased for more natural regrouping on Android/high-res screens
             maxZoom: 16,
             map: (props) => ({ 
                 spotCount: 1, 
                 color: props.color, 
-                cityName: props.cityName || 'Area'
+                name: props.name
             }),
             reduce: (accumulated, props) => {
                 accumulated.spotCount += props.spotCount;
+                // Preserve the color and city names from the first point in the cluster
+                if (!accumulated.color) accumulated.color = props.color;
+                if (!accumulated.cityName || accumulated.cityName === '') accumulated.cityName = props.cityName;
             }
         });
         
         const geoJsonPoints = individualSpotsData.map(spot => ({
             type: 'Feature',
             properties: {
-                id: spot._id || spot.placeId || Math.random(),
+                id: spot._id || spot.placeId || idx,
                 spotCount: 1,
-                color: spot.color, // Color of the first point in cluster will be retained
-                cityName: spot.cityName
+                color: spot.color, 
+                cityName: spot.cityName,
+                name: spot.name
             },
             geometry: {
                 type: 'Point',
-                coordinates: [spot.coordinates.lng, spot.coordinates.lat] // GeoJSON requires [lng, lat]
+                coordinates: [spot.coordinates.lng, spot.coordinates.lat] 
             }
         }));
         
@@ -306,8 +340,8 @@ const HomeScreen = () => {
         if (!individualSpotsData || individualSpotsData.length === 0) return [];
         const zoom = Math.max(mapZoomRef.current || mapZoom, 4);
         
-        // Fetch globally or based on Map region bounds
-        const bounds = [-180, -90, 180, 90]; 
+    // Fetch only markers within the current map viewport
+        const bounds = visibleBounds || [-180, -90, 180, 90]; 
         const clusters = supercluster.getClusters(bounds, zoom);
         
         return clusters.map(cluster => {
@@ -316,14 +350,16 @@ const HomeScreen = () => {
             const isCluster = props.cluster;
             
             return {
-                key: isCluster ? `cluster-${props.cluster_id}` : `cluster-${props.id}`,
+                key: isCluster ? `cluster-${props.cluster_id}` : `spot-${props.id}`,
                 centroid: { latitude: lat, longitude: lng },
                 spotCount: isCluster ? props.point_count : 1,
                 color: props.color,
-                cityName: props.cityName || 'Area',
+                cityName: props.cityName || '',
+                name: props.name,
+                isCluster
             };
         });
-    }, [individualSpotsData, mapZoom, supercluster]);
+    }, [individualSpotsData, mapZoom, supercluster, visibleBounds]);
 
     // --- Logic for Marker Label Collision Avoidance ---
     // Calculates which labels should be shown based on zoom and relative screen distance
@@ -357,27 +393,126 @@ const HomeScreen = () => {
         const occupiedCells = new Set();
 
         allPlaces.forEach((place) => {
-            const cellX = Math.round(place.lng / gridPrecision);
+            const cellX = Math.round(place.lng / (gridPrecision * 2)); // Horizontal bias (longer labels)
             const cellY = Math.round(place.lat / gridPrecision);
-            // Combine with map zoom for cache key logic if needed, but precision handles scope
             const cellKey = `${cellX},${cellY}`;
 
-            // Check if exact cell or immediate 4-way neighbors are occupied
-            if (
-                !occupiedCells.has(cellKey) &&
-                !occupiedCells.has(`${cellX + 1},${cellY}`) &&
-                !occupiedCells.has(`${cellX - 1},${cellY}`) &&
-                !occupiedCells.has(`${cellX},${cellY + 1}`) &&
-                !occupiedCells.has(`${cellX},${cellY - 1}`)
-            ) {
+            // Check if exact cell or ANY of the 8 neighbors are occupied (3x3 grid)
+            let isOverlapping = false;
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (occupiedCells.has(`${cellX + dx},${cellY + dy}`)) {
+                        isOverlapping = true;
+                        break;
+                    }
+                }
+                if (isOverlapping) break;
+            }
+
+            if (!isOverlapping) {
                 visibleIds.add(place.id);
-                // Mark cell as occupied
                 occupiedCells.add(cellKey);
             }
         });
 
         return visibleIds;
     }, [tripData, mapZoom]);
+
+    // calculates which individual spot labels should be shown to prevent collision
+    const visibleSpotLabelIds = useMemo(() => {
+        if (!individualSpotsData) return new Set();
+
+        const zoom = mapZoomRef.current || mapZoom || 10;
+        const visibleIds = new Set();
+        
+        let gridPrecision;
+        if (zoom >= 14) gridPrecision = 0.002;      // ~200m
+        else if (zoom >= 12) gridPrecision = 0.005; // ~500m
+        else if (zoom >= 10) gridPrecision = 0.015; // ~1.5km
+        else if (zoom >= 8) gridPrecision = 0.05;   // ~5km
+        else if (zoom >= 6) gridPrecision = 0.15;   // ~15km
+        else if (zoom >= 4) gridPrecision = 0.5;    // ~50km
+        else gridPrecision = 1.0;                   // ~100km
+        
+        const occupiedCells = new Set();
+
+        individualSpotsData.forEach((spot, idx) => {
+            const lat = spot.coordinates?.lat;
+            const lng = spot.coordinates?.lng;
+            if (!lat || !lng) return;
+
+            const cellX = Math.round(lng / (gridPrecision * 2)); // Horizontal bias
+            const cellY = Math.round(lat / gridPrecision);
+            const cellKey = `${cellX},${cellY}`;
+
+            // 3x3 neighbor check
+            let isOverlapping = false;
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (occupiedCells.has(`${cellX + dx},${cellY + dy}`)) {
+                        isOverlapping = true;
+                        break;
+                    }
+                }
+                if (isOverlapping) break;
+            }
+
+            if (!isOverlapping) {
+                const id = `spot-${spot._id || spot.placeId || idx}`;
+                visibleIds.add(id);
+                occupiedCells.add(cellKey);
+            }
+        });
+
+        return visibleIds;
+    }, [individualSpotsData, mapZoom, visibleBounds]);
+
+    // calculates which city names should be shown in clustered view to prevent collision
+    const visibleCityLabelIds = useMemo(() => {
+        if (!visibleCityClusters || visibleCityClusters.length === 0) return new Set();
+
+        const zoom = mapZoomRef.current || mapZoom || 10;
+        const visibleIds = new Set();
+        
+        // Slightly larger grid for city names as they are usually longer
+        let gridPrecision;
+        if (zoom >= 10) gridPrecision = 0.05;      // ~5km
+        else if (zoom >= 8) gridPrecision = 0.15;   // ~15km
+        else if (zoom >= 6) gridPrecision = 0.3;    // ~30km
+        else if (zoom >= 4) gridPrecision = 0.7;    // ~70km
+        else gridPrecision = 1.5;                   // ~150km
+        
+        const occupiedCells = new Set();
+
+        visibleCityClusters.forEach((cluster) => {
+            if (!cluster.isCluster) return; // Individual spots handled by visibleSpotLabelIds
+
+            const lat = cluster.centroid.latitude;
+            const lng = cluster.centroid.longitude;
+            const cellX = Math.round(lng / (gridPrecision * 2)); // Reduced horizontal bias
+            const cellY = Math.round(lat / (gridPrecision * 0.8)); // Tighter vertical check
+            const cellKey = `${cellX},${cellY}`;
+
+            // 3x3 neighbor check
+            let isOverlapping = false;
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (occupiedCells.has(`${cellX + dx},${cellY + dy}`)) {
+                        isOverlapping = true;
+                        break;
+                    }
+                }
+                if (isOverlapping) break;
+            }
+
+            if (!isOverlapping) {
+                visibleIds.add(cluster.key);
+                occupiedCells.add(cellKey);
+            }
+        });
+
+        return visibleIds;
+    }, [visibleCityClusters, mapZoom]);
 
     // ── Memoized itinerary markers — prevents creating new native GMSMarker objects on every render ──
     const itineraryMarkers = useMemo(() => {
@@ -397,11 +532,12 @@ const HomeScreen = () => {
                 .filter(place => place && place.coordinates?.lat && place.coordinates?.lng)
                 .map((place, placeIndex) => {
                     const myIdx = globalIdx++;
+                    const markerKey = `marker-${day.day}-${placeIndex}`;
                     // In overview, only render if this marker has been progressively loaded
                     if (isOverview && myIdx >= loadedMarkerCount) return null;
                     return (
                     <Marker
-                        key={`marker-${day.day}-${placeIndex}`}
+                        key={markerKey}
                         coordinate={{
                             latitude: place.coordinates.lat,
                             longitude: place.coordinates.lng,
@@ -410,7 +546,15 @@ const HomeScreen = () => {
                         description={`Day ${day.day} • ${place.category || 'sightseeing'}`}
                         // Center is the middle of the top circle, bounding box is taller
                         anchor={{ x: 0.5, y: isOverview ? 11/50 : 14/60 }}
-                        tracksViewChanges={false}
+                        zIndex={myIdx + 100} // High priority to stay on top
+                        tracksViewChanges={Platform.OS === 'android' ? (tracksViewChangesMap[markerKey] ?? true) : false}
+                        onLayout={() => {
+                            if (Platform.OS === 'android' && tracksViewChangesMap[markerKey] !== false) {
+                                setTimeout(() => {
+                                    setTracksViewChangesMap(prev => ({ ...prev, [markerKey]: false }));
+                                }, 800);
+                            }
+                        }}
                     >
                         {isOverview ? (
                             /* Fixed bounding box (100x50) to prevent clipping. 
@@ -434,14 +578,10 @@ const HomeScreen = () => {
                                         style={{
                                             marginTop: 2,
                                             fontSize: 9,
-                                            fontWeight: '700',
-                                            color: '#FFFFFF',
+                                            fontWeight: '800',
+                                            color: '#000000',
                                             textAlign: 'center',
-                                            backgroundColor: 'rgba(0,0,0,0.75)',
-                                            paddingHorizontal: 4,
-                                            paddingVertical: 1,
-                                            borderRadius: 3,
-                                            overflow: 'hidden',
+                                            backgroundColor: 'transparent',
                                         }}
                                     >{place.name}</Text>
                                 )}
@@ -473,14 +613,10 @@ const HomeScreen = () => {
                                         marginTop: 3,
                                         maxWidth: 120, // ensure it doesn't overflow container width
                                         fontSize: 10,
-                                        fontWeight: '700',
-                                        color: '#FFFFFF',
+                                        fontWeight: '800',
+                                        color: '#000000',
                                         textAlign: 'center',
-                                        backgroundColor: 'rgba(0,0,0,0.85)',
-                                        paddingHorizontal: 5,
-                                        paddingVertical: 1,
-                                        borderRadius: 4,
-                                        overflow: 'hidden',
+                                        backgroundColor: 'transparent',
                                         // Removed expensive textShadow
                                     }}
                                 >{place.name}</Text>
@@ -557,6 +693,7 @@ const HomeScreen = () => {
                         strokeWidth={12}
                         lineJoin="round"
                         lineCap="round"
+                        zIndex={9} // Below main route but above tiles
                     />
                 );
             }
@@ -569,6 +706,7 @@ const HomeScreen = () => {
                     strokeWidth={isOverview ? 5 : 8}
                     lineJoin="round"
                     lineCap="round"
+                    zIndex={10} // Above outline
                 />
             );
             return elements;
@@ -668,12 +806,19 @@ const HomeScreen = () => {
     // Dynamic map padding to keep markers/UI above bottom sheets
     const dynamicMapPadding = useMemo(() => {
         if (isTripOverviewOpen) {
-            const bottomPadding = tripOverviewSheetIndex === 0 ? 185 : SCREEN_HEIGHT * 0.6;
+            const bottomPadding = tripOverviewSheetIndex <= 0 ? 185 : SCREEN_HEIGHT * 0.6;
             return { top: 50, right: 10, bottom: bottomPadding, left: 10 };
         }
         // When my spots sheet is open, we cap the padding at the 50% snap point
-        // so the map doesn't abruptly re-center/shift when pulled to 90%
-        const snapPadding = [0.12, 0.5, 0.5][sheetIndex] * SCREEN_HEIGHT;
+        // so the map doesn't abruptly re-center/shift when pulled to 90%.
+        // Handle -1 safely to prevent NaN mapPadding (which causes black screen bug).
+        let paddingMultiplier = 0.12; // default
+        if (sheetIndex >= 0 && sheetIndex <= 2) {
+            paddingMultiplier = [0.12, 0.5, 0.5][sheetIndex];
+        } else if (sheetIndex === -1) {
+            paddingMultiplier = 0;
+        }
+        const snapPadding = paddingMultiplier * SCREEN_HEIGHT;
         return { top: 50, right: 10, bottom: snapPadding, left: 10 };
     }, [isTripOverviewOpen, sheetIndex, tripOverviewSheetIndex]);
 
@@ -696,6 +841,11 @@ const HomeScreen = () => {
         tripIdRef.current = tripData._id;
         animationActiveRef.current = true;
         setLoadedMarkerCount(0);
+        
+        // Android Fix: Clear marker state when starting a trip so they can re-render fresh
+        if (Platform.OS === 'android') {
+            setTracksViewChangesMap({});
+        }
 
         const runTripAnimation = async () => {
             // Small delay to let TripOverviewSheet mount and map settle
@@ -1112,6 +1262,8 @@ const HomeScreen = () => {
                 mapPadding={dynamicMapPadding}
                 customMapStyle={CUSTOM_MAP_STYLE}
                 initialRegion={initialMapRegion}
+                rotateEnabled={false} // Disable user rotation as requested
+                pitchEnabled={false} // Also disable pitch for a flat experience
                 onPanDrag={() => {
                     // Instantly cancel animation if user manually pans map
                     if (animationActiveRef.current) {
@@ -1120,10 +1272,28 @@ const HomeScreen = () => {
                         setLoadedMarkerCount(total);
                     }
                 }}
+                onRegionChange={(region) => {
+                    // Update bounds/zoom during active movement for smoother clustering/filtering
+                    const zoom = Math.round(Math.log2(360 / region.longitudeDelta));
+                    if (Math.abs(zoom - mapZoomRef.current) >= 1) {
+                        mapZoomRef.current = zoom;
+                        setMapZoom(zoom);
+                    }
+                }}
                 onRegionChangeComplete={(region) => {
                     const zoom = Math.round(Math.log2(360 / region.longitudeDelta));
                     mapZoomRef.current = zoom;
                     mapRegionRef.current = region;
+
+                    // Calculate bounding box [minLng, minLat, maxLng, maxLat] with a generous buffer
+                    // This buffer ensures that regrouping/clustering doesn't flicker at the edges during zoom.
+                    const lonDelta = region.longitudeDelta;
+                    const latDelta = region.latitudeDelta;
+                    const minLng = region.longitude - lonDelta * 1.5;
+                    const maxLng = region.longitude + lonDelta * 1.5;
+                    const minLat = region.latitude - latDelta * 1.5;
+                    const maxLat = region.latitude + latDelta * 1.5;
+                    setVisibleBounds([minLng, minLat, maxLng, maxLat]);
 
                     // Continuously save the camera when no trip is active,
                     // so we always have the exact pre-trip view to restore later.
@@ -1181,51 +1351,72 @@ const HomeScreen = () => {
                     </Marker>
                 ))}
 
-                {/* ── My Spots: City cluster markers (mid zoom, opacity-controlled) ── */}
-                {showCountryMap && !showFlags && !showIndividualSpots && visibleCityClusters.map((city) => {
-                    const size = 38 + Math.min(city.spotCount, 20) * 0.6;
+                {/* ── My Spots: Clustered markers (handled via Supercluster) ── */}
+                {showCountryMap && !showFlags && visibleCityClusters.map((cluster) => {
+                    const isIndividual = !cluster.isCluster;
+                    const size = cluster.isCluster ? 38 + Math.min(cluster.spotCount, 20) * 0.6 : 14;
+                    const markerKey = cluster.key;
+                    
+                    // If this is an individual spot and we are zoomed in enough, show dot + label
+                    // Otherwise show city cluster circle.
                     return (
                         <Marker
-                            key={`city-${city.key}`}
-                            coordinate={city.centroid}
-                            anchor={{ x: 0.5, y: 0.85 }}
-                            tracksViewChanges={Platform.OS === 'android'}
+                            key={markerKey}
+                            coordinate={cluster.centroid}
+                            anchor={isIndividual ? { x: 0.5, y: 0.3 } : { x: 0.5, y: 0.85 }}
                             onPress={() => {
-                                mapRef.current?.animateToRegion({
-                                    latitude: city.centroid.latitude,
-                                    longitude: city.centroid.longitude,
-                                    latitudeDelta: 0.5,
-                                    longitudeDelta: 0.5,
-                                }, 400);
+                                if (cluster.isCluster) {
+                                    mapRef.current?.animateToRegion({
+                                        latitude: cluster.centroid.latitude,
+                                        longitude: cluster.centroid.longitude,
+                                        latitudeDelta: 0.5,
+                                        longitudeDelta: 0.5,
+                                    }, 400);
+                                } else {
+                                    // It's an individual spot, find it in raw data and open detail
+                                    const originalSpot = individualSpotsData.find(s => `spot-${s._id || s.placeId}` === cluster.key);
+                                    if (originalSpot) handleSpotPress(originalSpot);
+                                }
+                            }}
+                            // Android Performance Fix: Start true, then lock to false after initial mount
+                            tracksViewChanges={Platform.OS === 'android' ? (tracksViewChangesMap[markerKey] ?? true) : false}
+                            onLayout={() => {
+                                if (Platform.OS === 'android' && tracksViewChangesMap[markerKey] !== false) {
+                                    // Wait for marker to fully mount before "freezing" its view
+                                    setTimeout(() => {
+                                        setTracksViewChangesMap(prev => ({ ...prev, [markerKey]: false }));
+                                    }, 800);
+                                }
                             }}
                         >
-                            <Animated.View style={[styles.cityClusterContainer, clusterAnimatedStyle]}>
-                                <View style={[
-                                    styles.cityClusterCircle,
-                                    { width: size, height: size, borderRadius: size / 2, backgroundColor: city.color }
-                                ]}>
-                                    <Text style={styles.cityClusterCount}>{city.spotCount}</Text>
-                                </View>
+                            <Animated.View style={[
+                                cluster.isCluster ? styles.cityClusterContainer : styles.spotMarkerContainer, 
+                                clusterAnimatedStyle
+                            ]}>
+                                {cluster.isCluster ? (
+                                    <>
+                                        <View style={[
+                                            styles.cityClusterCircle,
+                                            { width: size, height: size, borderRadius: size / 2, backgroundColor: cluster.color }
+                                        ]}>
+                                            <Text style={styles.cityClusterCount}>{cluster.spotCount}</Text>
+                                        </View>
+                                        {visibleCityLabelIds.has(markerKey) && (
+                                            <Text style={styles.spotMarkerLabel} numberOfLines={1}>{cluster.cityName}</Text>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        <View style={[styles.spotMarkerDot, { backgroundColor: cluster.color }]} />
+                                        {(showIndividualSpots || visibleSpotLabelIds.has(markerKey)) && (
+                                            <Text style={styles.spotMarkerLabel} numberOfLines={1}>{cluster.name}</Text>
+                                        )}
+                                    </>
+                                )}
                             </Animated.View>
                         </Marker>
                     );
                 })}
-
-                {/* ── My Spots: Individual spot markers (high zoom, opacity-controlled) ── */}
-                {showCountryMap && !showFlags && showIndividualSpots && individualSpotsData.map((spot, idx) => (
-                    <Marker
-                        key={`spot-${spot._id || spot.placeId || idx}`}
-                        coordinate={{ latitude: spot.coordinates.lat, longitude: spot.coordinates.lng }}
-                        anchor={{ x: 0.5, y: 0.3 }}
-                        onPress={() => handleSpotPress(spot)}
-                        tracksViewChanges={Platform.OS === 'android'}
-                    >
-                        <Animated.View style={[styles.spotMarkerContainer, clusterAnimatedStyle]}>
-                            <View style={[styles.spotMarkerDot, { backgroundColor: spot.color }]} />
-                            <Text style={styles.spotMarkerLabel} numberOfLines={1}>{spot.name}</Text>
-                        </Animated.View>
-                    </Marker>
-                ))}
 
                 {/* Itinerary place markers — only active day (memoized) */}
                 {itineraryMarkers}
@@ -1244,6 +1435,8 @@ const HomeScreen = () => {
                 sheetAnimatedPosition={sheetAnimatedPosition}
                 tabBarTranslateY={tabBarTranslateY}
                 tabBarHeight={tabBarHeight}
+                searchBarSpotlightRef={searchBarSpotlightRef}
+                importedBtnSpotlightRef={importedBtnSpotlightRef}
             />
 
 
@@ -1286,7 +1479,7 @@ const HomeScreen = () => {
                             }}
                         >
                             <View style={styles.optionIconContainer}>
-                                <Image source={tripIcon} style={{ width: 22, height: 22 }} resizeMode="contain" />
+                                <FastImage source={tripIcon} style={{ width: 22, height: 22 }} resizeMode={FastImage.resizeMode.contain} />
                             </View>
                             <View style={styles.optionTextContainer}>
                                 <Text style={styles.optionTitle}>Create New Trip</Text>
@@ -1492,6 +1685,7 @@ const HomeScreen = () => {
 
                 {/* Contribute Tab (Create) - Centered, No Label */}
                 <TouchableOpacity
+                    ref={createTabRef}
                     style={styles.tabItem}
                     activeOpacity={0.7}
                     onPress={() => setShowCreateOptions(!showCreateOptions)}
@@ -1537,6 +1731,20 @@ const HomeScreen = () => {
                 ref={spotDetailSheetRef}
                 spot={selectedItinerarySpot}
                 onClose={() => setSelectedSpot(null)}
+            />
+
+            {/* Spotlight Tour Tutorial */}
+            <SpotlightTour
+                visible={showMainTutorial}
+                onDismiss={dismissTutorial}
+                createTabRef={createTabRef}
+                searchBarRef={searchBarSpotlightRef}
+                importedBtnRef={importedBtnSpotlightRef}
+                onStepChange={(step) => {
+                    if (step === 1 || step === 2) {
+                        bottomSheetRef.current?.snapToIndex(1); // Snap to '60%' for search & import steps
+                    }
+                }}
             />
         </View>
     );
@@ -1900,14 +2108,10 @@ const styles = StyleSheet.create({
     spotMarkerLabel: {
         marginTop: 3,
         fontSize: 10,
-        fontWeight: '600',
-        color: '#FFFFFF',
+        fontWeight: '800',
+        color: '#000000',
         textAlign: 'center',
-        backgroundColor: 'rgba(0,0,0,0.85)',
-        paddingHorizontal: 5,
-        paddingVertical: 1.5,
-        borderRadius: 5,
-        overflow: 'hidden',
+        backgroundColor: 'transparent',
         maxWidth: 88,
     },
 });

@@ -11,11 +11,11 @@ import {
     TouchableOpacity,
     ScrollView,
     Dimensions,
-    Image,
     Platform,
     Linking,
     Alert,
 } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -305,7 +305,7 @@ const ProfileOverlay = ({ visible, onClose, navigation, bottomSheetRef }) => {
                     </TouchableOpacity>
 
                     {userData?.picture ? (
-                        <Image source={{ uri: userData.picture }} style={styles.avatarImage} />
+                        <FastImage source={{ uri: userData.picture, priority: FastImage.priority.high }} style={styles.avatarImage} resizeMode={FastImage.resizeMode.cover} />
                     ) : (
                         <View style={styles.avatarLarge}>
                             <Text style={styles.avatarLargeText}>{userInitials}</Text>
@@ -340,7 +340,7 @@ const ProfileOverlay = ({ visible, onClose, navigation, bottomSheetRef }) => {
                             </View>
                             <View style={styles.premiumTextContainer}>
                                 <Text style={styles.premiumTitle}>
-                                    {isPremium ? 'Where Premium Active' : 'Upgrade to Premium'}
+                                    {isPremium ? 'Odyssey Premium Active' : 'Upgrade to Premium'}
                                 </Text>
                                 <Text style={styles.premiumSubtitle}>
                                     {isPremium 
@@ -438,7 +438,7 @@ const ProfileOverlay = ({ visible, onClose, navigation, bottomSheetRef }) => {
                 </TouchableOpacity>
 
                 {/* App version */}
-                <Text style={styles.versionText}>Where v1.0.0</Text>
+                <Text style={styles.versionText}>Odyssey v1.0.0</Text>
             </ScrollView>
 
             <PremiumOverlay visible={premiumVisible} onClose={() => setPremiumVisible(false)} />

@@ -155,38 +155,44 @@ const LoginScreen = ({ navigation }) => {
                 setAppGroupData(userId, BACKEND_URL);
             }
 
+            const isFirstTime = !storage.getBoolean('notifDecided');
+
             // Best-effort: register for remote messages and get FCM token
-            try {
-                await registerDeviceForRemoteMessages(getMessaging(getApp()));
-            } catch (e) {
-                console.warn('Failed to register device for remote messages (login flow)', e);
-            }
-            try {
-                const token = await getToken(getMessaging(getApp()));
-                if (token) {
-                    // Save FCM token locally with user object
+            // Only do this for returning users; first-time users handle this on the NotificationPermissionScreen
+            if (!isFirstTime) {
+                (async () => {
                     try {
-                        const storedUserStr = storage.getString('user');
-                        if (storedUserStr) {
-                            const storedUser = JSON.parse(storedUserStr);
-                            storedUser.fcmToken = token;
-                            storage.set('user', JSON.stringify(storedUser));
+                        await registerDeviceForRemoteMessages(getMessaging(getApp()));
+                    } catch (e) {
+                        console.warn('Failed to register device for remote messages (login flow)', e);
+                    }
+                    try {
+                        const token = await getToken(getMessaging(getApp()));
+                        if (token) {
+                            // Save FCM token locally with user object
+                            try {
+                                const storedUserStr = storage.getString('user');
+                                if (storedUserStr) {
+                                    const storedUser = JSON.parse(storedUserStr);
+                                    storedUser.fcmToken = token;
+                                    storage.set('user', JSON.stringify(storedUser));
+                                }
+                            } catch (e) {
+                                console.warn('Failed to update stored user with FCM token', e);
+                            }
+                            // Update server with FCM token (best-effort)
+                            if (userId) {
+                                updateUserProfile({ userId, data: { fcmToken: token } })
+                                    .catch(e => console.warn('Failed to update server FCM token', e));
+                            }
                         }
                     } catch (e) {
-                        console.warn('Failed to update stored user with FCM token', e);
+                        console.warn('Failed to get FCM token (login flow)', e);
                     }
-                    // Update server with FCM token (best-effort)
-                    if (userId) {
-                        updateUserProfile({ userId, data: { fcmToken: token } })
-                            .catch(e => console.warn('Failed to update server FCM token', e));
-                    }
-                }
-            } catch (e) {
-                console.warn('Failed to get FCM token (login flow)', e);
+                })();
             }
 
             // Navigate: NotificationPermission for first-time, Home for returning
-            const isFirstTime = !storage.getBoolean('notifDecided');
             navigation.reset({
                 index: 0,
                 routes: [{ name: isFirstTime ? 'NotificationPermission' : 'Home' }],

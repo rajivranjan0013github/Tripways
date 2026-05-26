@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { Animated as RNAnimated } from 'react-native';
 import {
     View,
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
+import AnimatedRouteMap from '../components/AnimatedRouteMap';
 
 const { width, height } = Dimensions.get('screen');
 
@@ -23,14 +24,12 @@ const { width, height } = Dimensions.get('screen');
 const slides = [
     {
         id: '1',
-        image: require('../assets/onbnew.png'),
         tag: 'DISCOVER THE WORLD',
         headline: 'Save every magical spot',
         body: 'Save your favorite places and hidden gems you find along the way to easily revisit them later.',
     },
     {
         id: '2',
-        image: require('../assets/onboarding2.png'),
         tag: 'PLAN YOUR JOURNEY',
         headline: 'Create trips effortlessly',
         body: 'Organize your saved spots into trips with smart itineraries tailored to your travel style.',
@@ -359,20 +358,7 @@ const OnboardingScreen = ({ navigation }) => {
                     {/* Route Overlay on the second slide only */}
                     {item.id === '2' && (
                         <View style={[styles.slideContentCenter, { flex: 1, marginTop: -20 }]}>
-                            <RNImage 
-                                source={require('../assets/route1.png')}
-                                style={{
-                                    width: width * 1.1, // Reduced width
-                                    height: height * 0.6,
-                                    opacity: 1,
-                                    transform: [
-                                        { perspective: 1000 },
-                                        { rotateX: '35deg' },
-                                        { scale: 1.1 }
-                                    ]
-                                }}
-                                resizeMode="contain"
-                            />
+                            <AnimatedRouteMap isVisible={currentIndex === 1} />
                         </View>
                     )}
 
@@ -387,23 +373,23 @@ const OnboardingScreen = ({ navigation }) => {
     }, [currentIndex, socialShakeStyle, appShakeStyle]);
 
     // ── Background Focus Animation ──
-    const slideScale = scrollX.interpolate({
+    const slideScale = useMemo(() => scrollX.interpolate({
         inputRange: [0, width],
         outputRange: [1.1, 1.4], // Start slightly zoomed for safety
         extrapolate: 'clamp',
-    });
+    }), [width]);
 
-    const slideTranslateX = scrollX.interpolate({
+    const slideTranslateX = useMemo(() => scrollX.interpolate({
         inputRange: [0, width],
         outputRange: [0, -width * 0.08],
         extrapolate: 'clamp',
-    });
+    }), [width]);
 
-    const slideTranslateY = scrollX.interpolate({
+    const slideTranslateY = useMemo(() => scrollX.interpolate({
         inputRange: [0, width],
         outputRange: [0, -height * 0.02],
         extrapolate: 'clamp',
-    });
+    }), [width, height]);
 
     return (
         <View style={styles.container}>
@@ -412,7 +398,7 @@ const OnboardingScreen = ({ navigation }) => {
             {/* Static Focus Background - Stays behind the slides */}
             <View style={StyleSheet.absoluteFill}>
                 <RNAnimated.Image
-                    source={require('../assets/onbnew.png')}
+                    source={require('../assets/onbcheck.png')}
                     style={[
                         styles.heroImage,
                         {
@@ -428,7 +414,7 @@ const OnboardingScreen = ({ navigation }) => {
             </View>
 
             {/* Swipeable slides */}
-            <FlatList
+            <RNAnimated.FlatList
                 ref={flatListRef}
                 data={slides}
                 renderItem={renderSlide}
@@ -438,13 +424,17 @@ const OnboardingScreen = ({ navigation }) => {
                 showsHorizontalScrollIndicator={false}
                 onScroll={RNAnimated.event(
                     [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-                    { useNativeDriver: false }
+                    { useNativeDriver: true }
                 )}
                 scrollEventThrottle={16}
                 onViewableItemsChanged={onViewableItemsChanged}
                 viewabilityConfig={viewabilityConfig}
                 bounces={false}
                 style={styles.flatList}
+                initialNumToRender={slides.length}
+                windowSize={slides.length}
+                maxToRenderPerBatch={slides.length}
+                removeClippedSubviews={Platform.OS === 'android'}
             />
 
 
@@ -474,7 +464,7 @@ const OnboardingScreen = ({ navigation }) => {
                     style={styles.continueButton}
                 >
                     <LinearGradient
-                        colors={['#3378c7', '#5a9aeb']}
+                        colors={['#000000ff', '#000000ff']}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.continueGradient}

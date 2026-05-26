@@ -57,6 +57,9 @@ class ShareIntentModule(reactContext: ReactApplicationContext) : ReactContextBas
             // Because ShareActivity has its own taskAffinity, we finish the whole task
             // so it cleanly returns the user to the app they shared from.
             activity.finishAndRemoveTask()
+            // Suppress exit transition — the RN component already animated out
+            @Suppress("DEPRECATION")
+            activity.overridePendingTransition(0, 0)
         }
     }
 

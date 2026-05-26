@@ -12,7 +12,7 @@ export const useImportedVideos = (userId) => {
             };
         },
         enabled: !!userId,
-        refetchOnWindowFocus: true,
+        refetchOnWindowFocus: 'always', // Always refetch on foreground, even if data isn't stale
     });
 };
 

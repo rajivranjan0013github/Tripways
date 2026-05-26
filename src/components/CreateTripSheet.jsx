@@ -1,5 +1,6 @@
 import React, { forwardRef, useMemo, useState, useRef, useEffect, useCallback, useImperativeHandle } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, Image, ScrollView, ActivityIndicator, Keyboard, InteractionManager } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, TextInput, FlatList, Platform, ScrollView, ActivityIndicator, Keyboard, InteractionManager } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetFlatList, BottomSheetScrollView, BottomSheetFooter } from '@gorhom/bottom-sheet';
 import LinearGradient from 'react-native-linear-gradient';
@@ -12,6 +13,11 @@ import Animated, {
     withRepeat,
     withTiming,
     withSequence,
+    withDelay,
+    FadeInDown,
+    FadeInUp,
+    Layout,
+    LinearTransition,
     Easing,
     interpolate,
 } from 'react-native-reanimated';
@@ -37,6 +43,27 @@ const FULL_SHEET_HEIGHT = SCREEN_HEIGHT * 0.92;
 const FONT_SERIF = Platform.select({
     ios: 'Cormorant Garamond',
     android: 'CormorantGaramond-SemiBoldItalic',
+    default: 'System',
+});
+
+const FONT_DISPLAY = Platform.select({
+    ios: 'Plus Jakarta Sans',
+    android: 'PlusJakartaSans-Regular',
+    default: 'System',
+});
+const FONT_DISPLAY_MEDIUM = Platform.select({
+    ios: 'Plus Jakarta Sans',
+    android: 'PlusJakartaSans-Medium',
+    default: 'System',
+});
+const FONT_DISPLAY_SEMIBOLD = Platform.select({
+    ios: 'Plus Jakarta Sans',
+    android: 'PlusJakartaSans-SemiBold',
+    default: 'System',
+});
+const FONT_DISPLAY_BOLD = Platform.select({
+    ios: 'Plus Jakarta Sans',
+    android: 'PlusJakartaSans-Bold',
     default: 'System',
 });
 
@@ -485,9 +512,10 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     );
 
     const renderPreferences = () => (
-        <Animated.View entering={FadeIn} style={[styles.content, dynamicContentStyle, { justifyContent: 'flex-end' }]}>
+        <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={[dynamicContentStyle, { paddingHorizontal: 22, paddingTop: 16, paddingBottom: 100 }]} showsVerticalScrollIndicator={false}>
+            <Animated.View entering={FadeIn.duration(350).easing(Easing.out(Easing.cubic))}>
             {selectedLocation && (
-                <View style={styles.selectedLocationBar}>
+                <View style={[styles.selectedLocationBar, { marginHorizontal: 0 }]}>
                     <View style={styles.selectedLocationInfo}>
                         <Text style={styles.selectedBarFlag}>{selectedLocation.flag}</Text>
                         <Text style={styles.selectedBarName}>{selectedLocation.name}</Text>
@@ -501,278 +529,236 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                     </TouchableOpacity>
                 </View>
             )}
-            <View style={styles.footer}>
-                {/* Trip Preferences Section */}
-                {selectedSpots.length > 0 ? (
-                    <View style={styles.prefSection}>
-                        <View style={styles.prefSectionHeader}>
-                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M20 6 9 17l-5-5" />
-                            </Svg>
-                            <Text style={styles.prefSectionTitle}>Spots Selected</Text>
-                        </View>
-                        <View style={[styles.tagGrid, { gap: 8 }]}>
-                            <View style={[styles.tagChip, styles.tagChipSelected, { flexDirection: 'row', gap: 6 }]}>
-                                <Text style={{ fontSize: 16 }}>📍</Text>
-                                <Text style={[styles.tagText, styles.tagTextSelected]}>{selectedSpots.length} {selectedSpots.length === 1 ? 'spot' : 'spots'} ready</Text>
-                            </View>
-                        </View>
-                    </View>
-                ) : (
-                    <View style={styles.prefSection}>
-                        <View style={styles.prefSectionHeader}>
-                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <Path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
-                                <Path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z" />
-                                <Path d="M5 17l.6 1.4L7 19l-1.4.6L5 21l-.6-1.4L3 19l1.4-.6L5 17z" />
-                            </Svg>
-                            <Text style={styles.prefSectionTitle}>Trip Preferences</Text>
-                        </View>
-                        <View style={styles.tagGrid}>
-                            {[
-                                { name: 'Popular', icon: '📌' },
-                                { name: 'Museum', icon: '🎨' },
-                                { name: 'Nature', icon: '⛰️' },
-                                { name: 'Foodie', icon: '🍕' },
-                                { name: 'History', icon: '🏛️' },
-                                { name: 'Shopping', icon: '🛍️' },
-                            ].map((tag, idx) => {
-                                const isSelected = selectedPrefs.includes(tag.name);
-                                return (
-                                    <TouchableOpacity
-                                        key={idx}
-                                        style={[styles.tagChip, isSelected && styles.tagChipSelected]}
-                                        onPress={() => {
-                                            setSelectedPrefs(prev =>
-                                                prev.includes(tag.name)
-                                                    ? prev.filter(p => p !== tag.name)
-                                                    : [...prev, tag.name]
-                                            );
-                                        }}
-                                    >
-                                        <Text style={styles.tagIcon}>{tag.icon}</Text>
-                                        <Text style={[styles.tagText, isSelected && styles.tagTextSelected]}>{tag.name}</Text>
-                                    </TouchableOpacity>
-                                );
-                            })}
-                        </View>
-                    </View>
-                )}
 
-                {/* Trip Duration Section */}
-                <Animated.View style={durationShakeStyle}>
-                    <TouchableOpacity style={styles.durationRow} onPress={() => setStep('howManyDays')}>
-                        <View style={styles.durationRowLeft}>
-                            <View style={styles.durationRowIcon}>
-                                <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <Path d="M19 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zM16 2v4M8 2v4M3 10h18" />
-                                </Svg>
-                            </View>
-                            <View>
-                                <Text style={styles.durationRowTitle}>Trip Duration</Text>
-                                <Text style={styles.durationRowValue}>{daysSelected ? `${numDays} days` : 'Choose trip duration'}</Text>
-                            </View>
-                        </View>
-                        <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#94A3B8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M9 18l6-6-6-6" />
-                        </Svg>
-                    </TouchableOpacity>
-                </Animated.View>
-
-                <TouchableOpacity
-                    style={[styles.blackContinueButton, { marginTop: 24 }]}
-                    onPress={() => {
-                        if (!daysSelected) {
-                            // Shake the duration card to draw attention
-                            durationShake.value = withSequence(
-                                withTiming(-10, { duration: 50 }),
-                                withTiming(10, { duration: 50 }),
-                                withTiming(-10, { duration: 50 }),
-                                withTiming(10, { duration: 50 }),
-                                withTiming(-5, { duration: 50 }),
-                                withTiming(5, { duration: 50 }),
-                                withTiming(0, { duration: 50 }),
-                            );
-                            return;
-                        }
-                        
-                        // If we already have selected spots, plan the trip immediately.
-                        // This handles Video, Saved Spots, and manual Selection flow.
-                        if (selectedSpots.length > 0) {
-                            handlePlanTrip();
-                        } else {
-                            // First time discovery
-                            setStep('discoverSpots');
-                            fetchDiscoverPlaces();
-                        }
-                    }}
-                >
-                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M5 12h14M12 5l7 7-7 7" />
-                    </Svg>
-                    <Text style={styles.blackContinueText}>{ selectedSpots.length > 0 ? 'Plan Trip' : 'Continue' }</Text>
-                </TouchableOpacity>
-            </View>
-        </Animated.View>
-    );
-
-    const renderHowManyDays = () => (
-        <Animated.View entering={FadeIn} style={[styles.content, dynamicContentStyle, { justifyContent: 'space-between' }]}>
-
-
-            <View style={styles.howManyHeader}>
-                <View style={styles.howManyTopRow}>
-                    <TouchableOpacity onPress={() => setStep('preferences')} style={styles.backButtonLarge}>
-                        <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <Path d="M15 18l-6-6 6-6" />
-                        </Svg>
-                    </TouchableOpacity>
-
-                    <View style={styles.segmentContainer}>
+            <Animated.View 
+                entering={FadeInDown.delay(100).springify().damping(18)} 
+                layout={LinearTransition.springify().damping(18)} 
+                style={{ 
+                    marginTop: 24, 
+                    backgroundColor: '#FFFFFF', 
+                    borderRadius: 24, 
+                    padding: 20, 
+                    borderWidth: 1,
+                    borderColor: '#E2E8F0',
+                    borderBottomWidth: 4,
+                    borderBottomColor: '#CBD5E1',
+                    shadowColor: '#000', 
+                    shadowOffset: { width: 0, height: 6 }, 
+                    shadowOpacity: 0.08, 
+                    shadowRadius: 12, 
+                    elevation: 4 
+                }}
+            >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: '#1E293B' }}>Trip Duration</Text>
+                    <View style={styles.segmentContainerInline}>
                         <TouchableOpacity
-                            style={selectionMode === 'calendar' ? styles.segmentItemActive : styles.segmentItem}
-                            onPress={() => setSelectionMode('calendar')}
-                        >
-                            <Text style={selectionMode === 'calendar' ? styles.segmentTextActive : styles.segmentTextInactive}>Calender</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={selectionMode === 'days' ? styles.segmentItemActive : styles.segmentItem}
+                            style={[styles.segmentItemInline, selectionMode === 'days' && styles.segmentItemActiveInline]}
                             onPress={() => setSelectionMode('days')}
                         >
-                            <Text style={selectionMode === 'days' ? styles.segmentTextActive : styles.segmentTextInactive}>Days</Text>
+                            <Text style={selectionMode === 'days' ? styles.segmentTextActiveInline : styles.segmentTextInactiveInline}>Days</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.segmentItemInline, selectionMode === 'calendar' && styles.segmentItemActiveInline]}
+                            onPress={() => setSelectionMode('calendar')}
+                        >
+                            <Text style={selectionMode === 'calendar' ? styles.segmentTextActiveInline : styles.segmentTextInactiveInline}>Dates</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
 
-                <Text style={styles.howManyTitle}>
-                    {selectionMode === 'calendar' && startDate && endDate
-                        ? `${numDays} days`
-                        : 'How many days?'}
-                </Text>
-            </View>
-
-            {selectionMode === 'days' ? (
-                <View style={styles.pickerContainer}>
-                    {Platform.OS === 'android' ? (
-                        <GestureHandlerRootView style={{ flex: 1 }}>
-                            <WheelPicker
-                                data={Array.from({ length: 30 }, (_, i) => ({ value: i + 1, label: (i + 1).toString() }))}
-                                value={numDays}
-                                extraValues={[numDays]}
-                                onValueChanged={({ item }) => setNumDays(item.value)}
-                                width={SCREEN_WIDTH}
-                                height={320}
-                                itemHeight={80}
-                                renderItem={({ item, index }) => (
-                                    <CustomWheelPickerItem item={item} index={index} numDays={numDays} />
-                                )}
-                            />
-                        </GestureHandlerRootView>
-                    ) : (
-                        <WheelPicker
-                            data={Array.from({ length: 30 }, (_, i) => ({ value: i + 1, label: (i + 1).toString() }))}
-                            value={numDays}
-                            extraValues={[numDays]}
-                            onValueChanged={({ item }) => setNumDays(item.value)}
-                            width={SCREEN_WIDTH}
-                            height={320}
-                            itemHeight={80}
-                            renderItem={({ item, index }) => (
-                                <CustomWheelPickerItem item={item} index={index} numDays={numDays} />
-                            )}
-                        />
-                    )}
-                </View>
-            ) : (
-                <View style={styles.calendarContainer}>
-                    <Calendar
-                        theme={{
-                            backgroundColor: 'transparent',
-                            calendarBackground: 'transparent',
-                            textSectionTitleColor: '#94A3B8',
-                            selectedDayBackgroundColor: '#0F172A',
-                            selectedDayTextColor: '#ffffff',
-                            todayTextColor: '#2DD4BF',
-                            dayTextColor: '#0F172A',
-                            textDisabledColor: '#CBD5E1',
-                            dotColor: '#2DD4BF',
-                            selectedDotColor: '#ffffff',
-                            arrowColor: '#0F172A',
-                            monthTextColor: '#0F172A',
-                            indicatorColor: '#0F172A',
-                            textDayFontWeight: '600',
-                            textMonthFontWeight: '700',
-                            textDayHeaderFontWeight: '600',
-                            textDayFontSize: 14,
-                            textMonthFontSize: 16,
-                            textDayHeaderFontSize: 12
-                        }}
-                        markingType={'period'}
-                        markedDates={selectedDates}
-                        onDayPress={(day) => {
-                            const dateString = day.dateString;
-
-                            if (!startDate || (startDate && endDate)) {
-                                // Start new selection
-                                setStartDate(dateString);
-                                setEndDate(null);
-                                setSelectedDates({
-                                    [dateString]: { startingDay: true, color: '#0F172A', textColor: '#ffffff' }
-                                });
-                            } else {
-                                // Complete range selection
-                                if (dateString < startDate) {
-                                    // New date is before start, make it the new start
+                {selectionMode === 'days' ? (
+                    <Animated.View entering={FadeIn.duration(200)} exiting={FadeIn.duration(100)} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16 }}>
+                        <TouchableOpacity onPress={() => setNumDays(Math.max(1, numDays - 1))} style={styles.stepperButton}>
+                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M5 12h14" />
+                            </Svg>
+                        </TouchableOpacity>
+                        <Text style={{ fontSize: 38, fontWeight: '800', width: 80, textAlign: 'center', color: '#1E293B' }}>{numDays}</Text>
+                        <TouchableOpacity onPress={() => setNumDays(Math.min(30, numDays + 1))} style={styles.stepperButton}>
+                            <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <Path d="M12 5v14M5 12h14" />
+                            </Svg>
+                        </TouchableOpacity>
+                    </Animated.View>
+                ) : (
+                    <Animated.View entering={FadeIn.duration(200)} exiting={FadeIn.duration(100)} style={styles.calendarContainerInline}>
+                        <Calendar
+                            theme={{
+                                backgroundColor: 'transparent',
+                                calendarBackground: 'transparent',
+                                textSectionTitleColor: '#94A3B8',
+                                selectedDayBackgroundColor: '#0F172A',
+                                selectedDayTextColor: '#ffffff',
+                                todayTextColor: '#2DD4BF',
+                                dayTextColor: '#0F172A',
+                                textDisabledColor: '#CBD5E1',
+                                dotColor: '#2DD4BF',
+                                selectedDotColor: '#ffffff',
+                                arrowColor: '#0F172A',
+                                monthTextColor: '#0F172A',
+                                indicatorColor: '#0F172A',
+                                textDayFontWeight: '600',
+                                textMonthFontWeight: '700',
+                                textDayHeaderFontWeight: '600',
+                                textDayFontSize: 14,
+                                textMonthFontSize: 16,
+                                textDayHeaderFontSize: 12
+                            }}
+                            markingType={'period'}
+                            markedDates={selectedDates}
+                            onDayPress={(day) => {
+                                const dateString = day.dateString;
+                                if (!startDate || (startDate && endDate)) {
                                     setStartDate(dateString);
-                                    setSelectedDates({
-                                        [dateString]: { startingDay: true, color: '#0F172A', textColor: '#ffffff' }
-                                    });
-                                } else if (dateString > startDate) {
-                                    setEndDate(dateString);
-
-                                    // Calculate range and fill dates
-                                    let range = {};
-                                    let start = new Date(startDate);
-                                    let end = new Date(dateString);
-
-                                    // Calculate difference in days
-                                    const diffTime = Math.abs(end - start);
-                                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                                    setNumDays(diffDays);
-
-                                    let current = start;
-                                    while (current <= end) {
-                                        const curStr = current.toISOString().split('T')[0];
-                                        if (curStr === startDate) {
-                                            range[curStr] = { startingDay: true, color: '#0F172A', textColor: '#ffffff' };
-                                        } else if (curStr === dateString) {
-                                            range[curStr] = { endingDay: true, color: '#0F172A', textColor: '#ffffff' };
-                                        } else {
-                                            range[curStr] = { color: 'rgba(15, 23, 42, 0.1)', textColor: '#0F172A' };
+                                    setEndDate(null);
+                                    setSelectedDates({ [dateString]: { startingDay: true, color: '#0F172A', textColor: '#ffffff' } });
+                                } else {
+                                    if (dateString < startDate) {
+                                        setStartDate(dateString);
+                                        setSelectedDates({ [dateString]: { startingDay: true, color: '#0F172A', textColor: '#ffffff' } });
+                                    } else if (dateString > startDate) {
+                                        setEndDate(dateString);
+                                        let range = {};
+                                        let start = new Date(startDate);
+                                        let end = new Date(dateString);
+                                        const diffTime = Math.abs(end - start);
+                                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                                        setNumDays(diffDays);
+                                        let current = start;
+                                        while (current <= end) {
+                                            const curStr = current.toISOString().split('T')[0];
+                                            if (curStr === startDate) {
+                                                range[curStr] = { startingDay: true, color: '#0F172A', textColor: '#ffffff' };
+                                            } else if (curStr === dateString) {
+                                                range[curStr] = { endingDay: true, color: '#0F172A', textColor: '#ffffff' };
+                                            } else {
+                                                range[curStr] = { color: 'rgba(15, 23, 42, 0.1)', textColor: '#0F172A' };
+                                            }
+                                            current.setDate(current.getDate() + 1);
                                         }
-                                        current.setDate(current.getDate() + 1);
+                                        setSelectedDates(range);
                                     }
-                                    setSelectedDates(range);
                                 }
-                            }
-                        }}
-                    />
-                </View>
+                            }}
+                        />
+                    </Animated.View>
+                )}
+            </Animated.View>
+
+            {!daysSelected && (
+                <Animated.View entering={FadeInDown.delay(200).springify().damping(18)} layout={LinearTransition.springify().damping(18)}>
+                    <TouchableOpacity
+                        style={[styles.blackContinueButton, { marginTop: 24, marginBottom: 20 }]}
+                        onPress={() => setDaysSelected(true)}
+                    >
+                        <Text style={styles.blackContinueText}>Next</Text>
+                    </TouchableOpacity>
+                </Animated.View>
             )}
 
-            <View style={styles.footer}>
-                <TouchableOpacity
-                    style={[styles.blackConfirmButton, { marginTop: 24 }]}
-                    onPress={() => { setDaysSelected(true); setStep('preferences'); }}
+            {daysSelected && (
+                <>
+                <Animated.View 
+                    entering={FadeInDown.springify().damping(18)} 
+                    layout={LinearTransition.springify().damping(18)} 
+                    style={{ 
+                        marginTop: 20, 
+                        backgroundColor: '#FFFFFF', 
+                        borderRadius: 24, 
+                        padding: 20, 
+                        borderWidth: 1,
+                        borderColor: '#E2E8F0',
+                        borderBottomWidth: 4,
+                        borderBottomColor: '#CBD5E1',
+                        shadowColor: '#000', 
+                        shadowOffset: { width: 0, height: 6 }, 
+                        shadowOpacity: 0.08, 
+                        shadowRadius: 12, 
+                        elevation: 4 
+                    }}
                 >
-                    <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <Path d="M5 12h14M12 5l7 7-7 7" />
-                    </Svg>
-                    <Text style={styles.blackConfirmText}>Confirm</Text>
-                </TouchableOpacity>
-            </View>
-        </Animated.View>
+                    {selectedSpots.length > 0 ? (
+                        <View style={styles.prefSection}>
+                            <View style={[styles.prefSectionHeader, { marginBottom: 12 }]}>
+                                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M20 6 9 17l-5-5" />
+                                </Svg>
+                                <Text style={[styles.prefSectionTitle, { color: '#1E293B' }]}>Spots Selected</Text>
+                            </View>
+                            <View style={[styles.tagGrid, { gap: 8 }]}>
+                                <View style={[styles.tagChip, styles.tagChipSelected, { flexDirection: 'row', gap: 6, backgroundColor: '#ECFDF5', borderColor: '#10B981' }]}>
+                                    <Text style={{ fontSize: 16 }}>📍</Text>
+                                    <Text style={[styles.tagText, styles.tagTextSelected, { color: '#059669' }]}>{selectedSpots.length} {selectedSpots.length === 1 ? 'spot' : 'spots'} ready</Text>
+                                </View>
+                            </View>
+                        </View>
+                    ) : (
+                        <View style={styles.prefSection}>
+                            <View style={[styles.prefSectionHeader, { marginBottom: 16 }]}>
+                                <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38BDF8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                    <Path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+                                    <Path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z" />
+                                    <Path d="M5 17l.6 1.4L7 19l-1.4.6L5 21l-.6-1.4L3 19l1.4-.6L5 21z" />
+                                </Svg>
+                                <Text style={[styles.prefSectionTitle, { color: '#1E293B' }]}>Trip Preferences</Text>
+                            </View>
+                            <View style={styles.tagGrid}>
+                                {[
+                                    { name: 'Popular', icon: '📌' },
+                                    { name: 'Museum', icon: '🎨' },
+                                    { name: 'Nature', icon: '⛰️' },
+                                    { name: 'Foodie', icon: '🍕' },
+                                    { name: 'History', icon: '🏛️' },
+                                    { name: 'Shopping', icon: '🛍️' },
+                                ].map((tag, idx) => {
+                                    const isSelected = selectedPrefs.includes(tag.name);
+                                    return (
+                                        <TouchableOpacity
+                                            key={idx}
+                                            style={[styles.tagChip, isSelected && styles.tagChipSelected]}
+                                            onPress={() => {
+                                                setSelectedPrefs(prev =>
+                                                    prev.includes(tag.name)
+                                                        ? prev.filter(p => p !== tag.name)
+                                                        : [...prev, tag.name]
+                                                );
+                                            }}
+                                        >
+                                            <Text style={styles.tagIcon}>{tag.icon}</Text>
+                                            <Text style={[styles.tagText, isSelected && styles.tagTextSelected]}>{tag.name}</Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </View>
+                        </View>
+                    )}
+                </Animated.View>
+
+                <Animated.View entering={FadeInDown.delay(100).springify().damping(18)} layout={LinearTransition.springify().damping(18)}>
+                    <TouchableOpacity
+                        style={[styles.blackContinueButton, { marginTop: 32, marginBottom: 20 }]}
+                        onPress={() => {
+                            if (selectedSpots.length > 0) {
+                                handlePlanTrip();
+                            } else {
+                                setStep('discoverSpots');
+                                fetchDiscoverPlaces();
+                            }
+                        }}
+                    >
+                        <Svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <Path d="M5 12h14M12 5l7 7-7 7" />
+                        </Svg>
+                        <Text style={styles.blackContinueText}>{ selectedSpots.length > 0 ? 'Plan Trip' : 'Plan Trip' }</Text>
+                    </TouchableOpacity>
+                </Animated.View>
+                </>
+            )}
+            </Animated.View>
+        </BottomSheetScrollView>
     );
+
 
     // Preference name -> backend interest name mapping
     const PREF_TO_INTEREST = {
@@ -1180,7 +1166,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                                         <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)} activeOpacity={0.7} delayPressIn={100}>
                                                             <Text style={styles.spotNumber}>{globalIdx}.</Text>
                                                             {spot.photoUrl ? (
-                                                                <Image source={{ uri: spot.photoUrl }} style={styles.spotImage} />
+                                                        <FastImage source={{ uri: spot.photoUrl, priority: FastImage.priority.normal }} style={styles.spotImage} resizeMode={FastImage.resizeMode.cover} />
                                                             ) : (
                                                                 <View style={[styles.spotImage, styles.spotImagePlaceholder]}>
                                                                     <Text style={styles.spotImagePlaceholderText}>📍</Text>
@@ -1414,10 +1400,9 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             snapPoints={snapPoints}
             enableDynamicSizing={false}
             enablePanDownToClose={true}
-            enableContentPanningGesture={step !== 'howManyDays'}
+            enableContentPanningGesture={true}
             keyboardBehavior="interactive"
             keyboardBlurBehavior="restore"
-            backdropComponent={renderBackdrop}
             backgroundStyle={step === 'discoverSpots' ? styles.sheetBackgroundWhite : styles.sheetBackground}
             handleIndicatorStyle={styles.handleIndicator}
             containerStyle={{ zIndex: 100 }}
@@ -1448,23 +1433,10 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             }}
             animationConfigs={animationConfigs}
         >
-            <View style={[styles.container, { height: FULL_SHEET_HEIGHT }]}>
-
-                {/* Gradient background — visible on all steps except discovery */}
-                {step !== 'discoverSpots' && (
-                    <LinearGradient
-                        colors={['#F5F3FF', '#E0E7FF', '#BAE6FD', '#A7F3D0']}
-                        locations={[0, 0.3, 0.65, 1]}
-                        start={{ x: 0.5, y: 0 }}
-                        end={{ x: 0.5, y: 1 }}
-                        style={styles.homeGradient}
-                        pointerEvents="none"
-                    />
-                )}
+            <View style={[styles.container, { height: FULL_SHEET_HEIGHT, backgroundColor: '#F8FAFC' }]}>
 
                 {step === 'home' && renderHome()}
                 {step === 'preferences' && renderPreferences()}
-                {step === 'howManyDays' && renderHowManyDays()}
                 {step === 'discoverSpots' && renderDiscoverSpots()}
             </View>
         </BottomSheet>
@@ -1473,7 +1445,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
 
 const styles = StyleSheet.create({
     sheetBackground: {
-        backgroundColor: '#F5F3FF',
+        backgroundColor: '#FFFFFF',
         borderTopLeftRadius: 36,
         borderTopRightRadius: 36,
     },
@@ -1567,38 +1539,43 @@ const styles = StyleSheet.create({
         paddingHorizontal: 22,
     },
     footerTitle: {
-        fontSize: 52,
+        fontSize: 40,
         fontFamily: FONT_SERIF,
-        ...Platform.select({ ios: { fontStyle: 'italic', fontWeight: '600' }, android: {} }),
+        ...Platform.select({ ios: { fontWeight: '600', fontStyle: 'italic' }, android: {} }),
+        lineHeight: 46,
         color: '#0F172A',
-        marginBottom: 10,
         letterSpacing: -0.5,
-        lineHeight: 60,
     },
     footerSubtitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        color: 'rgba(12, 23, 46, 0.6)',
-        marginBottom: 16,
+        fontSize: 16,
+        fontFamily: FONT_DISPLAY,
+        fontWeight: '500',
+        color: '#64748B',
+        marginBottom: 20,
     },
     searchBar: {
         backgroundColor: '#FFFFFF',
-        height: 52,
-        borderRadius: 26,
+        height: 58,
+        borderRadius: 20,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        elevation: 4,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        borderBottomWidth: 4,
+        borderBottomColor: '#CBD5E1',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowRadius: 10,
+        elevation: 4,
     },
     searchIconContainer: {
         marginRight: 10,
     },
     searchText: {
         fontSize: 16,
+        fontFamily: FONT_DISPLAY_MEDIUM,
         fontWeight: '700',
         color: '#0F172A',
     },
@@ -1624,6 +1601,7 @@ const styles = StyleSheet.create({
     searchInput: {
         flex: 1,
         fontSize: 17,
+        fontFamily: FONT_DISPLAY_MEDIUM,
         fontWeight: '600',
         color: '#0F172A',
         paddingVertical: 10,
@@ -1673,13 +1651,22 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 24,
-        paddingVertical: 14,
-        marginHorizontal: 20,
-        marginBottom: 40,
-        marginTop: 20,
-        backgroundColor: 'rgba(15, 23, 42, 0.04)',
-        borderRadius: 16,
+        paddingHorizontal: 20,
+        paddingVertical: 16,
+        marginHorizontal: 0,
+        marginBottom: 20,
+        marginTop: 10,
+        backgroundColor: '#FFFFFF',
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        borderBottomWidth: 4,
+        borderBottomColor: '#CBD5E1',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 3,
     },
     selectedLocationInfo: {
         flexDirection: 'row',
@@ -1732,55 +1719,64 @@ const styles = StyleSheet.create({
         marginBottom: 32,
     },
     tagChip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.6)',
-        paddingHorizontal: 12,
-        paddingVertical: 14,
-        borderRadius: 24,
         flexDirection: 'row',
         alignItems: 'center',
-        borderWidth: 0,
-        borderColor: 'transparent',
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        flexGrow: 0,
-        flexShrink: 0,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderRadius: 18,
+        backgroundColor: '#FFFFFF',
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        borderBottomWidth: 3,
+        borderBottomColor: '#CBD5E1',
         marginRight: 10,
         marginBottom: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        elevation: 2,
     },
     tagIcon: {
-        fontSize: 15,
+        fontSize: 16,
         marginRight: 8,
     },
     tagText: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#0F172A',
+        fontSize: 14,
+        fontFamily: FONT_DISPLAY_BOLD,
+        fontWeight: '700',
+        color: '#64748B',
     },
     tagChipSelected: {
-        borderColor: '#0F172A',
-        backgroundColor: '#FFFFFF',
-        borderWidth: 2,
-        paddingHorizontal: 10,
-        paddingVertical: 12,
+        backgroundColor: '#0F172A',
+        borderColor: '#334155',
+        borderBottomColor: '#000000',
     },
     tagTextSelected: {
-        fontWeight: '600',
+        color: '#FFFFFF',
     },
 
     blackContinueButton: {
         backgroundColor: '#000000',
-        height: 56,
-        borderRadius: 28,
+        height: 58,
+        borderRadius: 20,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 10,
+        gap: 12,
+        borderWidth: 1,
+        borderColor: '#334155',
+        borderBottomWidth: 5,
+        borderBottomColor: '#0F172A',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 5,
     },
     blackContinueText: {
-        fontSize: 17,
+        fontSize: 18,
+        fontFamily: FONT_DISPLAY_BOLD,
         fontWeight: '700',
         color: '#FFFFFF',
     },
@@ -1794,7 +1790,8 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     prefSectionTitle: {
-        fontSize: 22,
+        fontSize: 20,
+        fontFamily: FONT_DISPLAY_BOLD,
         fontWeight: '800',
         color: '#0F172A',
     },
@@ -1870,11 +1867,13 @@ const styles = StyleSheet.create({
     },
     segmentTextInactive: {
         fontSize: 14,
+        fontFamily: FONT_DISPLAY_MEDIUM,
         fontWeight: '600',
         color: 'rgba(15, 23, 42, 0.4)',
     },
     segmentTextActive: {
         fontSize: 14,
+        fontFamily: FONT_DISPLAY_BOLD,
         fontWeight: '700',
         color: '#0F172A',
     },
@@ -1920,7 +1919,7 @@ const styles = StyleSheet.create({
     // Discover Spots Styles
     discoverHeader: {
         paddingHorizontal: 24,
-        paddingTop: 8,
+        paddingTop: 20,
     },
     discoverTitle: {
         fontSize: 22,
@@ -1952,6 +1951,7 @@ const styles = StyleSheet.create({
     },
     categoryText: {
         fontSize: 13,
+        fontFamily: FONT_DISPLAY_MEDIUM,
         fontWeight: '600',
         color: '#64748B',
     },
@@ -2188,6 +2188,68 @@ const styles = StyleSheet.create({
     skeletonCheck: {
         backgroundColor: '#E2E8F0',
         borderColor: '#E2E8F0',
+    },
+    stepperButton: {
+        width: 52,
+        height: 52,
+        borderRadius: 16,
+        backgroundColor: '#FFFFFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        borderBottomWidth: 3,
+        borderBottomColor: '#CBD5E1',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    stepperText: {
+        fontSize: 24,
+        fontFamily: FONT_DISPLAY_BOLD,
+        fontWeight: '600',
+        color: '#0F172A',
+    },
+    segmentContainerInline: {
+        flexDirection: 'row',
+        backgroundColor: '#FFFFFF',
+        borderRadius: 14,
+        padding: 4,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        borderBottomWidth: 2,
+        borderBottomColor: '#CBD5E1',
+    },
+    segmentItemInline: {
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 16,
+    },
+    segmentItemActiveInline: {
+        backgroundColor: '#FFFFFF',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    segmentTextActiveInline: {
+        fontSize: 14,
+        fontFamily: FONT_DISPLAY_BOLD,
+        fontWeight: '700',
+        color: '#0F172A',
+    },
+    segmentTextInactiveInline: {
+        fontSize: 14,
+        fontFamily: FONT_DISPLAY_MEDIUM,
+        fontWeight: '600',
+        color: '#64748B',
+    },
+    calendarContainerInline: {
+        marginTop: 8,
+        marginHorizontal: -16,
     },
 });
 

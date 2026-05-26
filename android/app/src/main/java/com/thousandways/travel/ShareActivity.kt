@@ -11,6 +11,13 @@ class ShareActivity : ReactActivity() {
 
   override fun getMainComponentName(): String = "ShareMenu"
 
+  override fun onCreate(savedInstanceState: Bundle?) {
+      super.onCreate(savedInstanceState)
+      // Suppress the default activity enter transition to avoid black flash
+      @Suppress("DEPRECATION")
+      overridePendingTransition(0, 0)
+  }
+
   override fun createReactActivityDelegate(): ReactActivityDelegate =
       object : DefaultReactActivityDelegate(this, "ShareMenu", fabricEnabled) {
           override fun getLaunchOptions(): Bundle? {
@@ -32,5 +39,12 @@ class ShareActivity : ReactActivity() {
   override fun onNewIntent(intent: Intent) {
       super.onNewIntent(intent)
       setIntent(intent)
+  }
+
+  override fun finish() {
+      super.finish()
+      // Suppress exit transition — the RN component handles its own slide-down animation
+      @Suppress("DEPRECATION")
+      overridePendingTransition(0, 0)
   }
 }

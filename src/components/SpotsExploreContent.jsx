@@ -1,10 +1,11 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Image, StyleSheet, Keyboard, Dimensions, Platform, Modal, FlatList } from 'react-native';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet, Keyboard, Dimensions, Platform, Modal, FlatList } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
 import { BottomSheetView, BottomSheetScrollView, BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import Animated, { withTiming, Easing } from 'react-native-reanimated';
 import Svg, { Path, Circle, Rect, Polyline, Line, Check, Defs, LinearGradient as SvgLinearGradient, Stop } from 'react-native-svg';
 import LinearGradient from 'react-native-linear-gradient';
+import FastImage from '@d11/react-native-fast-image';
 import { useUserStore } from '../store/userStore';
 
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -28,8 +29,8 @@ const IMPORT_GUIDE_STEPS = [
     },
     {
         gif: require('../assets/2.gif'),
-        title: 'Tap on the Where App',
-        description: 'Tap on the Where app and we\'ll extract all the places for you!',
+        title: 'Tap on the Odyssey App',
+        description: 'Tap on the Odyssey app and we\'ll extract all the places for you!',
         emoji: '✨',
         accent: '#10B981',
         accentBg: '#ECFDF5',
@@ -70,19 +71,207 @@ const SpotsExploreContent = ({
     tabBarHeight,
     tabBarTranslateY,
     setShowProfile,
-    setShowPremiumOverlay
+    setShowPremiumOverlay,
+    searchBarSpotlightRef,
+    importedBtnSpotlightRef,
 }) => {
     const isPremium = useUserStore((state) => state.isPremium);
     const [showImportGuide, setShowImportGuide] = useState(false);
     const [guideStep, setGuideStep] = useState(0);
     const guideFlatListRef = useRef(null);
-    
+
+    // ── Virtualized list render functions ──
+
+    const renderSpotsHeader = useCallback(() => (
+        <View style={styles.mySpotsHeader}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <View>
+                    <Text style={styles.mySpotsTitle}>My Spots</Text>
+                    <Text style={styles.mySpotsSubtitle}>
+                        {totalSpotsCount} {totalSpotsCount === 1 ? 'Spot' : 'Spots'} Saved
+                    </Text>
+                </View>
+                <TouchableOpacity 
+                    ref={importedBtnSpotlightRef}
+                    style={styles.importedBtn} 
+                    activeOpacity={0.8} 
+                    onPress={() => setSavedViewMode('imports')}
+                >
+                    <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
+                        <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <Polyline points="7 10 12 15 17 10" />
+                        <Line x1="12" y1="15" x2="12" y2="3" />
+                    </Svg>
+                    <View style={styles.importedBtnBadge}>
+                        <LinearGradient
+                            colors={['#8B5CF6', '#D946EF', '#F43F5E']}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={[StyleSheet.absoluteFill, { borderRadius: 8 }]}
+                        />
+                        <Text style={styles.importedBtnBadgeText}>{totalImportsCount}</Text>
+                    </View>
+                    <Text style={styles.importedBtnText}> Imported</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+    ), [totalSpotsCount, totalImportsCount, setSavedViewMode, importedBtnSpotlightRef]);
+
+    const renderSpotsEmpty = useCallback(() => (
+        <View style={styles.emptySpots}>
+            <Text style={styles.emptySpotsText}>No saved spots yet</Text>
+            <Text style={styles.emptySpotsHint}>Save spots for your next trips to see them here</Text>
+        </View>
+    ), []);
+
+    const renderCountrySection = useCallback(({ item }) => {
+        const { country, cities, cityCount, spotCount } = item;
+        return (
+            <View style={styles.countrySection}>
+                <View style={styles.countryHeader}>
+                    <Text style={styles.countryTitle}>{country}</Text>
+                    <Text style={styles.countrySubtitle}>{cityCount} {cityCount === 1 ? 'City' : 'Cities'} • {spotCount} {spotCount === 1 ? 'Spot' : 'Spots'}</Text>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cityCardsRow}>
+                    {Object.entries(cities).map(([city, cityData]) => {
+                        const cityKey = `${country}::${city}`;
+                        return (
+                            <TouchableOpacity key={cityKey} activeOpacity={0.85} onPress={() => { bottomSheetRef.current?.close(); tabBarTranslateY.value = withTiming(tabBarHeight, { duration: 400, easing: Easing.bezier(0.33, 1, 0.68, 1) }); setTimeout(() => { createTripSheetRef.current?.openWithSavedSpots(country, city, cities); }, 350); }} style={styles.cityCard}>
+                                {cityData.cityPhoto ? <FastImage source={{ uri: cityData.cityPhoto, priority: FastImage.priority.high }} style={styles.cityCardImage} resizeMode={FastImage.resizeMode.cover} /> : <View style={styles.cityCardImagePlaceholder}><Text style={styles.cityCardEmoji}>🏙️</Text></View>}
+                                <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.9)']} locations={[0, 0.6, 1]} style={styles.cityCardGradient} />
+                                <View style={styles.cityCardInfo}>
+                                    <Text style={styles.cityCardTitle} numberOfLines={1}>{city}</Text>
+                                    <Text style={styles.cityCardSubtitle}>{cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}</Text>
+                                </View>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+            </View>
+        );
+    }, [bottomSheetRef, createTripSheetRef, tabBarTranslateY, tabBarHeight]);
+
+    const renderImportsHeader = useCallback(() => (
+        <View style={styles.mySpotsHeader}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TouchableOpacity 
+                    style={styles.backBtn} 
+                    activeOpacity={0.8} 
+                    onPress={() => setSavedViewMode('spots')}
+                >
+                    <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <Path d="m15 18-6-6 6-6"/>
+                    </Svg>
+                </TouchableOpacity>
+                <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View>
+                        <Text style={styles.mySpotsTitle}>Imported Reels & TikToks</Text>
+                        {!isPremium ? (
+                            <View style={styles.freeLimitContainer}>
+                                <View style={styles.freeLimitProgressTrack}>
+                                    <View style={[styles.freeLimitProgressBar, { width: `${Math.min((totalImportsCount / 5) * 100, 100)}%` }]} />
+                                </View>
+                                <Text style={styles.freeLimitText}>
+                                    {totalImportsCount >= 5 ? '5 / 5 free imports used' : `${totalImportsCount} / 5 free imports saved`}
+                                </Text>
+                            </View>
+                        ) : (
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                                <View style={styles.premiumBadgeIcon}>
+                                    <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                        <Path d="M20 6 9 17l-5-5"/>
+                                    </Svg>
+                                </View>
+                                <Text style={styles.premiumText}>Unlimited Imports</Text>
+                                <Text style={styles.premiumCountText}> • {totalImportsCount} Saved</Text>
+                            </View>
+                        )}
+                    </View>
+                    {!isPremium && (
+                        <TouchableOpacity 
+                            style={styles.upgradeBtnSmall} 
+                            activeOpacity={0.8}
+                            onPress={() => setShowPremiumOverlay(true)}
+                        >
+                            <View style={styles.upgradeBtnSmallInner}>
+                                <Svg width="11" height="11" viewBox="0 0 24 24" fill="#FFFFFF" style={{ marginRight: 4 }}>
+                                    <Path d="M5 16L3 5L8.5 10L12 4L15.5 10L21 5L19 16H5ZM19 19C19 19.5523 18.5523 20 18 20H6C5.44772 20 5 19.5523 5 19V18H19V19Z" />
+                                </Svg>
+                                <Text style={styles.upgradeBtnSmallText}>Upgrade</Text>
+                            </View>
+                        </TouchableOpacity>
+                    )}
+                </View>
+            </View>
+        </View>
+    ), [isPremium, totalImportsCount, setSavedViewMode, setShowPremiumOverlay]);
+
+    const renderImportsEmpty = useCallback(() => (
+        <View style={styles.emptyImports}>
+            <View style={styles.emptyImportsIconWrap}>
+                <Text style={{ fontSize: 36 }}>🎬</Text>
+            </View>
+            <Text style={styles.emptyImportsTitle}>No imported videos yet</Text>
+            <Text style={styles.emptyImportsDesc}>
+                Save travel reels & TikToks here.{'\n'}We'll extract all the places for you!
+            </Text>
+            <TouchableOpacity
+                style={styles.emptyImportsGuideBtn}
+                activeOpacity={0.8}
+                onPress={() => {
+                    setGuideStep(0);
+                    setShowImportGuide(true);
+                }}
+            >
+                <Text style={styles.emptyImportsGuideBtnText}>See How It Works</Text>
+                <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <Path d="m9 18 6-6-6-6"/>
+                </Svg>
+            </TouchableOpacity>
+        </View>
+    ), []);
+
+    const renderImportCard = useCallback(({ item }) => {
+        const importTitle = item.title || item.destination || 'Untitled import';
+        return (
+            <TouchableOpacity style={styles.importCard} activeOpacity={0.85} onPress={() => onImportPress(item)}>
+                {item.thumbnailUrl ? (
+                    <FastImage 
+                        source={{ 
+                            uri: item.thumbnailUrl,
+                            priority: FastImage.priority.normal,
+                            headers: {
+                                Referer: item.platform === 'instagram' ? 'https://www.instagram.com/' : 
+                                         item.platform === 'tiktok' ? 'https://www.tiktok.com/' : 
+                                         'https://www.google.com/'
+                            }
+                        }} 
+                        style={styles.importCardImage}
+                        resizeMode={FastImage.resizeMode.cover}
+                    />
+                ) : (
+                    <View style={styles.importCardImagePlaceholder}>
+                        <Text style={styles.importCardImageEmoji}>{item.platform === 'tiktok' ? '♪' : '▣'}</Text>
+                    </View>
+                )}
+                <View style={styles.importCardInfo}>
+                    <View style={styles.importCardTopRow}>
+                        <Text style={styles.importPlatformPill}>{item.platform === 'tiktok' ? 'TikTok' : item.platform === 'instagram' ? 'Reel' : 'Video'}</Text>
+                        <Text style={styles.importCardMeta}>{item.totalExtractedPlaces || 0} extracted </Text>
+                    </View>
+                    <Text style={styles.importCardTitle} numberOfLines={2}>{importTitle}</Text>
+                    {!!item.caption && <Text style={styles.importCardCaption} numberOfLines={2}>{item.caption}</Text>}
+                </View>
+            </TouchableOpacity>
+        );
+    }, [onImportPress]);
+
     return (
         <View style={styles.sheetContent}>
             {/* Search Row */}
             {savedViewMode === 'spots' && (
                 <View style={styles.sheetSearchRow}>
-                    <View style={styles.sheetSearchBar}>
+                    <View ref={searchBarSpotlightRef} style={styles.sheetSearchBar}>
                     {socialMode === 'instagram' ? (
                         <Svg width="17" height="17" viewBox="0 0 24 24" fill="none">
                             <Rect x="2" y="2" width="20" height="20" rx="5" stroke="#E1306C" strokeWidth="2" />
@@ -218,187 +407,39 @@ const SpotsExploreContent = ({
                                     );
                                 }} />
                             ) : (
-                                <View style={styles.emptySpots}><Image source={require('../assets/spots.png')} style={[styles.emptySpotsImage, { width: 140, height: 140 }]} resizeMode="contain" /><Text style={[styles.emptySpotsText, { marginTop: 0 }]}>No results found</Text><Text style={styles.emptySpotsHint}>Try a different search term</Text></View>
+                                <View style={styles.emptySpots}><Text style={[styles.emptySpotsText, { marginTop: 0 }]}>No results found</Text><Text style={styles.emptySpotsHint}>Try a different search term</Text></View>
                             )}
                         </>
                     )}
                 </View>
+            ) : savedViewMode === 'spots' ? (
+                <BottomSheetFlatList
+                    data={mySpotsCountries}
+                    keyExtractor={(item) => item.country}
+                    renderItem={renderCountrySection}
+                    ListHeaderComponent={renderSpotsHeader}
+                    ListEmptyComponent={renderSpotsEmpty}
+                    style={styles.mySpotsList}
+                    contentContainerStyle={styles.mySpotsListContent}
+                    showsVerticalScrollIndicator={false}
+                    initialNumToRender={3}
+                    maxToRenderPerBatch={3}
+                    windowSize={5}
+                />
             ) : (
-                <BottomSheetScrollView style={styles.mySpotsList} contentContainerStyle={[styles.mySpotsListContent, savedViewMode !== 'spots' && { paddingTop: 24 }]} showsVerticalScrollIndicator={false}>
-                    <View style={styles.mySpotsHeader}>
-                        {savedViewMode === 'spots' ? (
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <View>
-                                    <Text style={styles.mySpotsTitle}>My Spots</Text>
-                                    <Text style={styles.mySpotsSubtitle}>
-                                        {totalSpotsCount} {totalSpotsCount === 1 ? 'Spot' : 'Spots'} Saved
-                                    </Text>
-                                </View>
-                                <TouchableOpacity 
-                                    style={styles.importedBtn} 
-                                    activeOpacity={0.8} 
-                                    onPress={() => setSavedViewMode('imports')}
-                                >
-                                    <Svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 6 }}>
-                                        <Path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                                        <Polyline points="7 10 12 15 17 10" />
-                                        <Line x1="12" y1="15" x2="12" y2="3" />
-                                    </Svg>
-                                    <View style={styles.importedBtnBadge}>
-                                        <LinearGradient
-                                            colors={['#8B5CF6', '#D946EF', '#F43F5E']}
-                                            start={{ x: 0, y: 0 }}
-                                            end={{ x: 1, y: 1 }}
-                                            style={[StyleSheet.absoluteFill, { borderRadius: 8 }]}
-                                        />
-                                        <Text style={styles.importedBtnBadgeText}>{totalImportsCount}</Text>
-                                    </View>
-                                    <Text style={styles.importedBtnText}> Imported</Text>
-                                </TouchableOpacity>
-                            </View>
-                        ) : (
-                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                                <TouchableOpacity 
-                                    style={styles.backBtn} 
-                                    activeOpacity={0.8} 
-                                    onPress={() => setSavedViewMode('spots')}
-                                >
-                                    <Svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <Path d="m15 18-6-6 6-6"/>
-                                    </Svg>
-                                </TouchableOpacity>
-                                <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <View>
-                                        <Text style={styles.mySpotsTitle}>Imported Reels & TikToks</Text>
-                                        {!isPremium ? (
-                                            <View style={styles.freeLimitContainer}>
-                                                <View style={styles.freeLimitProgressTrack}>
-                                                    <View style={[styles.freeLimitProgressBar, { width: `${Math.min((totalImportsCount / 5) * 100, 100)}%` }]} />
-                                                </View>
-                                                <Text style={styles.freeLimitText}>
-                                                    {totalImportsCount >= 5 ? '5 / 5 free imports used' : `${totalImportsCount} / 5 free imports saved`}
-                                                </Text>
-                                            </View>
-                                        ) : (
-                                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                                                <View style={styles.premiumBadgeIcon}>
-                                                    <Svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                                        <Path d="M20 6 9 17l-5-5"/>
-                                                    </Svg>
-                                                </View>
-                                                <Text style={styles.premiumText}>Unlimited Imports</Text>
-                                                <Text style={styles.premiumCountText}> • {totalImportsCount} Saved</Text>
-                                            </View>
-                                        )}
-                                    </View>
-                                    {!isPremium && (
-                                        <TouchableOpacity 
-                                            style={styles.upgradeBtnSmall} 
-                                            activeOpacity={0.8}
-                                            onPress={() => setShowPremiumOverlay(true)}
-                                        >
-                                            <View style={styles.upgradeBtnSmallInner}>
-                                                <Svg width="11" height="11" viewBox="0 0 24 24" fill="#FFFFFF" style={{ marginRight: 4 }}>
-                                                    <Path d="M5 16L3 5L8.5 10L12 4L15.5 10L21 5L19 16H5ZM19 19C19 19.5523 18.5523 20 18 20H6C5.44772 20 5 19.5523 5 19V18H19V19Z" />
-                                                </Svg>
-                                                <Text style={styles.upgradeBtnSmallText}>Upgrade</Text>
-                                            </View>
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
-                            </View>
-                        )}
-                    </View>
-                    {savedViewMode === 'spots' ? (
-                        mySpotsCountries.length === 0 ? (
-                            <View style={styles.emptySpots}>
-                                <Image source={require('../assets/spots.png')} style={styles.emptySpotsImage} />
-                                <Text style={styles.emptySpotsText}>No saved spots yet</Text>
-                                <Text style={styles.emptySpotsHint}>Save spots from your trips to see them here</Text>
-                            </View>
-                        ) : (
-                            mySpotsCountries.map((item) => {
-                                const { country, cities, cityCount, spotCount } = item;
-                                return (
-                                    <View key={country} style={styles.countrySection}>
-                                        <View style={styles.countryHeader}><Text style={styles.countryTitle}>{country}</Text><Text style={styles.countrySubtitle}>{cityCount} {cityCount === 1 ? 'City' : 'Cities'} • {spotCount} {spotCount === 1 ? 'Spot' : 'Spots'}</Text></View>
-                                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cityCardsRow}>
-                                            {Object.entries(cities).map(([city, cityData]) => {
-                                                const cityKey = `${country}::${city}`;
-                                                return (
-                                                    <TouchableOpacity key={cityKey} activeOpacity={0.85} onPress={() => { bottomSheetRef.current?.close(); tabBarTranslateY.value = withTiming(tabBarHeight, { duration: 400, easing: Easing.bezier(0.33, 1, 0.68, 1) }); setTimeout(() => { createTripSheetRef.current?.openWithSavedSpots(country, city, cities); }, 350); }} style={styles.cityCard}>
-                                                        {cityData.cityPhoto ? <Image source={{ uri: cityData.cityPhoto }} style={styles.cityCardImage} /> : <View style={styles.cityCardImagePlaceholder}><Text style={styles.cityCardEmoji}>🏙️</Text></View>}
-                                                        <LinearGradient colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.9)']} locations={[0, 0.6, 1]} style={styles.cityCardGradient} />
-                                                        <View style={styles.cityCardInfo}>
-                                                            <Text style={styles.cityCardTitle} numberOfLines={1}>{city}</Text>
-                                                            <Text style={styles.cityCardSubtitle}>{cityData.spots.length} {cityData.spots.length === 1 ? 'Spot' : 'Spots'}</Text>
-                                                        </View>
-                                                    </TouchableOpacity>
-                                                );
-                                            })}
-                                        </ScrollView>
-                                    </View>
-                                );
-                            })
-                        )
-                    ) : importedVideos.length === 0 ? (
-                        <View style={styles.emptyImports}>
-                            <View style={styles.emptyImportsIconWrap}>
-                                <Text style={{ fontSize: 36 }}>🎬</Text>
-                            </View>
-                            <Text style={styles.emptyImportsTitle}>No imported videos yet</Text>
-                            <Text style={styles.emptyImportsDesc}>
-                                Save travel reels & TikToks here.{'\n'}We'll extract all the places for you!
-                            </Text>
-                            <TouchableOpacity
-                                style={styles.emptyImportsGuideBtn}
-                                activeOpacity={0.8}
-                                onPress={() => {
-                                    setGuideStep(0);
-                                    setShowImportGuide(true);
-                                }}
-                            >
-                                <Text style={styles.emptyImportsGuideBtnText}>See How It Works</Text>
-                                <Svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B5CF6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                    <Path d="m9 18 6-6-6-6"/>
-                                </Svg>
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        importedVideos.map((item) => {
-                            const importTitle = item.title || item.destination || 'Untitled import';
-                            return (
-                                <TouchableOpacity key={item._id} style={styles.importCard} activeOpacity={0.85} onPress={() => onImportPress(item)}>
-                                    {item.thumbnailUrl ? (
-                                        <Image 
-                                            source={{ 
-                                                uri: item.thumbnailUrl,
-                                                headers: {
-                                                    Referer: item.platform === 'instagram' ? 'https://www.instagram.com/' : 
-                                                             item.platform === 'tiktok' ? 'https://www.tiktok.com/' : 
-                                                             'https://www.google.com/'
-                                                }
-                                            }} 
-                                            style={styles.importCardImage} 
-                                        />
-                                    ) : (
-                                        <View style={styles.importCardImagePlaceholder}>
-                                            <Text style={styles.importCardImageEmoji}>{item.platform === 'tiktok' ? '♪' : '▣'}</Text>
-                                        </View>
-                                    )}
-                                    <View style={styles.importCardInfo}>
-                                        <View style={styles.importCardTopRow}>
-                                            <Text style={styles.importPlatformPill}>{item.platform === 'tiktok' ? 'TikTok' : item.platform === 'instagram' ? 'Reel' : 'Video'}</Text>
-                                            <Text style={styles.importCardMeta}>{item.totalExtractedPlaces || 0} extracted </Text>
-                                        </View>
-                                        <Text style={styles.importCardTitle} numberOfLines={2}>{importTitle}</Text>
-                                        {!!item.caption && <Text style={styles.importCardCaption} numberOfLines={2}>{item.caption}</Text>}
-                                    </View>
-                                </TouchableOpacity>
-                            );
-                        })
-                    )}
-                </BottomSheetScrollView>
+                <BottomSheetFlatList
+                    data={importedVideos}
+                    keyExtractor={(item) => item._id}
+                    renderItem={renderImportCard}
+                    ListHeaderComponent={renderImportsHeader}
+                    ListEmptyComponent={renderImportsEmpty}
+                    style={styles.mySpotsList}
+                    contentContainerStyle={[styles.mySpotsListContent, { paddingTop: 24 }]}
+                    showsVerticalScrollIndicator={false}
+                    initialNumToRender={5}
+                    maxToRenderPerBatch={3}
+                    windowSize={5}
+                />
             )}
 
             {/* Import Guide Modal */}
@@ -452,10 +493,10 @@ const SpotsExploreContent = ({
                                 <View style={styles.guideSlide}>
                                     <View style={[styles.guideGifWrap, { borderColor: item.accent + '20' }]}>
                                         <View style={styles.guideGifInner}>
-                                            <Image
+                                            <FastImage
                                                 source={item.gif}
                                                 style={styles.guideGif}
-                                                resizeMode="cover"
+                                                resizeMode={FastImage.resizeMode.cover}
                                             />
                                         </View>
                                     </View>

@@ -57,7 +57,8 @@ export const useSavedSpots = (userId) => {
             return { grouped: {}, totalSpots: 0, placeIds: new Set() };
         },
         enabled: !!userId,
-        refetchOnWindowFocus: true,
+        staleTime: 30 * 1000, // 30 seconds
+        refetchOnWindowFocus: 'always', // Always refetch on foreground, even if data isn't stale
     });
 };
 

@@ -1,53 +1,158 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
     ActivityIndicator,
-    ScrollView,
-    Image,
     Platform,
     Dimensions,
     NativeModules,
     StatusBar,
-    DeviceEventEmitter,
     Linking,
+    Animated,
+    FlatList,
 } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { QueryClientProvider } from '@tanstack/react-query';
-import { queryClient } from '../services/queryClient';
 import Config from 'react-native-config';
 import { MMKV } from 'react-native-mmkv';
 import { extractUrl, detectPlatformFromUrl } from '../services/ShareIntent';
-import { fetchStream } from '../services/fetchStream';
-import { trackActionAndMaybeAskReview } from '../utils/reviewManager';
 
 const { ShareIntentModule } = NativeModules;
 const storage = new MMKV();
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const CARD_HEIGHT = SCREEN_HEIGHT * 0.6;
 
-const ShareMenuContent = ({ sharedUrl: initialUrl }) => {
+// Timeline step data
+const TIMELINE_STEPS = [
+    { label: 'Reel received', emoji: '🔗' },
+    { label: 'Extracting places...', emoji: '🔍' },
+    { label: 'Saving to your bucket list', emoji: '✨' },
+];
+
+/**
+ * Animated timeline step component
+ */
+const TimelineStep = ({ step, index, status, isLast }) => {
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const scaleAnim = useRef(new Animated.Value(0.8)).current;
+
+    useEffect(() => {
+        if (status !== 'pending') {
+            Animated.parallel([
+                Animated.timing(fadeAnim, {
+                    toValue: 1,
+                    duration: 400,
+                    useNativeDriver: true,
+                }),
+                Animated.spring(scaleAnim, {
+                    toValue: 1,
+                    friction: 6,
+                    tension: 120,
+                    useNativeDriver: true,
+                }),
+            ]).start();
+        }
+    }, [status]);
+
+    const isActive = status === 'active';
+    const isDone = status === 'done';
+    const isPending = status === 'pending';
+
+    return (
+        <View style={styles.timelineStep}>
+            <View style={styles.timelineIconColumn}>
+                <Animated.View
+                    style={[
+                        styles.timelineCircle,
+                        isDone && styles.timelineCircleDone,
+                        isActive && styles.timelineCircleActive,
+                        isPending && styles.timelineCirclePending,
+                        { opacity: isPending ? 0.4 : fadeAnim, transform: [{ scale: scaleAnim }] },
+                    ]}
+                >
+                    {isDone ? (
+                        <Text style={styles.timelineCheckmark}>✓</Text>
+                    ) : isActive ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                        <Text style={styles.timelineEmoji}>{step.emoji}</Text>
+                    )}
+                </Animated.View>
+                {!isLast && (
+                    <View
+                        style={[
+                            styles.timelineLine,
+                            isDone && styles.timelineLineDone,
+                            isPending && styles.timelineLinePending,
+                        ]}
+                    />
+                )}
+            </View>
+            <Animated.View
+                style={[
+                    styles.timelineContent,
+                    { opacity: isPending ? 0.4 : fadeAnim },
+                ]}
+            >
+                <Text
+                    style={[
+                        styles.timelineLabel,
+                        isDone && styles.timelineLabelDone,
+                        isActive && styles.timelineLabelActive,
+                    ]}
+                >
+                    {isDone && index === 2
+                        ? 'Saved to your bucket list'
+                        : step.label}
+                </Text>
+            </Animated.View>
+        </View>
+    );
+};
+
+/**
+ * Place card component for showing extracted places
+ */
+const PlaceCard = ({ place, index }) => (
+    <View style={styles.placeCard}>
+        <Text style={styles.placeNumber}>{index + 1}</Text>
+        {place.photoUrl ? (
+            <FastImage source={{ uri: place.photoUrl, priority: FastImage.priority.normal }} style={styles.placeImage} resizeMode={FastImage.resizeMode.cover} />
+        ) : (
+            <View style={[styles.placeImage, styles.placeImagePlaceholder]}>
+                <Text style={{ fontSize: 18 }}>📍</Text>
+            </View>
+        )}
+        <View style={styles.placeInfo}>
+            <Text style={styles.placeName} numberOfLines={1}>{place.name}</Text>
+            <Text style={styles.placeLocation} numberOfLines={1}>
+                {[place.city, place.country].filter(Boolean).join(', ')}
+            </Text>
+        </View>
+        <View style={styles.placeSavedBadge}>
+            <Text style={styles.placeSavedIcon}>✓</Text>
+        </View>
+    </View>
+);
+
+const ShareMenuContent = ({ sharedUrl: initialUrl, onClose }) => {
     const insets = useSafeAreaInsets();
-    const [status, setStatus] = useState('Analyzing link...');
-    const [isProcessing, setIsProcessing] = useState(true);
-    const [places, setPlaces] = useState([]);
-    
-    // UI states for Parity
-    const [selectedCategory, setSelectedCategory] = useState('All');
-    const [checkedSpots, setCheckedSpots] = useState(new Set());
-    
-    const [destination, setDestination] = useState('');
-    const [isSaving, setIsSaving] = useState(false);
-    const [isSaved, setIsSaved] = useState(false);
+    const [currentStep, setCurrentStep] = useState(0);
     const [error, setError] = useState(null);
-    const lastProcessedUrlRef = useRef(null);
+    const [limitReached, setLimitReached] = useState(false);
+    const [importId, setImportId] = useState(null);
+    const [extractedPlaces, setExtractedPlaces] = useState([]);
+    const [importStatus, setImportStatus] = useState(null); // 'processing' | 'completed' | 'failed'
+    const hintOpacity = useRef(new Animated.Value(0)).current;
+    const placesOpacity = useRef(new Animated.Value(0)).current;
+    const pollingRef = useRef(null);
 
-    const [currentUrl, setCurrentUrl] = useState(initialUrl);
-    const cleanUrl = useMemo(() => extractUrl(currentUrl) || currentUrl, [currentUrl]);
+    const cleanUrl = useMemo(() => extractUrl(initialUrl) || initialUrl, [initialUrl]);
     const platform = useMemo(() => detectPlatformFromUrl(cleanUrl) || 'other', [cleanUrl]);
 
     const userId = useMemo(() => {
@@ -76,347 +181,340 @@ const ShareMenuContent = ({ sharedUrl: initialUrl }) => {
         return false;
     }, []);
 
-    const [limitReached, setLimitReached] = useState(false);
+    // Poll for import status + extracted places
+    const pollImportStatus = useCallback(async (id) => {
+        try {
+            const res = await fetch(`${BACKEND_URL}/api/imports/${id}`);
+            const data = await res.json();
+            if (data?.success && data?.import) {
+                const imp = data.import;
+                setImportStatus(imp.status);
 
-    useEffect(() => {
-        const processUrl = async () => {
-            if (!cleanUrl) {
-                setError('No valid URL found');
-                setIsProcessing(false);
-                return;
-            }
-            if (lastProcessedUrlRef.current === cleanUrl) return;
-            
-            try {
-                lastProcessedUrlRef.current = cleanUrl;
-                const finalData = await new Promise((resolve, reject) => {
-                    let lastData = null;
-
-                    fetchStream(
-                        `${BACKEND_URL}/api/extract-video-places`,
-                        {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                videoUrl: cleanUrl,
-                                userId,
-                                platform,
-                                isPremium,
-                            }),
-                        },
-                        (eventType, parsed) => {
-                            if (eventType === 'progress') {
-                                setStatus(parsed.message || 'Processing...');
-                            } else if (eventType === 'place_batch') {
-                                setPlaces(prev => {
-                                    const newPlaces = parsed.places || [];
-                                    const existingNames = new Set(prev.map(p => p.name));
-                                    const uniqueNew = newPlaces.filter(p => !existingNames.has(p.name));
-                                    return [...prev, ...uniqueNew];
-                                });
-                                setStatus(`Found ${parsed.totalFound} of ~${parsed.totalExpected} places...`);
-                            } else if (eventType === 'places') {
-                                lastData = parsed;
-                            } else if (eventType === 'error') {
-                                if (parsed.code === 'IMPORT_LIMIT_REACHED') {
-                                    setLimitReached(true);
-                                    setIsProcessing(false);
-                                    resolve(null); // Don't reject — we handle this gracefully
-                                    return;
-                                }
-                                reject(new Error(parsed.message || 'Processing failed'));
-                            }
-                        },
-                        () => resolve(lastData),
-                        (error) => reject(error)
-                    );
-                });
-
-                if (finalData && finalData.places?.length > 0) {
-                    const spotsWithSelection = finalData.places.map(p => ({ ...p, isSelected: true }));
-                    setPlaces(spotsWithSelection);
-                    setCheckedSpots(new Set(spotsWithSelection.map(p => p.address || p.name)));
-                    setDestination(finalData.destination);
-                    setStatus(`Found ${finalData.places.length} spots!`);
-                } else {
-                    setStatus('No places found in this link');
+                if (imp.status === 'completed' && imp.resolvedPlaces?.length > 0) {
+                    setExtractedPlaces(imp.resolvedPlaces);
+                    // Animate steps to done
+                    setCurrentStep(3);
+                    // Show places with animation
+                    Animated.timing(placesOpacity, {
+                        toValue: 1,
+                        duration: 400,
+                        useNativeDriver: true,
+                    }).start();
+                    // Stop polling
+                    if (pollingRef.current) {
+                        clearInterval(pollingRef.current);
+                        pollingRef.current = null;
+                    }
+                } else if (imp.status === 'failed') {
+                    setError(imp.failureReason || 'Processing failed');
+                    if (pollingRef.current) {
+                        clearInterval(pollingRef.current);
+                        pollingRef.current = null;
+                    }
                 }
-            } catch (err) {
-                setError(prev => prev ? prev : err.message);
-            } finally {
-                setIsProcessing(false);
             }
-        };
+        } catch (_) {
+            // Silently ignore poll errors — user can close anytime
+        }
+    }, [placesOpacity]);
 
-        processUrl();
-
-        // Listen for new share intents while overlay is open
-        const sub = DeviceEventEmitter.addListener('onShareIntentReceived', (newText) => {
-            if (newText) {
-                setCurrentUrl(newText);
-                setIsProcessing(true);
-                setPlaces([]);
-                setDestination('');
-                setError(null);
-            }
-        });
-
-        return () => sub.remove();
-    }, [cleanUrl, userId, platform]);
-
-    const handleSave = async () => {
-        if (!userId) {
-            setError('Please sign in to save spots');
+    // Fire-and-forget: send URL to backend immediately
+    useEffect(() => {
+        if (!cleanUrl) {
+            setError('No valid URL found');
             return;
         }
 
-        const spotsToSave = places.filter(p => checkedSpots.has(p.address || p.name));
-        if (spotsToSave.length === 0) return;
-
-        setIsSaving(true);
-        try {
-            const body = {
-                userId,
-                spots: spotsToSave.map(p => ({
-                    ...p,
-                    source: 'share_extension',
-                    sourceUrl: cleanUrl,
-                    platform: platform
-                }))
-            };
-
-            const res = await fetch(`${BACKEND_URL}/api/spots`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-
-            if (res.ok) {
-                setIsSaved(true);
-                // Track meaningful action & maybe prompt for review
-                trackActionAndMaybeAskReview();
-                setTimeout(() => {
-                    ShareIntentModule.finishActivity();
-                }, 1500);
-            } else {
-                throw new Error('Failed to save to cloud');
-            }
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setIsSaving(false);
+        if (!userId) {
+            setError('Please open the app first to sign in');
+            return;
         }
+
+        // Fire the request FIRST — only start timeline animation once accepted
+        const fireAndForget = async () => {
+            try {
+                const res = await fetch(`${BACKEND_URL}/api/extract-and-save`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        videoUrl: cleanUrl,
+                        userId,
+                        platform,
+                        isPremium,
+                    }),
+                });
+
+                const data = await res.json();
+
+                if (!res.ok) {
+                    if (data?.code === 'IMPORT_LIMIT_REACHED') {
+                        setLimitReached(true);
+                        return;
+                    }
+                    setError(data?.error || 'Something went wrong');
+                    return;
+                }
+
+                // Backend accepted — NOW start the timeline animation
+                setCurrentStep(1); // Reel received → done, Extracting → active
+
+                const id = data.importId;
+                setImportId(id);
+
+                // Animate timeline: step 1 done → step 2 active
+                setTimeout(() => setCurrentStep(2), 1500);
+
+                // Start polling for results (every 5 seconds)
+                if (id) {
+                    pollingRef.current = setInterval(() => pollImportStatus(id), 5000);
+                }
+
+            } catch (err) {
+                setError(err.message || 'Network error');
+            }
+        };
+
+        fireAndForget();
+
+        return () => {
+            if (pollingRef.current) {
+                clearInterval(pollingRef.current);
+            }
+        };
+    }, [cleanUrl, userId, platform, isPremium, pollImportStatus]);
+
+    // Animate hint text in after step 1
+    useEffect(() => {
+        if (currentStep >= 1 && !error && !limitReached) {
+            Animated.timing(hintOpacity, {
+                toValue: 1,
+                duration: 600,
+                delay: 300,
+                useNativeDriver: true,
+            }).start();
+        }
+    }, [currentStep, error, limitReached]);
+
+    const handleClose = useCallback(() => {
+        if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+        }
+        onClose();
+    }, [onClose]);
+
+    // Get step status for each timeline step
+    const getStepStatus = (index) => {
+        if (index < currentStep) return 'done';
+        if (index === currentStep) return 'active';
+        return 'pending';
     };
 
-    const handleClose = () => {
-        ShareIntentModule.finishActivity();
-    };
+    const renderPlaceItem = useCallback(({ item, index }) => (
+        <PlaceCard place={item} index={index} />
+    ), []);
 
-    // Parity Computation
-    const categories = useMemo(() => {
-        const cats = new Set(places.map(p => p.category || 'Other'));
-        return ['All', ...Array.from(cats)].sort();
-    }, [places]);
-
-    const filteredPlaces = useMemo(() => {
-        if (selectedCategory === 'All') return places;
-        return places.filter(p => (p.category || 'Other') === selectedCategory);
-    }, [places, selectedCategory]);
-
-    const groupedSections = useMemo(() => {
-        const groups = {};
-        filteredPlaces.forEach(p => {
-            const country = p.country || 'Unknown Country';
-            const city = p.city || 'Unknown City';
-            const key = `${city}, ${country}`;
-            if (!groups[key]) groups[key] = { city, country, spots: [] };
-            groups[key].spots.push(p);
-        });
-        return Object.values(groups).sort((a, b) => a.city.localeCompare(b.city));
-    }, [filteredPlaces]);
-
-    const toggleCheck = (spotId) => {
-        setCheckedSpots(prev => {
-            const next = new Set(prev);
-            if (next.has(spotId)) next.delete(spotId);
-            else next.add(spotId);
-            return next;
-        });
-    };
+    const placesCount = extractedPlaces.length;
 
     return (
-        <View style={styles.overlay}>
-            <TouchableOpacity 
-                activeOpacity={1} 
-                style={styles.backdrop} 
-                onPress={handleClose} 
-            />
-            <View style={[styles.card, { paddingBottom: Math.max(insets.bottom, 20) }]}>
-                {/* Header */}
-                <View style={styles.header}>
-                    <Text style={styles.title}>Discover spots</Text>
-                    <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-                        <Text style={styles.closeIcon}>✕</Text>
-                    </TouchableOpacity>
-                </View>
+        <View style={[styles.card, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+            {/* Handle bar */}
+            <View style={styles.handleBar} />
 
-                <Text style={styles.urlText} numberOfLines={1}>{cleanUrl}</Text>
+            {/* Header */}
+            <View style={styles.header}>
+                <Text style={styles.title}>
+                    {placesCount > 0 ? `${placesCount} spots found` : 'Importing spots'}
+                </Text>
+                <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+                    <Text style={styles.closeIcon}>✕</Text>
+                </TouchableOpacity>
+            </View>
 
-                <View style={styles.content}>
-                    {error ? (
-                        <View style={styles.center}>
-                            <Text style={styles.errorText}>{error}</Text>
+            <Text style={styles.urlText} numberOfLines={1}>{cleanUrl}</Text>
+
+            <View style={styles.content}>
+                {error ? (
+                    <View style={styles.center}>
+                        <Text style={styles.errorEmoji}>😕</Text>
+                        <Text style={styles.errorText}>{error}</Text>
+                        <TouchableOpacity style={styles.retryButton} onPress={handleClose}>
+                            <Text style={styles.retryButtonText}>Close</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : limitReached ? (
+                    <View style={styles.limitContainer}>
+                        <Text style={styles.limitEmoji}>🔒</Text>
+                        <Text style={styles.limitTitle}>Free Import Limit Reached</Text>
+                        <Text style={styles.limitSubtitle}>
+                            You've used all 5 free reel imports. Upgrade to Premium for unlimited imports!
+                        </Text>
+                        <TouchableOpacity
+                            style={styles.limitUpgradeBtn}
+                            activeOpacity={0.8}
+                            onPress={() => {
+                                Linking.openURL('tripways://premium').catch(() => {
+                                    ShareIntentModule.finishActivity();
+                                });
+                            }}
+                        >
+                            <Text style={styles.limitUpgradeBtnText}>Upgrade to Premium</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={handleClose} style={{ marginTop: 12 }}>
+                            <Text style={styles.limitDismissText}>Not now</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : currentStep === 0 ? (
+                    /* Initial checking phase — waiting for server response */
+                    <View style={styles.center}>
+                        <ActivityIndicator size="large" color="#3B82F6" />
+                        <Text style={styles.checkingText}>Checking...</Text>
+                    </View>
+                ) : (
+                    <View style={styles.timelineContainer}>
+                        {/* Timeline Steps */}
+                        <View style={styles.timeline}>
+                            {TIMELINE_STEPS.map((step, index) => (
+                                <TimelineStep
+                                    key={index}
+                                    step={step}
+                                    index={index}
+                                    status={getStepStatus(index)}
+                                    isLast={index === TIMELINE_STEPS.length - 1}
+                                />
+                            ))}
                         </View>
-                    ) : limitReached ? (
-                        <View style={styles.limitContainer}>
-                            <Text style={styles.limitEmoji}>🔒</Text>
-                            <Text style={styles.limitTitle}>Free Import Limit Reached</Text>
-                            <Text style={styles.limitSubtitle}>
-                                You've used all 5 free reel imports. Upgrade to Premium for unlimited imports!
-                            </Text>
-                            <TouchableOpacity
-                                style={styles.limitUpgradeBtn}
-                                activeOpacity={0.8}
-                                onPress={() => {
-                                    // Deep link into the main app with a premium flag
-                                    Linking.openURL('tripways://premium').catch(() => {
-                                        // If deep link fails, just close the overlay
-                                        ShareIntentModule.finishActivity();
-                                    });
-                                }}
-                            >
-                                <Text style={styles.limitUpgradeBtnText}>Upgrade to Premium</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={handleClose} style={{ marginTop: 12 }}>
-                                <Text style={styles.limitDismissText}>Not now</Text>
-                            </TouchableOpacity>
-                        </View>
-                    ) : (
-                        <>
-                            <View style={styles.statusRow}>
-                                {isProcessing && <ActivityIndicator color="#3BB9E3" size="small" style={{ marginRight: 8 }} />}
-                                <Text style={[styles.statusText, isSaved && styles.successText]}>
-                                    {isSaved ? 'Saved to bucket list! ✓' : status}
+
+                        {/* Extracted places list — shown when backend finishes */}
+                        {placesCount > 0 && (
+                            <Animated.View style={[styles.placesContainer, { opacity: placesOpacity }]}>
+                                <View style={styles.placesDivider} />
+                                <Text style={styles.placesTitle}>
+                                    Saved {placesCount} spots ✨
                                 </Text>
-                            </View>
+                                <FlatList
+                                    data={extractedPlaces}
+                                    keyExtractor={(item, idx) => item.placeId || item.id || `${idx}`}
+                                    renderItem={renderPlaceItem}
+                                    showsVerticalScrollIndicator={false}
+                                    contentContainerStyle={{ paddingBottom: 8 }}
+                                />
+                            </Animated.View>
+                        )}
 
-                            {places.length > 0 && !error && (
-                                <View style={styles.categoryScrollWrapper}>
-                                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-                                        {categories.map(cat => (
-                                            <TouchableOpacity 
-                                                key={cat} 
-                                                style={[styles.catChip, selectedCategory === cat && styles.catChipActive]}
-                                                onPress={() => setSelectedCategory(cat)}
-                                            >
-                                                <Text style={[styles.catText, selectedCategory === cat && styles.catTextActive]}>{cat}</Text>
-                                            </TouchableOpacity>
-                                        ))}
-                                    </ScrollView>
-                                </View>
-                            )}
-
-                            <ScrollView style={styles.placeList} showsVerticalScrollIndicator={false}>
-                                {groupedSections.map((group, gIdx) => (
-                                    <View key={gIdx} style={styles.groupContainer}>
-                                        <Text style={styles.groupHeader}>{group.city}, {group.country}</Text>
-                                        
-                                        {group.spots.map((place, idx) => {
-                                            const spotId = place.address || place.name;
-                                            const isChecked = checkedSpots.has(spotId);
-                                            
-                                            return (
-                                                <TouchableOpacity 
-                                                    key={idx} 
-                                                    style={styles.placeItem} 
-                                                    activeOpacity={0.7}
-                                                    onPress={() => toggleCheck(spotId)}
-                                                >
-                                                    <View style={[styles.checkbox, isChecked && styles.checkboxChecked]}>
-                                                        {isChecked && <Text style={styles.checkmark}>✓</Text>}
-                                                    </View>
-                                                    
-                                                    <View style={styles.placeInfo}>
-                                                        <Text style={styles.placeName}>{place.name}</Text>
-                                                        <Text style={styles.placeLoc}>{place.address || (place.category || 'Spot')}</Text>
-                                                    </View>
-                                                    {place.photoUrl && (
-                                                        <Image source={{ uri: place.photoUrl }} style={styles.placeImage} />
-                                                    )}
-                                                </TouchableOpacity>
-                                            )
-                                        })}
-                                    </View>
-                                ))}
-                                
-                                {places.length === 0 && !isProcessing && !error && (
-                                    <View style={styles.emptyContainer}>
-                                        <Text style={styles.emptyText}>No spots detected in this link.</Text>
-                                    </View>
-                                )}
-                            </ScrollView>
-
-                            {!isSaved && (
-                                <TouchableOpacity 
-                                    style={[styles.saveButton, (isProcessing || places.length === 0 || isSaving || checkedSpots.size === 0) && styles.disabledButton]}
-                                    onPress={handleSave}
-                                    disabled={isProcessing || places.length === 0 || isSaving || checkedSpots.size === 0}
-                                >
-                                    {isSaving ? (
-                                        <ActivityIndicator color="white" />
-                                    ) : (
-                                        <Text style={styles.saveButtonText}>
-                                            {checkedSpots.size > 0 ? `Save ${checkedSpots.size} spots` : 'Save spots'}
-                                        </Text>
-                                    )}
-                                </TouchableOpacity>
-                            )}
-                        </>
-                    )}
-                </View>
+                        {/* Hint text — always show when processing */}
+                        {placesCount === 0 && (
+                            <Animated.View style={[styles.hintContainer, { opacity: hintOpacity }]}>
+                                <Text style={styles.hintText}>
+                                    You can close this screen — spots will be saved automatically ✨
+                                </Text>
+                            </Animated.View>
+                        )}
+                    </View>
+                )}
             </View>
         </View>
     );
 };
 
 const ShareMenuScreen = (props) => {
+    const slideAnim = useRef(new Animated.Value(CARD_HEIGHT)).current;
+    const backdropAnim = useRef(new Animated.Value(0)).current;
+
+    // Entrance animation — slide card up + fade backdrop in
+    useEffect(() => {
+        Animated.parallel([
+            Animated.spring(slideAnim, {
+                toValue: 0,
+                damping: 20,
+                stiffness: 200,
+                useNativeDriver: true,
+            }),
+            Animated.timing(backdropAnim, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+            }),
+        ]).start();
+    }, []);
+
+    // Exit animation — slide card down + fade backdrop out, then finish activity
+    const handleClose = useCallback(() => {
+        Animated.parallel([
+            Animated.timing(slideAnim, {
+                toValue: CARD_HEIGHT,
+                duration: 250,
+                useNativeDriver: true,
+            }),
+            Animated.timing(backdropAnim, {
+                toValue: 0,
+                duration: 250,
+                useNativeDriver: true,
+            }),
+        ]).start(() => {
+            ShareIntentModule.finishActivity();
+        });
+    }, []);
+
     return (
-        <GestureHandlerRootView style={{ flex: 1, minHeight: SCREEN_HEIGHT }}>
-            <QueryClientProvider client={queryClient}>
-                <SafeAreaProvider>
-                    <StatusBar barStyle="light-content" backgroundColor="rgba(0,0,0,0.5)" translucent />
-                    <ShareMenuContent {...props} />
-                </SafeAreaProvider>
-            </QueryClientProvider>
+        <GestureHandlerRootView style={styles.gestureRoot}>
+            <SafeAreaProvider>
+                <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+                <View style={styles.overlay}>
+                    {/* Animated semi-transparent backdrop */}
+                    <Animated.View
+                        style={[
+                            StyleSheet.absoluteFill,
+                            { backgroundColor: 'rgba(0,0,0,0.5)', opacity: backdropAnim },
+                        ]}
+                        pointerEvents="none"
+                    />
+                    {/* Touch dismiss area — covers full screen behind the card */}
+                    <TouchableOpacity
+                        activeOpacity={1}
+                        style={StyleSheet.absoluteFill}
+                        onPress={handleClose}
+                    />
+                    {/* Animated card — slides up from bottom */}
+                    <Animated.View style={{ transform: [{ translateY: slideAnim }] }}>
+                        <ShareMenuContent {...props} onClose={handleClose} />
+                    </Animated.View>
+                </View>
+            </SafeAreaProvider>
         </GestureHandlerRootView>
     );
 };
 
 const styles = StyleSheet.create({
+    gestureRoot: {
+        flex: 1,
+        backgroundColor: 'transparent',
+    },
     overlay: {
         flex: 1,
         justifyContent: 'flex-end',
-        minHeight: SCREEN_HEIGHT,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-    },
-    backdrop: {
-        ...StyleSheet.absoluteFillObject,
     },
     card: {
         backgroundColor: 'white',
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
-        maxHeight: SCREEN_HEIGHT * 0.92,
-        height: SCREEN_HEIGHT * 0.85, 
-        minHeight: SCREEN_HEIGHT * 0.60,
+        height: CARD_HEIGHT,
         width: SCREEN_WIDTH,
-        paddingHorizontal: 20,
+        paddingHorizontal: 24,
+    },
+    handleBar: {
+        width: 40,
+        height: 5,
+        borderRadius: 2.5,
+        backgroundColor: '#D9DDE3',
+        alignSelf: 'center',
+        marginTop: 10,
+        marginBottom: 6,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginTop: 20,
+        marginTop: 8,
         marginBottom: 8,
     },
     title: {
@@ -435,152 +533,194 @@ const styles = StyleSheet.create({
     urlText: {
         fontSize: 12,
         color: '#94A3B8',
-        marginBottom: 20,
+        marginBottom: 24,
     },
     content: {
         flex: 1,
     },
-    statusRow: {
+    // Timeline
+    timelineContainer: {
+        flex: 1,
+    },
+    timeline: {
+        paddingLeft: 4,
+    },
+    timelineStep: {
         flexDirection: 'row',
+        minHeight: 48,
+    },
+    timelineIconColumn: {
+        width: 40,
         alignItems: 'center',
-        marginBottom: 16,
     },
-    statusText: {
-        fontSize: 15,
-        fontWeight: '500',
-        color: '#475569',
-    },
-    successText: {
-        color: '#10B981',
-    },
-    categoryScrollWrapper: {
-        marginHorizontal: -20,
-        paddingHorizontal: 20,
-        marginBottom: 12,
-        height: 40,
-    },
-    categoryScroll: {
+    timelineCircle: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#E2E8F0',
         alignItems: 'center',
-        paddingRight: 40,
+        justifyContent: 'center',
     },
-    catChip: {
-        paddingHorizontal: 14,
-        paddingVertical: 8,
-        borderRadius: 20,
+    timelineCircleDone: {
+        backgroundColor: '#10B981',
+    },
+    timelineCircleActive: {
+        backgroundColor: '#3B82F6',
+    },
+    timelineCirclePending: {
         backgroundColor: '#F1F5F9',
-        marginRight: 8,
     },
-    catChipActive: {
-        backgroundColor: '#0F172A',
+    timelineCheckmark: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: 'bold',
     },
-    catText: {
-        fontSize: 13,
+    timelineEmoji: {
+        fontSize: 12,
+    },
+    timelineLine: {
+        width: 2,
+        flex: 1,
+        backgroundColor: '#E2E8F0',
+        marginVertical: 3,
+        minHeight: 10,
+    },
+    timelineLineDone: {
+        backgroundColor: '#10B981',
+    },
+    timelineLinePending: {
+        backgroundColor: '#F1F5F9',
+    },
+    timelineContent: {
+        flex: 1,
+        paddingLeft: 12,
+        paddingTop: 5,
+        paddingBottom: 12,
+    },
+    timelineLabel: {
+        fontSize: 15,
         fontWeight: '600',
         color: '#64748B',
     },
-    catTextActive: {
-        color: 'white',
-    },
-    groupContainer: {
-        marginBottom: 24,
-    },
-    groupHeader: {
-        fontSize: 18,
-        fontWeight: 'bold',
+    timelineLabelDone: {
         color: '#0F172A',
-        marginBottom: 12,
-        marginTop: 8,
     },
-    placeItem: {
+    timelineLabelActive: {
+        color: '#3B82F6',
+    },
+    // Places list
+    placesContainer: {
+        flex: 1,
+        marginTop: 4,
+    },
+    placesDivider: {
+        height: 1,
+        backgroundColor: '#F1F5F9',
+        marginBottom: 12,
+    },
+    placesTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#10B981',
+        marginBottom: 12,
+    },
+    placeCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F1F5F9',
-    },
-    checkbox: {
-        width: 22,
-        height: 22,
-        borderRadius: 11,
-        borderWidth: 2,
-        borderColor: '#CBD5E1',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    checkboxChecked: {
-        backgroundColor: '#10B981',
-        borderColor: '#10B981',
-    },
-    checkmark: {
-        color: 'white',
-        fontSize: 12,
-        fontWeight: 'bold',
-    },
-    placeNumberBox: {
-        width: 24,
+        paddingVertical: 8,
     },
     placeNumber: {
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: '600',
         color: '#94A3B8',
+        width: 24,
+    },
+    placeImage: {
+        width: 44,
+        height: 44,
+        borderRadius: 10,
+    },
+    placeImagePlaceholder: {
+        backgroundColor: '#F1F5F9',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     placeInfo: {
         flex: 1,
-        paddingRight: 10,
+        marginLeft: 10,
     },
     placeName: {
-        fontSize: 15,
-        fontWeight: 'bold',
+        fontSize: 14,
+        fontWeight: '700',
         color: '#0F172A',
-        marginBottom: 2,
     },
-    placeLoc: {
-        fontSize: 13,
-        color: '#64748B',
+    placeLocation: {
+        fontSize: 12,
+        color: '#94A3B8',
+        marginTop: 2,
     },
-    placeImage: {
-        width: 50,
-        height: 50,
-        borderRadius: 10,
-        backgroundColor: '#F1F5F9',
-    },
-    saveButton: {
+    placeSavedBadge: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
         backgroundColor: '#10B981',
-        height: 52,
-        borderRadius: 26,
-        justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 10,
+        justifyContent: 'center',
     },
-    disabledButton: {
-        backgroundColor: '#D1FAE5',
-        opacity: 0.8,
-    },
-    saveButtonText: {
-        color: 'white',
-        fontSize: 16,
+    placeSavedIcon: {
+        color: '#FFFFFF',
+        fontSize: 12,
         fontWeight: 'bold',
     },
+    // Hint
+    hintContainer: {
+        alignItems: 'center',
+        marginTop: 20,
+        paddingHorizontal: 16,
+    },
+    hintText: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#94A3B8',
+        textAlign: 'center',
+        lineHeight: 20,
+    },
+    // Error
     center: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
     },
+    checkingText: {
+        marginTop: 12,
+        fontSize: 15,
+        fontWeight: '500',
+        color: '#94A3B8',
+    },
+    errorEmoji: {
+        fontSize: 40,
+        marginBottom: 12,
+    },
     errorText: {
         color: '#EF4444',
         textAlign: 'center',
         marginHorizontal: 40,
+        fontSize: 15,
+        fontWeight: '500',
     },
-    emptyContainer: {
-        marginTop: 40,
-        alignItems: 'center',
+    retryButton: {
+        marginTop: 20,
+        backgroundColor: '#F1F5F9',
+        paddingHorizontal: 32,
+        paddingVertical: 12,
+        borderRadius: 24,
     },
-    emptyText: {
-        color: '#94A3B8',
-        fontSize: 14,
+    retryButtonText: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#64748B',
     },
-    // Import limit reached styles
+    // Import limit  
     limitContainer: {
         flex: 1,
         justifyContent: 'center',

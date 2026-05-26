@@ -8,7 +8,6 @@ import {
     TextInput,
     Dimensions,
     ActivityIndicator,
-    Image,
     ImageBackground,
     FlatList,
     Platform,
@@ -16,6 +15,7 @@ import {
     Modal,
     Linking
 } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import BottomSheet, { BottomSheetView, BottomSheetBackdrop, BottomSheetFlatList, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Animated, {
     useAnimatedStyle,
@@ -76,7 +76,9 @@ const SpotsBottomSheet = ({
     setSheetIndex,
     sheetAnimatedPosition,
     tabBarTranslateY,
-    tabBarHeight
+    tabBarHeight,
+    searchBarSpotlightRef,
+    importedBtnSpotlightRef,
 }) => {
     // Stores
     const { socialMode, setSocialMode, setShowProfile, activeTab, setActiveTab, setTripOverviewOpen } = useUIStore();
@@ -448,7 +450,9 @@ const SpotsBottomSheet = ({
                 {...props}
                 appearsOnIndex={2}
                 disappearsOnIndex={1}
-                opacity={0.4}
+                opacity={0.35}
+                pressBehavior="none"
+                enableTouchThrough={true}
             />
         ),
         []
@@ -496,11 +500,10 @@ const SpotsBottomSheet = ({
             backgroundStyle={styles.sheetBackground}
             handleIndicatorStyle={styles.handleIndicator}
             enablePanDownToClose={activeTab === 'trips'}
-            backdropComponent={renderBackdrop}
             animationConfigs={sheetAnimationConfig}
             animatedPosition={sheetAnimatedPosition}
         >
-            {activeTab === 'home' ? (
+            <View style={{ flex: 1, display: activeTab === 'home' ? 'flex' : 'none' }}>
                 <SpotsExploreContent
                     socialMode={socialMode}
                     setSocialMode={setSocialMode}
@@ -525,7 +528,6 @@ const SpotsBottomSheet = ({
                     totalImportsCount={totalImportsCount}
                     onImportPress={(item) => {
                         setSelectedImportId(item._id);
-                        // bottomSheetRef.current?.snapToIndex(0);
                         setTimeout(() => {
                             importDetailSheetRef.current?.expand();
                         }, 350);
@@ -543,18 +545,20 @@ const SpotsBottomSheet = ({
                     setShowProfile={setShowProfile}
                     isPremium={isPremium}
                     setShowPremiumOverlay={setShowPremiumOverlay}
+                    searchBarSpotlightRef={searchBarSpotlightRef}
+                    importedBtnSpotlightRef={importedBtnSpotlightRef}
                 />
-            ) : (
-                    /* ── Trips Mode ── */
-                    <SpotsTripsContent
-                        templatesLoading={templatesLoading}
-                        templateTrips={templateTrips}
-                        handleGuidePress={handleGuidePress}
-                        tripsLoading={tripsLoading}
-                        savedTrips={savedTrips}
-                        handleTripPress={handleTripPress}
-                    />
-                )}
+            </View>
+            <View style={{ flex: 1, display: activeTab === 'trips' ? 'flex' : 'none' }}>
+                <SpotsTripsContent
+                    templatesLoading={templatesLoading}
+                    templateTrips={templateTrips}
+                    handleGuidePress={handleGuidePress}
+                    tripsLoading={tripsLoading}
+                    savedTrips={savedTrips}
+                    handleTripPress={handleTripPress}
+                />
+            </View>
 
             {/* "Spot Added" Badge */}
             <SpotAddedBadge visible={showAddedBadge} keyboardHeight={keyboardHeight} />
@@ -587,7 +591,7 @@ const SpotsBottomSheet = ({
                                 </TouchableOpacity>
 
                                 {selectedSpotDetail.photoUrl ? (
-                                    <Image source={{ uri: selectedSpotDetail.photoUrl }} style={styles.detailImage} />
+                                    <FastImage source={{ uri: selectedSpotDetail.photoUrl, priority: FastImage.priority.high }} style={styles.detailImage} resizeMode={FastImage.resizeMode.cover} />
                                 ) : (
                                     <View style={[styles.detailImage, { backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' }]}>
                                         <Svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#CBD5E1" strokeWidth="1.5">
@@ -694,7 +698,7 @@ const SpotsBottomSheet = ({
                 ) : (
                     <BottomSheetScrollView contentContainerStyle={styles.importDetailContent}>
                         <TouchableOpacity 
-                            style={[styles.detailCloseBtn, { top: 10, right: 10, backgroundColor: 'rgba(241, 245, 249, 0.9)' }]} 
+                            style={[styles.detailCloseBtn, { top: 16, right: 16, backgroundColor: 'rgba(255, 255, 255, 0.95)' }]} 
                             onPress={() => setSelectedImportId(null)}
                         >
                             <Svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#64748B" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -704,10 +708,10 @@ const SpotsBottomSheet = ({
 
                         {/* Hero Thumbnail */}
                         {activeImport.thumbnailUrl ? (
-                            <Image 
-                                source={{ uri: activeImport.thumbnailUrl }} 
+                            <FastImage 
+                                source={{ uri: activeImport.thumbnailUrl, priority: FastImage.priority.high }} 
                                 style={[styles.detailImage, { height: 260 }]} 
-                                resizeMode="cover"
+                                resizeMode={FastImage.resizeMode.cover}
                             />
                         ) : (
                             <View style={[styles.detailImage, styles.importHeroFallback, { height: 260 }]}>
@@ -940,7 +944,8 @@ const styles = StyleSheet.create({
         maxHeight: SCREEN_HEIGHT * 0.78,
     },
     importDetailContent: {
-        paddingBottom: 28,
+        paddingTop: 16,
+        paddingBottom: 32,
     },
     importHeroFallback: {
         alignItems: 'center',

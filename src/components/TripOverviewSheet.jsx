@@ -1,5 +1,6 @@
 import React, { forwardRef, useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, Image, ActivityIndicator, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Platform, ActivityIndicator, Linking } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import Animated, { FadeIn, FadeOut, ZoomIn, LinearTransition, useSharedValue, useAnimatedStyle, withRepeat, withTiming, Easing, interpolate } from 'react-native-reanimated';
 import DraggableFlatList, { ScaleDecorator } from 'react-native-draggable-flatlist';
 import { GestureHandlerRootView, TouchableOpacity as RNGHTouchableOpacity } from 'react-native-gesture-handler';
@@ -647,9 +648,10 @@ const TripOverviewSheet = forwardRef(({ onChange, onDayChange, animationConfigs 
                             <Text style={styles.spotNumberText}>{index + 1}</Text>
                         </View>
                         {spot.image ? (
-                            <Image
-                                source={{ uri: spot.image.includes('googleusercontent') ? `${spot.image}=w96-h96` : spot.image }}
+                            <FastImage
+                                source={{ uri: spot.image.includes('googleusercontent') ? `${spot.image}=w96-h96` : spot.image, priority: FastImage.priority.normal }}
                                 style={styles.spotImage}
+                                resizeMode={FastImage.resizeMode.cover}
                             />
                         ) : (
                             <View style={[styles.spotImage, styles.spotImageFallback]}>

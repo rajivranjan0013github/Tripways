@@ -121,7 +121,7 @@ const AppNavigator = () => {
                     name="Home"
                     component={HomeScreen}
                     options={{
-                        contentStyle: { backgroundColor: '#1a1a2e' },
+                        contentStyle: { backgroundColor: '#FFFFFF' },
                     }}
                 />
                 <Stack.Screen
@@ -144,7 +144,7 @@ const AppNavigator = () => {
                     name="Details"
                     component={DetailsScreen}
                     options={{
-                        contentStyle: { backgroundColor: '#1a1a2e' },
+                        contentStyle: { backgroundColor: '#FFFFFF' },
                     }}
                 />
             </Stack.Navigator>

@@ -30,7 +30,6 @@
         <category android:name="android.intent.category.BROWSABLE" />
         <data android:scheme="tripways" />
       </intent-filter>
-
     </activity>
 
     <activity

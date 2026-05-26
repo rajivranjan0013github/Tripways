@@ -1,5 +1,6 @@
 import React, { forwardRef, useMemo, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Linking, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Linking, Platform } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import BottomSheet, { BottomSheetScrollView, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import Svg, { Path, Circle } from 'react-native-svg';
 
@@ -69,7 +70,7 @@ const SpotDetailSheet = forwardRef(({ spot, onClose }, ref) => {
                     {/* Header Image */}
                     <View style={styles.imageContainer}>
                         {spot.image ? (
-                            <Image source={{ uri: spot.image }} style={styles.spotImage} />
+                            <FastImage source={{ uri: spot.image, priority: FastImage.priority.high }} style={styles.spotImage} resizeMode={FastImage.resizeMode.cover} />
                         ) : (
                             <View style={[styles.spotImage, styles.imagePlaceholder]}>
                                 <Text style={styles.placeholderEmoji}>{config.emoji}</Text>

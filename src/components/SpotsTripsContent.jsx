@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, Image, ImageBackground, ActivityIndicator, StyleSheet, Dimensions, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, ImageBackground, ActivityIndicator, StyleSheet, Dimensions, Platform } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { ScrollView } from 'react-native-gesture-handler';
 
@@ -48,7 +49,7 @@ const SpotsTripsContent = ({
                         return (
                             <TouchableOpacity key={trip._id || idx} style={styles.tripCard} activeOpacity={0.7} delayPressIn={100} onPress={() => handleTripPress(trip._id)}>
                                 {trip.tripRepPic ? (
-                                    <Image source={{ uri: trip.tripRepPic }} style={styles.tripImage} />
+                                    <FastImage source={{ uri: trip.tripRepPic, priority: FastImage.priority.normal }} style={styles.tripImage} resizeMode={FastImage.resizeMode.cover} />
                                 ) : (
                                     <View style={styles.tripImagePlaceholder} />
                                 )}

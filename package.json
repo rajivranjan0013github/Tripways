@@ -10,6 +10,7 @@
     "test": "jest"
   },
   "dependencies": {
+    "@d11/react-native-fast-image": "^8.13.0",
     "@gorhom/bottom-sheet": "^5.2.8",
     "@quidone/react-native-wheel-picker": "^1.6.1",
     "@react-native-firebase/app": "^23.8.6",

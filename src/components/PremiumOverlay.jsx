@@ -9,9 +9,9 @@ import {
     ActivityIndicator,
     Alert,
     Platform,
-    Image,
     Linking
 } from 'react-native';
+import FastImage from '@d11/react-native-fast-image';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -90,7 +90,7 @@ const PremiumOverlay = ({ visible, onClose }) => {
             // Natively grant premium so the UI unlocks without relying on hooks
             setCustomerInfo(customerInfo);
 
-            Alert.alert("Success", "Welcome to Where Premium!");
+            Alert.alert("Success", "Welcome to Odyssey Premium!");
             onClose();
         } catch (e) {
             if (!e.userCancelled) {
@@ -142,10 +142,10 @@ const PremiumOverlay = ({ visible, onClose }) => {
             style={[styles.overlay, animatedStyle]}
             pointerEvents={visible ? 'auto' : 'none'}
         >
-            <Image
-                source={{ uri: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1000&auto=format&fit=crop' }}
+            <FastImage
+                source={{ uri: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=1000&auto=format&fit=crop', priority: FastImage.priority.high }}
                 style={styles.bgImage}
-                resizeMode="cover"
+                resizeMode={FastImage.resizeMode.cover}
             />
             {/* Smooth linear gradient covering from middle to bottom */}
             <LinearGradient
