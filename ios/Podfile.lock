@@ -2667,6 +2667,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - Yoga
+  - RNDeviceInfo (15.0.2):
+    - React-Core
   - RNFastImage (8.13.0):
     - boost
     - DoubleConversion
@@ -3172,6 +3174,7 @@ DEPENDENCIES:
   - ReactCodegen (from `build/generated/ios`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
   - RNBootSplash (from `../node_modules/react-native-bootsplash`)
+  - RNDeviceInfo (from `../node_modules/react-native-device-info`)
   - "RNFastImage (from `../node_modules/@d11/react-native-fast-image`)"
   - "RNFBApp (from `../node_modules/@react-native-firebase/app`)"
   - "RNFBMessaging (from `../node_modules/@react-native-firebase/messaging`)"
@@ -3377,6 +3380,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon"
   RNBootSplash:
     :path: "../node_modules/react-native-bootsplash"
+  RNDeviceInfo:
+    :path: "../node_modules/react-native-device-info"
   RNFastImage:
     :path: "../node_modules/@d11/react-native-fast-image"
   RNFBApp:
@@ -3500,6 +3505,7 @@ SPEC CHECKSUMS:
   ReactCommon: 17fd88849a174bf9ce45461912291aca711410fc
   RevenueCat: 9acbd29a62000b57d59efa16166290c4a119847b
   RNBootSplash: ce1a6f2d0a8cfe999af30c62151ab84562c30284
+  RNDeviceInfo: 4c852998208b60dc192ae3529e5867817719ad1e
   RNFastImage: 905f29b52fc09a22f075fc648d255248fd43782d
   RNFBApp: 262a63cf10f0f2e5436bd68360892e3557439d8d
   RNFBMessaging: 0a3227cd1dcaa7f380335f7fafe50d2b8f0d7cd8
@@ -3515,6 +3521,6 @@ SPEC CHECKSUMS:
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
   Yoga: daa1e4de4b971b977b23bc842aaa3e135324f1f3
 
-PODFILE CHECKSUM: f049848504c44e839e62713637d67637608cb75d
+PODFILE CHECKSUM: 3c339bedb5cf29a0b931818e76252d6b8636f2df
 
 COCOAPODS: 1.16.2

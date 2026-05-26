@@ -59,6 +59,7 @@ target 'TripWays' do
 end
 
 target 'ShareExtension' do
+  inherit! :none
   # No React Native modules needed here to avoid extension-safe errors
 end
 
