@@ -134,6 +134,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     const [isLoadingPlaces, setIsLoadingPlaces] = useState(false);
     const [isAddingMoreSpots, setIsAddingMoreSpots] = useState(null); // stores the placeName being loaded
     const [isPlanning, setIsPlanning] = useState(false);
+    const isPlanningRef = useRef(false);
     const [isFromVideo, setIsFromVideo] = useState(false);
     const [isFromSavedSpots, setIsFromSavedSpots] = useState(false);
     const [isSavingSpots, setIsSavingSpots] = useState(false);
@@ -905,30 +906,33 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
     };
 
     const handlePlanTrip = async () => {
+        // Capture all needed state BEFORE calling onPlanningStarted, which closes
+        // the sheet and triggers onChange(index=-1) that resets all state to empty.
+        const capturedLocation = selectedLocation?.name || 'Unknown';
+        const capturedDays = numDays;
+        const capturedInterests = selectedPrefs.length > 0
+            ? selectedPrefs.map(p => PREF_TO_INTEREST[p] || p.toLowerCase())
+            : ['popular'];
+        const capturedSelectedPlaceObjects = discoveredPlaces.filter(p => selectedSpots.includes(p.id));
+        const backendUrl = Config.BACKEND_URL || 'http://localhost:3000';
+
         setIsPlanning(true);
+        isPlanningRef.current = true;
         onPlanningStarted?.();
         try {
-            const backendUrl = Config.BACKEND_URL || 'http://localhost:3000';
-            const interests = selectedPrefs.length > 0
-                ? selectedPrefs.map(p => PREF_TO_INTEREST[p] || p.toLowerCase())
-                : ['popular'];
-            // Get selected place objects
-            const selectedPlaceObjects = discoveredPlaces.filter(p => selectedSpots.includes(p.id));
-
             const response = await fetch(`${backendUrl}/api/plan-stream`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    place: selectedLocation?.name || 'Unknown',
-                    days: numDays,
-                    interests,
-                    discoveredPlaces: selectedPlaceObjects,
+                    place: capturedLocation,
+                    days: capturedDays,
+                    interests: capturedInterests,
+                    discoveredPlaces: capturedSelectedPlaceObjects,
                 }),
             });
 
-            const reader = response.body?.getReader?.();
             // React Native fetch doesn't support ReadableStream natively,
-            // so fall back to reading the full text response
+            // so read the full text response and parse SSE events from it
             const text = await response.text();
 
             // Parse SSE events from the text
@@ -958,14 +962,14 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
 
             // Use the most complete data available
             const finalItinerary = routedData?.itinerary || geocodedData?.itinerary || itineraryData?.itinerary;
-            const destination = itineraryData?.destination || selectedLocation?.name;
-            const totalDays = itineraryData?.totalDays || numDays;
+            const destination = itineraryData?.destination || capturedLocation;
+            const totalDays = itineraryData?.totalDays || capturedDays;
 
             onTripCreated?.({
                 numDays: totalDays,
                 locationName: destination,
                 itinerary: finalItinerary,
-                discoveredPlaces: selectedPlaceObjects,
+                discoveredPlaces: capturedSelectedPlaceObjects,
             });
 
             // Auto-save trip to backend
@@ -980,11 +984,11 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 userId,
-                                destination: destination || selectedLocation?.name,
-                                days: totalDays || numDays,
-                                interests: selectedPrefs.map(p => PREF_TO_INTEREST[p] || p.toLowerCase()),
+                                destination: destination || capturedLocation,
+                                days: totalDays || capturedDays,
+                                interests: capturedInterests,
                                 itinerary: finalItinerary,
-                                discoveredPlaces: selectedPlaceObjects,
+                                discoveredPlaces: capturedSelectedPlaceObjects,
                             }),
                         });
                     }
@@ -993,10 +997,11 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                 console.warn('Failed to save trip to backend:', saveErr);
             }
 
-            ref.current?.close();
+            bottomSheetInternalRef.current?.close();
         } catch (error) {
             console.error('Failed to plan trip:', error);
         } finally {
+            isPlanningRef.current = false;
             setIsPlanning(false);
         }
     };
@@ -1237,7 +1242,7 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
                                 <TouchableOpacity key={spot.id} style={styles.spotRow} onPress={() => toggleSpot(spot.id)} activeOpacity={0.7} delayPressIn={100}>
                                     <Text style={styles.spotNumber}>{idx + 1}.</Text>
                                     {spot.photoUrl ? (
-                                        <Image source={{ uri: spot.photoUrl }} style={styles.spotImage} />
+                                        <FastImage source={{ uri: spot.photoUrl, priority: FastImage.priority.normal }} style={styles.spotImage} resizeMode={FastImage.resizeMode.cover} />
                                     ) : (
                                         <View style={[styles.spotImage, styles.spotImagePlaceholder]}>
                                             <Text style={styles.spotImagePlaceholderText}>📍</Text>
@@ -1410,6 +1415,10 @@ const CreateTripSheet = forwardRef(({ onChange, animationConfigs, onTripCreated,
             onChange={(index) => {
                 onChange(index);
                 if (index === -1) {
+                    // Skip state reset if planning is in progress — handlePlanTrip
+                    // captured all values it needs, but we still shouldn't wipe state
+                    // while the async operation is running to avoid React warnings
+                    if (isPlanningRef.current) return;
                     // Defer heavy state cleanup until after the close animation
                     InteractionManager.runAfterInteractions(() => {
                         setStep('home');

@@ -1,5 +1,4 @@
 import { signUpWithGoogle, signUpWithApple } from 'react-native-credentials-manager';
-import { NativeModules, Platform as RNPlatform } from 'react-native';
 
 import React, { useState } from 'react';
 import {
@@ -14,6 +13,8 @@ import {
     Linking,
     Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import LinearGradient from 'react-native-linear-gradient';
 import Svg, {
     Path,
 } from 'react-native-svg';
@@ -30,6 +31,36 @@ import { getApp } from '@react-native-firebase/app';
 import { useUpdateUserProfile } from '../hooks/useUserProfile';
 const storage = new MMKV();
 const { width, height } = Dimensions.get('window');
+const IMAGE_WIDTH = width;
+const IMAGE_HEIGHT = IMAGE_WIDTH * (686 / 578);
+const VISUAL_TOP = Math.max(
+    Math.min(height * 0.31, height - IMAGE_HEIGHT - 90),
+    190
+);
+
+const FONT_DISPLAY = Platform.select({
+    ios: 'Plus Jakarta Sans',
+    android: 'PlusJakartaSans-Regular',
+    default: 'System',
+});
+
+const FONT_DISPLAY_BOLD = Platform.select({
+    ios: 'Plus Jakarta Sans',
+    android: 'PlusJakartaSans-Bold',
+    default: 'System',
+});
+
+const FONT_DISPLAY_SEMIBOLD = Platform.select({
+    ios: 'Plus Jakarta Sans',
+    android: 'PlusJakartaSans-SemiBold',
+    default: 'System',
+});
+
+const FONT_SERIF = Platform.select({
+    ios: 'Cormorant Garamond',
+    android: 'CormorantGaramond-SemiBold',
+    default: 'serif',
+});
 
 const BACKEND_URL = Config.BACKEND_URL || 'http://localhost:3000';
 const GOOGLE_WEB_CLIENT_ID =
@@ -95,22 +126,6 @@ async function appleSignUp() {
 }
 
 // ──────────────────────────────────────────────────
-// Background Image
-// ──────────────────────────────────────────────────
-
-const ExactBackground = () => {
-    return (
-        <View style={StyleSheet.absoluteFill}>
-            <Image
-                source={require('../assets/onboardinglogin.png')}
-                style={{ width: '100%', height: '100%' }}
-                resizeMode="cover"
-            />
-        </View>
-    );
-};
-
-// ──────────────────────────────────────────────────
 // Google & Apple SVG Icons
 // ──────────────────────────────────────────────────
 
@@ -137,6 +152,7 @@ const AppleIcon = () => (
 // ──────────────────────────────────────────────────
 
 const LoginScreen = ({ navigation }) => {
+    const insets = useSafeAreaInsets();
     const [isGoogleLoading, setIsGoogleLoading] = useState(false);
     const [isAppleLoading, setIsAppleLoading] = useState(false);
 
@@ -228,85 +244,99 @@ const LoginScreen = ({ navigation }) => {
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+            <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
 
-            <ExactBackground />
+            <View style={styles.visualContainer} pointerEvents="none">
+                <Image
+                    source={require('../assets/onboardinglogin.png')}
+                    style={styles.visual}
+                    resizeMode="contain"
+                />
+                <LinearGradient
+                    colors={['#FFFFFF', 'rgba(255, 255, 255, 0.92)', 'rgba(255, 255, 255, 0)']}
+                    style={styles.topGradient}
+                />
+                <LinearGradient
+                    colors={['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 0.92)', '#FFFFFF']}
+                    style={styles.bottomGradient}
+                />
+            </View>
 
-            <View style={styles.overlay}>
-                {/* ── Top: Hello Travelers ── */}
-                <View style={styles.textContainer}>
-                    <Text style={styles.helloText}>Hello</Text>
-                    <View style={styles.travelersRow}>
-                        <Text style={styles.travelersText}>Travelers</Text>
-                        <View style={styles.dot} />
-                    </View>
-                    <Text style={styles.subtitleText}>Let's take a trip with us</Text>
+            <View style={[styles.copyBlock, { paddingTop: Math.max(insets.top + 24, 60) }]}>
+                <View style={styles.tagRow}>
+                    <View style={styles.tagLine} />
+                    <Text style={styles.tagText}>TRIPWAYS</Text>
+                    <View style={styles.tagLine} />
                 </View>
 
-                {/* ── Bottom: Sign-in buttons ── */}
-                <View style={styles.ctaContainer}>
-                    {/* Apple Sign-In — iOS only */}
-                    {Platform.OS === 'ios' && (
-                        isAppleLoading ? (
-                            <View style={styles.loadingContainer}>
-                                <ActivityIndicator size="large" color="#000000" />
-                            </View>
-                        ) : (
-                            <TouchableOpacity
-                                style={[styles.signInButton, styles.appleButton]}
-                                onPress={handleAppleSignIn}
-                                activeOpacity={0.9}
-                                disabled={isAppleLoading || isGoogleLoading}
-                            >
-                                <View style={styles.buttonContent}>
-                                    <View style={styles.buttonIcon}>
-                                        <AppleIcon />
-                                    </View>
-                                    <Text style={styles.appleButtonText}>Continue with Apple</Text>
-                                </View>
-                            </TouchableOpacity>
-                        )
-                    )}
+                <Text style={styles.headline}>Save places.{'\n'}Plan better trips.</Text>
+                <Text style={styles.body}>
+                    Sign in to turn the spots you love into{'\n'}beautiful routes and travel maps.
+                </Text>
+            </View>
 
-                    {/* Google Sign-In */}
-                    {isGoogleLoading ? (
+            <View style={[styles.ctaContainer, { paddingBottom: Math.max(insets.bottom + 10, 26) }]}>
+                {/* Apple Sign-In — iOS only */}
+                {Platform.OS === 'ios' && (
+                    isAppleLoading ? (
                         <View style={styles.loadingContainer}>
-                            <ActivityIndicator size="large" color="#00BEE0" />
+                            <ActivityIndicator size="large" color="#07152C" />
                         </View>
                     ) : (
                         <TouchableOpacity
-                            style={[styles.signInButton, styles.googleButton]}
-                            onPress={handleGoogleSignIn}
+                            style={[styles.signInButton, styles.appleButton]}
+                            onPress={handleAppleSignIn}
                             activeOpacity={0.9}
-                            disabled={isGoogleLoading || isAppleLoading}
+                            disabled={isAppleLoading || isGoogleLoading}
                         >
                             <View style={styles.buttonContent}>
                                 <View style={styles.buttonIcon}>
-                                    <GoogleIcon />
+                                    <AppleIcon />
                                 </View>
-                                <Text style={styles.googleButtonText}>Continue with Google</Text>
+                                <Text style={styles.appleButtonText}>Continue with Apple</Text>
                             </View>
                         </TouchableOpacity>
-                    )}
+                    )
+                )}
 
-                    {/* Terms & Privacy */}
-                    <Text style={styles.termsText}>
-                        By continuing, you agree to our{' '}
-                        <Text
-                            style={styles.termsLink}
-                            onPress={() => Linking.openURL('https://rajivranjan0013github.github.io/tripways-privacy/terms-service.html')}
-                        >
-                            Terms of Service
-                        </Text>{' '}
-                        &{' '}
-                        <Text
-                            style={styles.termsLink}
-                            onPress={() => Linking.openURL('https://rajivranjan0013github.github.io/tripways-privacy/privacy-policy.html')}
-                        >
-                            Privacy Policy
-                        </Text>
+                {/* Google Sign-In */}
+                {isGoogleLoading ? (
+                    <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="large" color="#117CE8" />
+                    </View>
+                ) : (
+                    <TouchableOpacity
+                        style={[styles.signInButton, styles.googleButton]}
+                        onPress={handleGoogleSignIn}
+                        activeOpacity={0.9}
+                        disabled={isGoogleLoading || isAppleLoading}
+                    >
+                        <View style={styles.buttonContent}>
+                            <View style={styles.buttonIcon}>
+                                <GoogleIcon />
+                            </View>
+                            <Text style={styles.googleButtonText}>Continue with Google</Text>
+                        </View>
+                    </TouchableOpacity>
+                )}
+
+                {/* Terms & Privacy */}
+                <Text style={styles.termsText}>
+                    By continuing, you agree to our{' '}
+                    <Text
+                        style={styles.termsLink}
+                        onPress={() => Linking.openURL('https://rajivranjan0013github.github.io/tripways-privacy/terms-service.html')}
+                    >
+                        Terms of Service
+                    </Text>{' '}
+                    &{' '}
+                    <Text
+                        style={styles.termsLink}
+                        onPress={() => Linking.openURL('https://rajivranjan0013github.github.io/tripways-privacy/privacy-policy.html')}
+                    >
+                        Privacy Policy
                     </Text>
-                </View>
+                </Text>
             </View>
         </View>
     );
@@ -317,72 +347,105 @@ const LoginScreen = ({ navigation }) => {
 // ──────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: 'transparent' },
-    overlay: {
+    container: {
         flex: 1,
-        justifyContent: 'space-between',
-        paddingTop: height * 0.13,
-        paddingBottom: height * 0.06,
-    },
-    textContainer: { paddingHorizontal: 40 },
-    helloText: {
-        fontSize: 48,
-        color: '#FFFFFF',
-        fontWeight: '400',
-        marginBottom: -6,
-        letterSpacing: 0.5,
-    },
-    travelersRow: {
-        flexDirection: 'row',
-        alignItems: 'baseline',
-    },
-    travelersText: {
-        fontSize: 68,
-        fontWeight: '800',
-        color: '#3F4A5E',
-        letterSpacing: -1,
-    },
-    dot: {
-        width: 14,
-        height: 14,
-        borderRadius: 7,
         backgroundColor: '#FFFFFF',
-        marginLeft: 4,
-        alignSelf: 'flex-end',
-        marginBottom: 16,
+        overflow: 'hidden',
     },
-    subtitleText: {
-        fontSize: 18,
-        fontWeight: '500',
-        color: '#3F4A5E',
-        marginTop: 6,
-        letterSpacing: 0.3,
-        paddingLeft: 4,
+    copyBlock: {
+        width: '100%',
+        paddingHorizontal: 24,
+        alignItems: 'center',
+        zIndex: 2,
+    },
+    tagRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 14,
+        marginBottom: 10,
+    },
+    tagLine: {
+        width: 38,
+        height: 2,
+        borderRadius: 1,
+        backgroundColor: '#0F7CE8',
+    },
+    tagText: {
+        color: '#117CE8',
+        fontFamily: FONT_DISPLAY_BOLD,
+        fontSize: 13,
+        ...Platform.select({ ios: { fontWeight: '700' }, android: {} }),
+    },
+    headline: {
+        color: '#07152C',
+        fontFamily: FONT_SERIF,
+        fontSize: Math.min(width * 0.09, 38),
+        lineHeight: Math.min(width * 0.105, 44),
+        ...Platform.select({ ios: { fontWeight: '600' }, android: {} }),
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    body: {
+        color: '#657286',
+        fontFamily: FONT_DISPLAY,
+        fontSize: Math.min(width * 0.038, 16),
+        lineHeight: Math.min(width * 0.058, 24),
+        ...Platform.select({ ios: { fontWeight: '400' }, android: {} }),
+        textAlign: 'center',
+    },
+    visualContainer: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: VISUAL_TOP,
+        height: IMAGE_HEIGHT,
+    },
+    visual: {
+        width: '100%',
+        height: '100%',
+    },
+    topGradient: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 60,
+    },
+    bottomGradient: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: 60,
     },
 
     // ── CTA area ──
     ctaContainer: {
-        paddingHorizontal: 32,
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        paddingHorizontal: 24,
         alignItems: 'center',
     },
     loadingContainer: {
-        width: '90%',
-        minHeight: 56,
+        width: '100%',
+        minHeight: 52,
         marginBottom: 14,
         alignItems: 'center',
         justifyContent: 'center',
     },
     signInButton: {
-        width: '90%',
-        paddingVertical: 16,
-        minHeight: 56,
-        borderRadius: 999,
+        width: '100%',
+        height: 52,
+        borderRadius: 26,
         overflow: 'hidden',
         shadowColor: '#000',
-        shadowOpacity: 0.18,
+        shadowOpacity: 0.15,
         shadowRadius: 12,
-        shadowOffset: { width: 0, height: 8 },
-        elevation: 5,
+        shadowOffset: { width: 0, height: 6 },
+        elevation: 6,
         marginBottom: 14,
     },
     appleButton: {
@@ -391,9 +454,10 @@ const styles = StyleSheet.create({
     googleButton: {
         backgroundColor: '#FFFFFF',
         borderWidth: 1,
-        borderColor: '#E0E0E0',
+        borderColor: '#E7ECF2',
     },
     buttonContent: {
+        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
@@ -406,26 +470,29 @@ const styles = StyleSheet.create({
     },
     appleButtonText: {
         color: '#FFFFFF',
+        fontFamily: FONT_DISPLAY_SEMIBOLD,
         fontSize: 16,
-        fontWeight: '700',
-        letterSpacing: 0.3,
+        ...Platform.select({ ios: { fontWeight: '600' }, android: {} }),
     },
     googleButtonText: {
-        color: '#1f1f1f',
+        color: '#07152C',
+        fontFamily: FONT_DISPLAY_SEMIBOLD,
         fontSize: 16,
-        fontWeight: '700',
-        letterSpacing: 0.3,
+        ...Platform.select({ ios: { fontWeight: '600' }, android: {} }),
     },
     termsText: {
-        marginTop: 8,
+        marginTop: 2,
         textAlign: 'center',
-        color: '#6B7280',
+        color: '#657286',
+        fontFamily: FONT_DISPLAY,
         fontSize: 12,
+        lineHeight: 18,
         paddingHorizontal: 16,
     },
     termsLink: {
-        color: '#00BEE0',
-        fontWeight: '800',
+        color: '#117CE8',
+        fontFamily: FONT_DISPLAY_BOLD,
+        ...Platform.select({ ios: { fontWeight: '700' }, android: {} }),
     },
 });
 
